@@ -1,148 +1,136 @@
 # flog
 
-**Flutter 日志查看器 — 终于能看清日志了。**
+```
+███████╗██╗      ██████╗  ██████╗
+██╔════╝██║     ██╔═══██╗██╔════╝
+█████╗  ██║     ██║   ██║██║  ███╗
+██╔══╝  ██║     ██║   ██║██║   ██║
+██║     ███████╗╚██████╔╝╚██████╔╝
+╚═╝     ╚══════╝ ╚═════╝  ╚═════╝
+```
 
-终端原生、跨平台、智能的 Flutter 日志查看器。一条命令，零配置。
+**Flutter 开发日志，不该这么难看。**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
 ```
 
-或通过 Cargo：
+## 你现在看日志有多痛苦
 
-```bash
-cargo install flog
+`flutter run` 的终端输出是这样的：
+
+```
+I/flutter (12345): [INFO][Network] → POST /api/chat/prompt
+I/flutter (12345): [DEBUG][Network]   body: {messages: [{role: assistant, content: Welcome}, {role: user, content: I wanna learn about...}], stream: true}
+I/flutter (12345): [INFO][Network] ← 201 /api/chat/prompt (1140ms)
+I/flutter (12345): [DEBUG][Network]   body: Instance of 'ResponseBody'
+W/1.raster(12345): type=1400 audit(0.0:574): avc: denied { read }
+D/TrafficStats(12345): tagSocket(194) with statsTag=0xffffffff
+I/flutter (12345): [DEBUG][GoalRepo] promptChat response: Great choices! Those are super practical...
+I/flutter (12345): [INFO][Clog] /network/request {userId: unknown, path: /api/chat/prompt, status: 201}
 ```
 
-## 为什么需要 flog
+**一坨。** 系统日志和业务日志混在一起，没有颜色区分，没法过滤，没法搜索，JSON 挤成一行，重启就全丢了。
 
-Flutter 开发中看日志是件痛苦的事：`flutter run` 的控制台输出混乱、没有级别过滤、没有搜索、JSON 挤成一坨、重启就丢失。你不得不在一堆 `I/flutter` 里肉眼找关键信息。
+打开 DevTools 的 web 页面？加载慢、界面复杂、每次 hot restart 断连要重新打开、而且看不到 `print()` 输出。
 
-**flog 解决这些问题。** 它是一个独立的日志查看器，常驻后台，自动连接你的 Flutter 应用，给你一个清晰、可交互、可过滤的日志界面。
+## flog 给你的
 
-## 核心卖点
+同样的日志，在 flog 里是这样的：
 
-**智能解析，不只是文本**
-- 自动识别多种日志格式：`[LEVEL][Tag] message`、Flutter 标准输出、关键词推断
-- JSON 自动格式化，支持展开/折叠，语法高亮
-- 重复日志自动折叠，不刷屏
+```
+17:34:43.710  INFO     Network     → POST /api/chat/prompt
+17:34:43.711  DEBUG    Network       body: {messages: [...], stream: true}
+17:34:44.353  INFO     Network     ← 201 /api/chat/prompt (1140ms)
+17:34:44.360  DEBUG    Network       body: Instance of 'ResponseBody'
+17:34:44.368  INFO     Clog        /network/request {path: /api/chat/prompt, status: 201}
+17:35:02.186  DEBUG    GoalRepo    promptChat response: Great choices!...
+```
 
-**交互式过滤，秒级定位**
-- 按级别过滤：一键切换 Verbose / Debug / Info / Warning / Error
-- 按 Tag 过滤：`+Network` 只看网络，`-Clog` 排除噪音
-- 全文搜索：支持正则 `/api.*error/i`，高亮匹配，`n/N` 跳转
+**干净。** 只有你的业务日志。级别颜色区分。Tag 对齐。系统噪音自动过滤。
 
-**常驻后台，自动重连**
-- flog 先启动，`flutter run` 随便重启，自动发现并连接
-- 通过 DDS 代理连接，不干扰 `flutter run`
-- 断开后自动回到扫描状态，无需手动操作
+## 不只是好看
 
-**鼠标友好的 TUI**
-- 点击选中，双击查看详情，右键书签
-- 工具栏可点击：搜索、过滤、级别切换
-- 时间线热力图，一眼看出日志分布
+**按级别一键过滤** — 工具栏点一下，只看 Warning + Error，瞬间定位问题
 
-**会话持久化**
-- 过滤器、书签、搜索条件跨会话保存
-- 重启 flog 不丢失状态
+**按 Tag 精准过滤** — `+Network` 只看网络请求，`-Clog` 排除埋点噪音，支持正则
 
-## 快速开始
+**全文搜索** — `/timeout/i` 搜索所有超时日志，`n/N` 在匹配间跳转，高亮显示
 
-### 推荐工作流
+**JSON 展开/折叠** — 双击一条日志，右侧面板里 JSON 自动格式化、语法高亮、点击折叠
+
+**常驻后台，自动重连** — flog 开着不用管，`flutter run` 随便重启，1-2 秒自动连上。不像 DevTools 每次都要重新打开
+
+**10 万条日志不卡** — 环形缓冲 + 异步架构，高频日志照样丝滑滚动
+
+**书签 + 导出** — 右键标记关键日志，`e` 一键导出过滤结果
+
+## 30 秒上手
 
 ```bash
-# 终端 1：启动 flog（等待 Flutter 应用）
+# 终端 1
 flog
 
-# 终端 2：正常开发
+# 终端 2
 flutter run
 ```
 
-flog 自动发现运行中的 Flutter VM，1-2 秒内连接。`flutter run` 可以随时停止重启，flog 自动重连。
+没了。flog 自动发现你的 Flutter 应用，通过 DDS 代理连接（不影响 `flutter run`），日志实时显示。
 
-### 其他用法
+### 更多用法
 
 ```bash
-# 连接指定 VM Service
-flog --uri ws://127.0.0.1:8181/TOKEN=/ws
-
-# Android ADB 模式
-flog --adb
-flog --adb -s emulator-5554
-
-# 管道模式
-flutter run 2>&1 | flog --stdin
-
-# 启动时指定过滤
-flog --level w --tag Network
+flog --adb                    # Android ADB logcat 模式
+flog --adb -s emulator-5554   # 指定设备
+flog --level w                # 只看 Warning 以上
+flog --tag Network            # 只看 Network 标签
+flutter run 2>&1 | flog --stdin  # 管道模式
 ```
 
-## AuraLogger 集成
+## 搭配 AuraLogger 效果最佳
 
-搭配 [AuraLogger](https://pub.zhenguanyu.com/#/packages/aura_logger) 使用效果最佳。AuraLogger 输出结构化格式：
+flog 原生解析 [AuraLogger](https://pub.zhenguanyu.com/#/packages/aura_logger) 的结构化格式，精确提取级别、标签、消息。你的 Flutter 项目只需：
 
+```yaml
+dependencies:
+  aura_logger:
+    hosted: https://pub.zhenguanyu.com
+    version: ^0.0.3
 ```
-[INFO][Network] -> GET /api/scene-types
-[DEBUG][Network]   query: {_productId: 66000001}
-[ERROR][SessionCoord] Reconnection failed: timeout
+
+```dart
+AuraLogger.i('-> GET /api/users', tag: 'Network');
+AuraLogger.e('Connection failed: $e', tag: 'WS');
 ```
 
-flog 原生解析这种格式，精确提取级别、标签、消息内容。任何 Flutter 应用只需引入 AuraLogger 即可获得最佳日志体验。
+没有 AuraLogger 也能用 — flog 自动识别 Flutter 标准输出格式和常见日志模式。
 
-### 日志级别规范
-
-| 级别 | 用途 | 示例 |
-|------|------|------|
-| **INFO** | 业务里程碑 | 连接成功、开始练习、评分结果 |
-| **DEBUG** | 内部状态 | WS 协议细节、音频状态、Token 缓存 |
-| **WARNING** | 可恢复问题 | 会话过期、Token 刷新失败 |
-| **ERROR** | 异常/失败 | 连接断开、解析错误、重连失败 |
-
-## 键盘快捷键
-
-| 按键 | 功能 |
-|------|------|
-| `/` | 搜索（文本或 `/正则/i`） |
-| `n` / `N` | 下一个 / 上一个匹配 |
-| `j/k` 或 `上/下` | 滚动 |
-| `PgUp/PgDn` | 翻页 |
-| `Home/End` | 跳到顶部/底部 |
-| `Enter` | 打开/关闭详情面板（JSON 格式化） |
-| `c` | 复制当前日志到剪贴板 |
-| `e` | 导出过滤后的日志到文件 |
-| `?` | 帮助 |
-| `S` | 统计视图 |
-| `Esc` | 关闭面板 / 清除所有过滤 |
-| `q` / `Ctrl+C` | 退出 |
-
-## 鼠标操作
+## 键盘 & 鼠标
 
 | 操作 | 效果 |
 |------|------|
-| 单击行 | 选中 |
+| `/` | 搜索（支持 `/正则/i`） |
+| `n` / `N` | 下一个/上一个匹配 |
+| `j/k` 或方向键 | 滚动 |
+| `Enter` | 打开详情面板 |
 | 双击 | 打开详情 |
 | 右键 | 切换书签 |
-| 滚轮 | 滚动 |
-| 点击工具栏 | 搜索、过滤、切换级别 |
-| 点击数据源名称 | 切换数据源 |
+| `e` | 导出日志 |
+| `S` | 统计视图 |
+| `?` | 帮助 |
+| `q` | 退出 |
 
-## 架构
+## 安装
 
+```bash
+# 一键安装（推荐）
+curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
+
+# 或通过 Cargo
+cargo install flog
 ```
-src/
-├── domain/     — 核心类型（LogEntry, LogLevel, LogStore, FilterState）
-├── input/      — 数据源抽象（ADB, VM Service, stdin, 自动发现）
-├── parser/     — 多策略格式检测（AuraLogger, Generic, Keyword）
-└── ui/         — 终端界面（ratatui + crossterm）
-```
 
-## 技术特性
-
-- **10 万条日志环形缓冲** — 高吞吐不卡顿，超限自动淘汰旧日志
-- **多策略解析链** — AuraLogger 结构化格式优先，Generic 兜底，Keyword 推断
-- **DDS 代理连接** — 不占用 VM Service WebSocket，不影响 `flutter run`
-- **异步架构** — tokio 驱动，数据源、UI、事件处理完全异步
-- **Catppuccin Macchiato 主题** — 护眼深色主题，级别颜色区分度高
+支持 macOS (Intel/Apple Silicon)、Linux (x86_64/aarch64)、Windows。
 
 ## License
 
