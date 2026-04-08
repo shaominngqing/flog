@@ -95,6 +95,9 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
     }
     all_lines.push(Line::from(Span::styled("─".repeat(inner_w), Style::default().fg(SURFACE0))));
 
+    // Store header line count for click handling (+ 1 for block border top)
+    app.detail.header_lines = all_lines.len() + 1;
+
     // ── Body with fold/unfold ──
     let full_msg = entry.full_message();
     let fmt_lines = bracket_format(&full_msg);

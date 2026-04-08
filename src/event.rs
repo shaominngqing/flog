@@ -357,10 +357,10 @@ fn handle_detail_panel_click(app: &mut App, mouse: &MouseEvent) {
         MouseEventKind::ScrollUp => app.detail_scroll_up(SCROLL_LINES),
         MouseEventKind::ScrollDown => app.detail_scroll_down(SCROLL_LINES),
         MouseEventKind::Down(MouseButton::Left) => {
-            // Header takes ~3 rows + 1 border, content starts at row 4 within the panel
             let panel_row = mouse.row.saturating_sub(app.layout.list_y);
-            if panel_row >= 4 {
-                let content_row = (panel_row - 4) as usize;
+            let header = app.detail.header_lines.max(2) as u16;
+            if panel_row >= header {
+                let content_row = (panel_row - header) as usize;
                 if let Some(&source_line) = app.detail.row_to_source.get(content_row) {
                     app.toggle_detail_fold(source_line);
                 }

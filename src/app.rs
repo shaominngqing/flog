@@ -100,6 +100,8 @@ pub struct DetailState {
     pub row_to_source: Vec<usize>,
     /// Set of source line indices that ARE foldable (have a matching close bracket).
     pub foldable: std::collections::HashSet<usize>,
+    /// Number of header lines in the detail panel (set by renderer).
+    pub header_lines: usize,
 }
 
 
