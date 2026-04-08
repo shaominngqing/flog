@@ -11,6 +11,10 @@
 
 **给 Flutter 开发者的终端日志查看器。**
 
+![日志列表](docs/screenshot-list.png)
+
+![详情面板](docs/screenshot-detail.png)
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
 ```
