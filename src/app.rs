@@ -1,0 +1,676 @@
+//! Application state machine.
+
+use std::collections::BTreeSet;
+use std::time::Instant;
+
+use crate::domain::{FilterState, LogEntry, LogLevel, LogStore, ParseResult};
+use crate::input::adb::AdbDevice;
+use crate::input::discover::DiscoveredService;
+use crate::parser::MultiStrategyParser;
+
+// ── Mode ──
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppMode {
+    Normal,
+    Search,
+    TagFilter,
+    Help,
+    Stats,
+    SourceSelect,
+}
+
+// ── Sub-state structs ──
+
+/// Search input and match tracking.
+#[derive(Default)]
+pub struct SearchState {
+    pub input: String,
+    pub matches: Vec<usize>,
+    pub match_idx: usize,
+}
+
+
+/// Tag filter input buffer.
+#[derive(Default)]
+pub struct TagFilterInput {
+    pub input: String,
+}
+
+
+/// Source selection state.
+#[derive(Clone)]
+pub enum SourceSelectPhase {
+    ChooseType,
+    ScanningVm,
+    PickVmService(Vec<DiscoveredService>),
+    ScanningAdb,
+    PickAdbDevice(Vec<AdbDevice>),
+}
+
+#[derive(Default)]
+pub struct SourceSelectState {
+    pub phase: Option<SourceSelectPhase>,
+    pub selected_idx: usize,
+    pub items_count: usize,
+}
+
+/// Command sent from UI to the source manager task.
+pub enum SourceCommand {
+    ConnectVm(String),
+    ConnectAdb(Option<String>),
+    AutoDiscover,
+    ShowSourceSelect,
+}
+
+/// Tracks the type of source so we know which scanning phase to return to.
+#[derive(Clone)]
+pub enum LastSourceType {
+    Vm,
+    Adb,
+}
+
+/// Snapshot of statistics data (computed once on Stats entry).
+pub struct StatsSnapshot {
+    pub level_counts: Vec<(LogLevel, u64)>,
+    pub tag_ranking: Vec<(String, usize)>,
+    pub total: usize,
+    pub filtered: usize,
+}
+
+/// Source dropdown state (WiFi-like picker while connected).
+#[derive(Default)]
+pub struct SourceDropdownState {
+    pub tab: usize,    // 0=VM, 1=ADB
+    pub selected: usize,
+    pub scroll_offset: usize,
+    pub discovered_vm: Vec<DiscoveredService>,
+    pub discovered_adb: Vec<AdbDevice>,
+    pub scanning: bool,
+}
+
+/// Detail view state.
+#[derive(Default)]
+pub struct DetailState {
+    pub scroll: usize,
+    /// Set of source line indices that are collapsed.
+    pub collapsed: std::collections::HashSet<usize>,
+    pub total_lines: usize,
+    /// Maps display row → source line index.
+    pub row_to_source: Vec<usize>,
+    /// Set of source line indices that ARE foldable (have a matching close bracket).
+    pub foldable: std::collections::HashSet<usize>,
+}
+
+
+/// UI layout coordinate cache (written by renderer, read by event handler).
+#[derive(Default)]
+pub struct LayoutCache {
+    pub toolbar_y: u16,
+    pub list_y: u16,
+    pub list_height: u16,
+    pub bottom_y: u16,
+    pub timeline_y: u16,
+    pub search_x: (u16, u16),
+    pub filter_x: (u16, u16),
+    pub levels_x: u16,
+    pub bottom_buttons: Vec<(&'static str, u16, u16)>,
+    pub width: u16,
+    pub last_click: Option<(Instant, u16, u16)>,
+    /// Maps each display row (0-based within list area) to a filtered index.
+    /// Built during rendering, used by mouse click handler.
+    pub row_to_filtered_idx: Vec<usize>,
+    /// True if the last render showed the final filtered entry.
+    pub rendered_to_end: bool,
+    /// X-range of the source info text in the status bar (clickable for reconnect).
+    pub source_info_x: (u16, u16),
+    /// Number of unique filtered entries that were actually visible in the last render.
+    /// Accounts for variable-height entries (wrap, separators, extra_lines).
+    pub visible_entry_count: usize,
+    /// Clickable item regions in the source select UI: (y, x_start, x_end, item_index).
+    pub source_select_items: Vec<(u16, u16, u16, usize)>,
+    /// The bounding rect of the source dropdown overlay (for click-outside-to-close).
+    pub dropdown_rect: Option<(u16, u16, u16, u16)>, // (x, y, w, h)
+    /// Clickable item regions in the dropdown: (y, x_start, x_end, item_index).
+    pub dropdown_items: Vec<(u16, u16, u16, usize)>,
+    /// Y position of the tab row in the dropdown (for click-to-switch-tab).
+    pub dropdown_tab_row: Option<(u16, u16, u16, u16)>, // (y, vm_x_end, adb_x_start, adb_x_end)
+}
+
+// ── App ──
+
+pub struct App {
+    // Core
+    pub store: LogStore,
+    pub filter: FilterState,
+    parser: MultiStrategyParser,
+
+    // Navigation
+    pub mode: AppMode,
+    pub should_quit: bool,
+    pub selected: usize,
+    pub scroll_offset: usize,
+    pub show_detail_panel: bool,
+    pub show_source_dropdown: bool,
+    pub dropdown_scan_requested: bool,
+    pub dropdown: SourceDropdownState,
+    pub detail_panel_pct: u16,     // detail panel width percentage (20-60)
+
+    // Sub-states
+    pub search: SearchState,
+    pub tag_filter: TagFilterInput,
+    pub detail: DetailState,
+    pub bookmarks: BTreeSet<usize>,
+    pub source_select: SourceSelectState,
+
+    // Source management
+    pub source_name: String,
+    pub status_message: Option<(String, u64)>, // (message, expire_tick)
+    pub connected: bool,
+    pub source_command_tx: Option<tokio::sync::mpsc::UnboundedSender<SourceCommand>>,
+    /// Tracks how the current/last connection was established, so we can
+    /// return to the correct scanning phase on disconnect.
+    pub last_source_type: Option<LastSourceType>,
+
+    // UI
+    pub layout: LayoutCache,
+    pub tick: u64,
+    pub stats_snapshot: Option<StatsSnapshot>,
+
+    // Scroll
+    pub auto_scroll: bool,
+    pub new_logs_since_pause: usize,
+
+    // Internal
+    filtered_indices: Vec<usize>,
+    filter_dirty: bool,
+}
+
+impl App {
+    pub fn new() -> Self {
+        Self {
+            store: LogStore::new(),
+            filter: FilterState::default(),
+            parser: MultiStrategyParser::default_chain(),
+            mode: AppMode::Normal,
+            should_quit: false,
+            selected: 0,
+            scroll_offset: 0,
+            show_detail_panel: false,
+            show_source_dropdown: false,
+            dropdown_scan_requested: false,
+            dropdown: SourceDropdownState::default(),
+            detail_panel_pct: 35,
+            search: SearchState::default(),
+            tag_filter: TagFilterInput::default(),
+            detail: DetailState::default(),
+            bookmarks: BTreeSet::new(),
+            source_select: SourceSelectState::default(),
+            source_name: String::new(),
+            status_message: None,
+            connected: false,
+            source_command_tx: None,
+            last_source_type: None,
+            layout: LayoutCache::default(),
+            tick: 0,
+            stats_snapshot: None,
+            auto_scroll: true,
+            new_logs_since_pause: 0,
+            filtered_indices: Vec::new(),
+            filter_dirty: true,
+        }
+    }
+
+    // ── Data Input ──
+
+    pub fn add_raw_line(&mut self, raw: &str) {
+        self.add_raw_line_with_timestamp(raw, "");
+    }
+
+    pub fn add_raw_line_with_timestamp(&mut self, raw: &str, timestamp: &str) {
+        match self.parser.parse(raw) {
+            ParseResult::NewEntry(mut entry) => {
+                if entry.timestamp.is_empty() && !timestamp.is_empty() {
+                    entry.timestamp = timestamp.to_string();
+                }
+                self.add_entry(entry);
+            }
+            ParseResult::Continuation(content) => {
+                self.store.append_continuation(content);
+                self.filter_dirty = true;
+            }
+            ParseResult::Ignored => {}
+        }
+    }
+
+    pub fn add_entry(&mut self, entry: LogEntry) {
+        self.connected = true;
+
+        let drained = self.store.add_entry(entry);
+        if drained > 0 {
+            let new: BTreeSet<usize> = self.bookmarks.iter()
+                .filter_map(|&idx| idx.checked_sub(drained))
+                .collect();
+            self.bookmarks = new;
+            // Index-space shift, not viewport computation — indices moved, so offset must follow.
+            self.scroll_offset = self.scroll_offset.saturating_sub(drained);
+            self.selected = self.selected.saturating_sub(drained);
+        }
+        self.filter_dirty = true;
+
+        // Don't compute scroll positions here — the renderer will handle it.
+        // Just track whether we should auto-scroll or count missed entries.
+        if !self.auto_scroll {
+            self.new_logs_since_pause += 1;
+        }
+    }
+
+    // ── Filter ──
+
+    pub fn filtered_indices(&mut self) -> &[usize] {
+        if self.filter_dirty { self.rebuild_filter(); }
+        &self.filtered_indices
+    }
+
+    pub fn filtered_count(&mut self) -> usize {
+        if self.filter_dirty { self.rebuild_filter(); }
+        self.filtered_indices.len()
+    }
+
+    fn rebuild_filter(&mut self) {
+        self.filtered_indices.clear();
+        for (i, entry) in self.store.iter().enumerate() {
+            if self.filter.matches(entry) {
+                self.filtered_indices.push(i);
+            }
+        }
+        self.filter_dirty = false;
+
+        // Clamp selected to valid range (scroll_offset is clamped by the renderer)
+        let len = self.filtered_indices.len();
+        if len == 0 {
+            self.selected = 0;
+            self.scroll_offset = 0;
+        } else if !self.auto_scroll {
+            self.selected = self.selected.min(len - 1);
+        }
+        // When auto_scroll is true, the renderer will set selected & scroll_offset.
+
+        // Rebuild search matches
+        self.search.matches.clear();
+        if !self.filter.search_query.is_empty() {
+            for (fi, &store_idx) in self.filtered_indices.iter().enumerate() {
+                if let Some(entry) = self.store.get(store_idx) {
+                    if !self.filter.search_positions(&entry.full_message()).is_empty()
+                        || !self.filter.search_positions(&entry.tag).is_empty()
+                    {
+                        self.search.matches.push(fi);
+                    }
+                }
+            }
+        }
+        if self.search.matches.is_empty() {
+            self.search.match_idx = 0;
+        } else {
+            self.search.match_idx = self.search.match_idx.min(self.search.matches.len() - 1);
+        }
+    }
+
+    pub fn invalidate_filter(&mut self) {
+        self.filter_dirty = true;
+    }
+
+    // ── Navigation ──
+    //
+    // These methods set scroll *intent*. The renderer is the single authority
+    // that resolves the actual viewport position each frame, because only the
+    // renderer knows how many terminal rows each entry occupies.
+
+    /// Scroll viewport up by n entries.
+    pub fn move_up(&mut self, n: usize) {
+        self.auto_scroll = false;
+        self.scroll_offset = self.scroll_offset.saturating_sub(n);
+        self.selected = self.selected.saturating_sub(n);
+    }
+
+    /// Scroll viewport down by n entries.
+    pub fn move_down(&mut self, n: usize) {
+        let len = self.filtered_count();
+        if len == 0 { return; }
+        self.scroll_offset = (self.scroll_offset + n).min(len.saturating_sub(1));
+        self.selected = (self.selected + n).min(len - 1);
+        // The renderer will fine-tune scroll_offset and detect if we hit bottom.
+    }
+
+    /// Move selection up (keyboard k/Up), viewport follows if needed.
+    pub fn select_up(&mut self, n: usize) {
+        self.auto_scroll = false;
+        self.selected = self.selected.saturating_sub(n);
+        if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        }
+    }
+
+    /// Move selection down (keyboard j/Down), viewport follows if needed.
+    pub fn select_down(&mut self, n: usize) {
+        let len = self.filtered_count();
+        if len == 0 { return; }
+        self.selected = (self.selected + n).min(len - 1);
+        // Viewport adjustment is done by the renderer (it knows the real capacity).
+    }
+
+    pub fn go_top(&mut self) {
+        self.auto_scroll = false;
+        self.selected = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn go_bottom(&mut self) {
+        self.auto_scroll = true;
+        self.new_logs_since_pause = 0;
+        // The renderer will snap to bottom on next frame.
+    }
+
+    // ── Level ──
+
+    pub fn set_level(&mut self, level: LogLevel) {
+        self.filter.min_level = level;
+        self.invalidate_filter();
+    }
+
+    // ── Search ──
+
+    pub fn enter_search(&mut self) {
+        self.mode = AppMode::Search;
+        self.search.input = self.filter.search_query.clone();
+        self.layout.last_click = None;
+    }
+
+    pub fn apply_search(&mut self) {
+        self.filter.set_search(&self.search.input);
+        self.mode = AppMode::Normal;
+        self.invalidate_filter();
+        self.search.match_idx = 0;
+        self.layout.last_click = None;
+    }
+
+    pub fn cancel_search(&mut self) {
+        self.mode = AppMode::Normal;
+        self.layout.last_click = None;
+    }
+
+    pub fn next_match(&mut self) {
+        if self.search.matches.is_empty() { return; }
+        if let Some(pos) = self.search.matches.iter().position(|&m| m > self.selected) {
+            self.search.match_idx = pos;
+        } else {
+            self.search.match_idx = 0;
+        }
+        self.selected = self.search.matches[self.search.match_idx];
+        self.auto_scroll = false;
+        // Renderer will ensure selected is visible.
+    }
+
+    pub fn prev_match(&mut self) {
+        if self.search.matches.is_empty() { return; }
+        if let Some(pos) = self.search.matches.iter().rposition(|&m| m < self.selected) {
+            self.search.match_idx = pos;
+        } else {
+            self.search.match_idx = self.search.matches.len() - 1;
+        }
+        self.selected = self.search.matches[self.search.match_idx];
+        self.auto_scroll = false;
+        // Renderer will ensure selected is visible.
+    }
+
+    // ── Tag Filter ──
+
+    pub fn enter_tag_filter(&mut self) {
+        self.mode = AppMode::TagFilter;
+        let tags: Vec<String> = self.filter.tag_include.iter().cloned()
+            .chain(self.filter.tag_exclude.iter().map(|t| format!("-{}", t)))
+            .collect();
+        self.tag_filter.input = tags.join(",");
+        self.layout.last_click = None;
+    }
+
+    pub fn apply_tag_filter(&mut self) {
+        self.filter.parse_tag_filter(&self.tag_filter.input);
+        self.mode = AppMode::Normal;
+        self.invalidate_filter();
+        self.layout.last_click = None;
+    }
+
+    pub fn cancel_tag_filter(&mut self) {
+        self.mode = AppMode::Normal;
+        self.layout.last_click = None;
+    }
+
+    pub fn clear_all_filters(&mut self) {
+        self.filter.clear();
+        self.invalidate_filter();
+    }
+
+    // ── Detail ──
+
+    pub fn toggle_detail_panel(&mut self) {
+        self.show_detail_panel = !self.show_detail_panel;
+    }
+
+    pub fn reset_detail_for_selection(&mut self) {
+        self.detail.scroll = 0;
+        self.detail.collapsed.clear();
+        self.detail.row_to_source.clear();
+        self.detail.foldable.clear();
+    }
+
+    pub fn toggle_detail_fold(&mut self, source_line: usize) {
+        // Only toggle if the line is actually foldable
+        if !self.detail.foldable.contains(&source_line) {
+            return;
+        }
+        if !self.detail.collapsed.remove(&source_line) {
+            self.detail.collapsed.insert(source_line);
+        }
+    }
+
+
+    pub fn detail_scroll_up(&mut self, n: usize) {
+        self.detail.scroll = self.detail.scroll.saturating_sub(n);
+    }
+
+    pub fn detail_scroll_down(&mut self, n: usize) {
+        self.detail.scroll += n;
+    }
+
+    pub fn selected_store_index(&mut self) -> Option<usize> {
+        if self.filter_dirty { self.rebuild_filter(); }
+        self.filtered_indices.get(self.selected).copied()
+    }
+
+    // ── Stats ──
+
+    fn compute_stats(&mut self) -> StatsSnapshot {
+        use std::collections::HashMap;
+        let mut level_map: HashMap<LogLevel, u64> = HashMap::new();
+        let mut tag_map: HashMap<String, usize> = HashMap::new();
+        for entry in self.store.iter() {
+            *level_map.entry(entry.level).or_insert(0) += 1;
+            *tag_map.entry(entry.tag.clone()).or_insert(0) += 1;
+        }
+        let level_counts = vec![
+            (LogLevel::Debug, level_map.get(&LogLevel::Debug).copied().unwrap_or(0)),
+            (LogLevel::Info, level_map.get(&LogLevel::Info).copied().unwrap_or(0)),
+            (LogLevel::Warning, level_map.get(&LogLevel::Warning).copied().unwrap_or(0)),
+            (LogLevel::Error, level_map.get(&LogLevel::Error).copied().unwrap_or(0)),
+            (LogLevel::System, level_map.get(&LogLevel::System).copied().unwrap_or(0)),
+        ];
+        let mut tag_ranking: Vec<(String, usize)> = tag_map.into_iter().collect();
+        tag_ranking.sort_by(|a, b| b.1.cmp(&a.1));
+        StatsSnapshot {
+            level_counts,
+            tag_ranking,
+            total: self.store.len(),
+            filtered: self.filtered_count(),
+        }
+    }
+
+    // ── Bookmarks ──
+
+    pub fn toggle_bookmark(&mut self) {
+        if let Some(idx) = self.selected_store_index() {
+            if !self.bookmarks.remove(&idx) {
+                self.bookmarks.insert(idx);
+            }
+        }
+    }
+
+    pub fn is_bookmarked(&self, store_idx: usize) -> bool {
+        self.bookmarks.contains(&store_idx)
+    }
+
+    // ── Mode switches ──
+
+    pub fn enter_help(&mut self) { self.mode = AppMode::Help; self.layout.last_click = None; }
+    pub fn exit_help(&mut self) { self.mode = AppMode::Normal; self.layout.last_click = None; }
+    pub fn enter_stats(&mut self) {
+        self.mode = AppMode::Stats;
+        self.layout.last_click = None;
+        // Snapshot stats on entry to prevent flickering from live data changes
+        self.stats_snapshot = Some(self.compute_stats());
+    }
+    pub fn exit_stats(&mut self) {
+        self.mode = AppMode::Normal;
+        self.layout.last_click = None;
+        self.stats_snapshot = None;
+    }
+
+    pub fn exit_source_select(&mut self) {
+        self.mode = AppMode::Normal;
+        self.source_select.phase = None;
+        self.show_source_dropdown = false;
+    }
+
+    /// Enter SourceSelect scanning phase after a disconnect.
+    /// Returns to the correct scanning animation (radar for VM, phone for ADB)
+    /// based on the last connection type.
+    pub fn enter_scanning_on_disconnect(&mut self) {
+        self.connected = false;
+        self.show_source_dropdown = false;
+        self.mode = AppMode::SourceSelect;
+        self.source_select.selected_idx = 0;
+        match &self.last_source_type {
+            Some(LastSourceType::Vm) => {
+                self.source_select.phase = Some(SourceSelectPhase::ScanningVm);
+            }
+            Some(LastSourceType::Adb) => {
+                self.source_select.phase = Some(SourceSelectPhase::ScanningAdb);
+            }
+            None => {
+                // Fallback to choose type
+                self.source_select.phase = Some(SourceSelectPhase::ChooseType);
+                self.source_select.items_count = 2;
+            }
+        }
+    }
+
+    /// Toggle the source dropdown overlay (used while connected).
+    pub fn toggle_source_dropdown(&mut self) {
+        self.show_source_dropdown = !self.show_source_dropdown;
+        if self.show_source_dropdown {
+            self.dropdown.selected = 0;
+            self.dropdown.scroll_offset = 0;
+            self.dropdown.scanning = true;
+            self.dropdown.discovered_vm.clear();
+            self.dropdown.discovered_adb.clear();
+        }
+    }
+
+    pub fn send_source_command(&self, cmd: SourceCommand) {
+        if let Some(tx) = &self.source_command_tx {
+            let _ = tx.send(cmd);
+        }
+    }
+
+    // ── Clear & Separator ──
+
+    /// Clear all logs.
+    pub fn clear_logs(&mut self) {
+        self.store = LogStore::new();
+        self.bookmarks.clear();
+        self.selected = 0;
+        self.scroll_offset = 0;
+        self.auto_scroll = true;
+        self.new_logs_since_pause = 0;
+        self.filter_dirty = true;
+        self.show_status("Cleared".to_string());
+    }
+
+    /// Insert a visual separator line into the log stream.
+    pub fn insert_separator(&mut self) {
+        let now = timestamp_for_filename();
+        let entry = LogEntry {
+            timestamp: String::new(),
+            level: LogLevel::System,
+            tag: "────".to_string(),
+            message: format!("──────────────────────── {} ────────────────────────", now),
+            extra_lines: Vec::new(),
+            repeat_count: 1,
+            source: crate::domain::InputSource::Stdin,
+            error: None,
+            stacktrace: None,
+        };
+        self.add_entry(entry);
+        self.show_status("Separator added".to_string());
+    }
+
+    // ── Export ──
+
+    pub fn export_logs(&mut self) {
+        use std::io::Write;
+        if self.filter_dirty { self.rebuild_filter(); }
+
+        let now = timestamp_for_filename();
+        let filename = format!("flog_{}.log", now);
+
+        let result = (|| -> std::io::Result<usize> {
+            let mut file = std::fs::File::create(&filename)?;
+            let mut count = 0;
+            for &idx in &self.filtered_indices {
+                if let Some(entry) = self.store.get(idx) {
+                    writeln!(file, "{} | {:7} | {:14} | {}",
+                        entry.timestamp, entry.level.as_str(), entry.tag, entry.full_message())?;
+                    count += 1;
+                }
+            }
+            Ok(count)
+        })();
+
+        self.show_status(match result {
+            Ok(n) => format!("Exported {} logs to {}", n, filename),
+            Err(e) => format!("Export failed: {}", e),
+        });
+    }
+
+    /// Show a status message for ~2 seconds (60 ticks at 30fps).
+    pub fn show_status(&mut self, msg: String) {
+        self.status_message = Some((msg, self.tick + 60));
+    }
+
+    /// Check if status message has expired.
+    pub fn active_status(&self) -> Option<&str> {
+        if let Some((ref msg, expire)) = self.status_message {
+            if self.tick < expire { return Some(msg); }
+        }
+        None
+    }
+}
+
+fn timestamp_for_filename() -> String {
+    use std::time::SystemTime;
+    let secs = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format!("{:02}{:02}{:02}", (secs % 86400) / 3600, (secs % 3600) / 60, secs % 60)
+}
