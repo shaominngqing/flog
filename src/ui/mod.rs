@@ -726,22 +726,64 @@ fn entry_row_count_from_store(store: &crate::domain::LogStore, store_idx: usize,
 //  Not Connected (empty state)
 // ══════════════════════════════════════
 
-fn draw_not_connected(f: &mut Frame, _app: &mut App, area: Rect) {
-    let mid = area.height / 2;
-    let mut lines: Vec<Line> = Vec::new();
-    for _ in 0..mid.saturating_sub(2) { lines.push(Line::raw("")); }
+// ── ASCII banner ──
 
+const LOGO: [&str; 6] = [
+    r"   __ _             ",
+    r"  / _| | ___   __ _ ",
+    r" | |_| |/ _ \ / _` |",
+    r" |  _| | (_) | (_| |",
+    r" |_| |_|\___/ \__, |",
+    r"              |___/ ",
+];
+
+/// Gradient colors: Catppuccin Macchiato blue → teal → green
+const GRAD: [Color; 6] = [
+    Color::Rgb(138, 173, 244), // blue
+    Color::Rgb(125, 196, 228), // sapphire
+    Color::Rgb(139, 213, 202), // teal
+    Color::Rgb(166, 218, 149), // green
+    Color::Rgb(139, 213, 202), // teal
+    Color::Rgb(125, 196, 228), // sapphire
+];
+
+fn gradient_line(text: &str) -> Line<'static> {
+    let spans: Vec<Span<'static>> = text
+        .chars()
+        .enumerate()
+        .map(|(i, ch)| {
+            let color = GRAD[i % GRAD.len()];
+            Span::styled(
+                ch.to_string(),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            )
+        })
+        .collect();
+    Line::from(spans)
+}
+
+fn logo_lines() -> Vec<Line<'static>> {
+    LOGO.iter().map(|l| gradient_line(l)).collect()
+}
+
+fn draw_not_connected(f: &mut Frame, _app: &mut App, area: Rect) {
+    let logo_h = LOGO.len() as u16 + 4; // logo + spacing + text
+    let start_y = area.height.saturating_sub(logo_h) / 2;
+
+    let mut lines: Vec<Line> = Vec::new();
+    for _ in 0..start_y { lines.push(Line::raw("")); }
+
+    for logo_line in logo_lines() {
+        lines.push(logo_line);
+    }
+    lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
-        "          \u{25cb}",  // ○ circle
-        Style::default().fg(SURFACE1),
+        "   Flutter Log Viewer",
+        Style::default().fg(OVERLAY0),
     )));
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
-        "    Not connected",
-        Style::default().fg(OVERLAY0),
-    )));
-    lines.push(Line::from(Span::styled(
-        "    Select a source to begin",
+        "   Select a source to begin",
         Style::default().fg(SURFACE1),
     )));
 
@@ -750,31 +792,31 @@ fn draw_not_connected(f: &mut Frame, _app: &mut App, area: Rect) {
 
 fn draw_waiting_for_logs(f: &mut Frame, app: &mut App, area: Rect) {
     let tick = app.tick;
-    let mid = area.height / 2;
-
-    // Animated wave pattern
-    let wave_w = area.width as usize;
-    let mut wave_chars = String::with_capacity(wave_w);
-    let waves = ['·', '·', '∘', '○', '◌', '○', '∘', '·'];
-    for i in 0..wave_w {
-        let phase = ((i as f64 * 0.3) + (tick as f64 * 0.2)) as usize;
-        wave_chars.push(waves[phase % waves.len()]);
-    }
+    let logo_h = LOGO.len() as u16 + 5;
+    let start_y = area.height.saturating_sub(logo_h) / 2;
 
     let spinner = match (tick / 5) % 8 {
         0 => "⣾", 1 => "⣽", 2 => "⣻", 3 => "⢿", 4 => "⡿", 5 => "⣟", 6 => "⣯", _ => "⣷",
     };
 
+    let dots = ".".repeat(((tick / 10) % 4) as usize);
+
     let mut lines: Vec<Line> = Vec::new();
-    for _ in 0..mid.saturating_sub(3) { lines.push(Line::raw("")); }
-    lines.push(Line::from(Span::styled(&wave_chars, Style::default().fg(SURFACE0).bg(BASE))));
+    for _ in 0..start_y { lines.push(Line::raw("")); }
+
+    for logo_line in logo_lines() {
+        lines.push(logo_line);
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(
+        "   Flutter Log Viewer",
+        Style::default().fg(OVERLAY0),
+    )));
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
-        Span::styled(format!("  {} ", spinner), Style::default().fg(BLUE)),
-        Span::styled("Waiting for logs...", Style::default().fg(SUBTEXT0)),
+        Span::styled(format!("   {} ", spinner), Style::default().fg(BLUE)),
+        Span::styled(format!("Waiting for logs{:<3}", dots), Style::default().fg(SUBTEXT0)),
     ]));
-    lines.push(Line::raw(""));
-    lines.push(Line::from(Span::styled(&wave_chars, Style::default().fg(SURFACE0).bg(BASE))));
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }
