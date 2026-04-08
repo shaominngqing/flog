@@ -5,8 +5,13 @@
 A terminal-native, cross-platform, intelligent log viewer for Flutter developers. One command. Zero config.
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
+```
+
+Or via Cargo:
+
+```bash
 cargo install flog
-flog
 ```
 
 ## Features

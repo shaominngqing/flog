@@ -5,8 +5,13 @@
 终端原生、跨平台、智能的 Flutter 日志查看器。一条命令，零配置。
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
+```
+
+或通过 Cargo：
+
+```bash
 cargo install flog
-flog
 ```
 
 ## 为什么需要 flog
