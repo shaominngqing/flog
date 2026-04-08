@@ -38,8 +38,8 @@ pub async fn find_all_vm_services() -> Vec<DiscoveredService> {
             let http_url = rest[..url_end].trim_end_matches('/');
 
             if http_url.starts_with("http://127.0.0.1:") {
-                // Only connect via DDS proxy (302 redirect). If DDS isn't ready
-                // yet, skip — the outer scan loop will retry in ~400ms.
+                // Only connect via DDS proxy to avoid blocking flutter run.
+                // If DDS isn't ready yet, skip — outer scan loop retries in 100ms.
                 if let Some(url) = resolve_dds_url(http_url).await {
                     let ws_url = format!("{}ws", url.replace("http://", "ws://"));
                     let name = query_vm_name(&url).await;
@@ -57,7 +57,12 @@ pub async fn find_vm_service() -> Option<DiscoveredService> {
     find_all_vm_services().await.into_iter().next()
 }
 
-/// Follow the 302 redirect from the underlying VM Service to get the DDS proxy URL.
+/// Discover the DDS proxy WebSocket URL by hitting the original VM Service root path.
+///
+/// When DDS is active, `GET /TOKEN=/` returns a 302 with a location like:
+///   `http://127.0.0.1:PORT/DDS_TOKEN=/devtools/?uri=ws://127.0.0.1:PORT/DDS_TOKEN=/ws`
+///
+/// We extract the `ws://` URL from the `uri=` query parameter.
 async fn resolve_dds_url(underlying_http_url: &str) -> Option<String> {
     let host_port = underlying_http_url
         .strip_prefix("http://")?
@@ -65,7 +70,12 @@ async fn resolve_dds_url(underlying_http_url: &str) -> Option<String> {
         .next()?;
     let path = underlying_http_url
         .strip_prefix(&format!("http://{}", host_port))?;
-    let ws_path = format!("{}/ws", path.trim_end_matches('/'));
+    // Keep trailing slash — the VM Service only 302s on the exact path with `/`
+    let root_path = if path.ends_with('/') {
+        path.to_string()
+    } else {
+        format!("{}/", path)
+    };
 
     let mut stream = timeout(
         Duration::from_millis(300),
@@ -77,7 +87,7 @@ async fn resolve_dds_url(underlying_http_url: &str) -> Option<String> {
 
     let req = format!(
         "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-        ws_path, host_port,
+        root_path, host_port,
     );
     stream.write_all(req.as_bytes()).await.ok()?;
 
@@ -94,11 +104,34 @@ async fn resolve_dds_url(underlying_http_url: &str) -> Option<String> {
 
     for line in resp.lines() {
         let lower = line.to_lowercase();
-        if lower.starts_with("location:") {
-            let location = line["location:".len()..].trim().to_string();
-            if location.starts_with("http://") {
-                return Some(location);
+        if !lower.starts_with("location:") {
+            continue;
+        }
+        let location = line["location:".len()..].trim();
+
+        // Extract ws:// URL from uri= query parameter
+        if let Some(uri_start) = location.find("uri=ws") {
+            let ws_part = &location[uri_start + 4..]; // skip "uri="
+            let ws_url = ws_part.split('&').next().unwrap_or(ws_part);
+            // URL-decode: %3A -> :, %2F -> /
+            let decoded = ws_url
+                .replace("%3A", ":").replace("%3a", ":")
+                .replace("%2F", "/").replace("%2f", "/")
+                .replace("%3D", "=").replace("%3d", "=");
+            if decoded.starts_with("ws://") {
+                // Return the base URL (strip /ws suffix, we add it later)
+                let base = decoded.trim_end_matches("/ws").trim_end_matches('/');
+                return Some(format!("{}/", base.replace("ws://", "http://")));
             }
+        }
+
+        // Fallback: location itself is the DDS HTTP URL
+        if location.starts_with("http://") {
+            // Extract base URL (before /devtools or any path)
+            if let Some(token_end) = location.find("/devtools") {
+                return Some(location[..token_end].to_string() + "/");
+            }
+            return Some(location.to_string());
         }
     }
 

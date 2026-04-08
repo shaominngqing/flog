@@ -1,8 +1,12 @@
-//! Parser for the AuraLogger format (flog's own structured output).
+//! Parser for the AuraLogger format.
 //!
-//! Recognizes lines like:
-//!   `I/flutter (PID): HH:MM:SS.mmm │ LEVEL │ Tag │ message`
-//!   `I/flutter (PID):              │       │     │   continuation`
+//! Recognizes two formats:
+//!   1. Bracket: `[LEVEL][Tag] message`       (via print / stdout)
+//!   2. Pipe:    `HH:MM:SS.mmm │ LEVEL │ Tag │ message`  (legacy)
+//!
+//! Both may be wrapped in a Flutter prefix:
+//!   `I/flutter (PID): [INFO][Network] ...`
+//!   `flutter: [DEBUG][GoalRepo] ...`
 
 use regex::Regex;
 use std::sync::LazyLock;
@@ -18,18 +22,23 @@ static ANSI_RE: LazyLock<Regex> =
 static FLUTTER_PREFIX_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:I/flutter\s*\(\s*\d+\)|flutter):\s?(.*)$").unwrap());
 
-static HEADER_RE: LazyLock<Regex> = LazyLock::new(|| {
+/// Bracket format: `[LEVEL][Tag] message`
+static BRACKET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\[(\w+)\]\[([^\]]+)\]\s?(.*)$").unwrap()
+});
+
+/// Pipe format: `HH:MM:SS.mmm │ LEVEL │ Tag │ message`
+static PIPE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(\d{2}:\d{2}:\d{2}\.\d{3})\s*│\s*(\w+)\s*│\s*(\S.*?)\s*│\s?(.*)$").unwrap()
 });
 
-static CONT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\s+│\s+│\s+│\s*(.*)$").unwrap());
-
 /// Extracts the Flutter payload from a logcat line, stripping ANSI codes.
-fn extract_flutter_content(line: &str) -> Option<String> {
-    let caps = FLUTTER_PREFIX_RE.captures(line)?;
-    let raw = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-    Some(ANSI_RE.replace_all(raw, "").to_string())
+fn extract_content(line: &str) -> String {
+    let raw = match FLUTTER_PREFIX_RE.captures(line) {
+        Some(caps) => caps.get(1).map(|m| m.as_str()).unwrap_or(""),
+        None => line,
+    };
+    ANSI_RE.replace_all(raw, "").to_string()
 }
 
 pub struct AuraLoggerParser;
@@ -40,34 +49,51 @@ impl LogLineParser for AuraLoggerParser {
     }
 
     fn try_parse(&self, line: &str) -> Option<LogEntry> {
-        // Try with flutter prefix first (ADB logcat), then raw line (VM Service stdout)
-        let content = extract_flutter_content(line)
-            .unwrap_or_else(|| ANSI_RE.replace_all(line, "").to_string());
-        let caps = HEADER_RE.captures(&content)?;
+        let content = extract_content(line);
 
-        let timestamp = caps.get(1)?.as_str().to_string();
-        let level = LogLevel::from_str(caps.get(2)?.as_str()).unwrap_or(LogLevel::Debug);
-        let tag = caps.get(3)?.as_str().trim().to_string();
-        let message = caps.get(4)?.as_str().to_string();
+        // Try bracket format first: [LEVEL][Tag] message
+        if let Some(caps) = BRACKET_RE.captures(&content) {
+            let level = LogLevel::from_str(caps.get(1)?.as_str()).unwrap_or(LogLevel::Debug);
+            let tag = caps.get(2)?.as_str().trim().to_string();
+            let message = caps.get(3)?.as_str().to_string();
+            return Some(LogEntry {
+                timestamp: String::new(),
+                level,
+                tag,
+                message,
+                extra_lines: Vec::new(),
+                repeat_count: 1,
+                source: InputSource::Adb,
+                error: None,
+                stacktrace: None,
+            });
+        }
 
-        Some(LogEntry {
-            timestamp,
-            level,
-            tag,
-            message,
-            extra_lines: Vec::new(),
-            repeat_count: 1,
-            source: InputSource::Adb,
-            error: None,
-            stacktrace: None,
-        })
+        // Try pipe format: HH:MM:SS.mmm │ LEVEL │ Tag │ message
+        if let Some(caps) = PIPE_RE.captures(&content) {
+            let timestamp = caps.get(1)?.as_str().to_string();
+            let level = LogLevel::from_str(caps.get(2)?.as_str()).unwrap_or(LogLevel::Debug);
+            let tag = caps.get(3)?.as_str().trim().to_string();
+            let message = caps.get(4)?.as_str().to_string();
+            return Some(LogEntry {
+                timestamp,
+                level,
+                tag,
+                message,
+                extra_lines: Vec::new(),
+                repeat_count: 1,
+                source: InputSource::Adb,
+                error: None,
+                stacktrace: None,
+            });
+        }
+
+        None
     }
 
-    fn try_continuation(&self, line: &str) -> Option<String> {
-        let content = extract_flutter_content(line)
-            .unwrap_or_else(|| ANSI_RE.replace_all(line, "").to_string());
-        let caps = CONT_RE.captures(&content)?;
-        Some(caps.get(1)?.as_str().to_string())
+    fn try_continuation(&self, _line: &str) -> Option<String> {
+        // No continuation — every AuraLogger line is self-contained
+        None
     }
 }
 
@@ -76,7 +102,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_header() {
+    fn parse_bracket_with_flutter_prefix() {
+        let p = AuraLoggerParser;
+        let line = "I/flutter (14114): [INFO][Network] → GET /api/scene-types";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Info);
+        assert_eq!(entry.tag, "Network");
+        assert!(entry.message.contains("GET"));
+    }
+
+    #[test]
+    fn parse_bracket_raw() {
+        let p = AuraLoggerParser;
+        let line = "[DEBUG][GoalRepo] Loaded 42 scene types";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Debug);
+        assert_eq!(entry.tag, "GoalRepo");
+        assert!(entry.message.contains("42"));
+    }
+
+    #[test]
+    fn parse_bracket_vm_service_stdout() {
+        let p = AuraLoggerParser;
+        let line = "flutter: [WARNING][SessionCoord] GoAway received";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Warning);
+        assert_eq!(entry.tag, "SessionCoord");
+    }
+
+    #[test]
+    fn parse_pipe_format() {
         let p = AuraLoggerParser;
         let line = "I/flutter (14114): 18:05:26.675 │ INFO    │ Network        │ → GET /api/scene-types";
         let entry = p.try_parse(line).unwrap();
@@ -84,14 +139,6 @@ mod tests {
         assert_eq!(entry.level, LogLevel::Info);
         assert_eq!(entry.tag, "Network");
         assert!(entry.message.contains("GET"));
-    }
-
-    #[test]
-    fn parse_continuation() {
-        let p = AuraLoggerParser;
-        let line = "I/flutter (14114):              │         │                │   query: {_productId: 66000001}";
-        let cont = p.try_continuation(line).unwrap();
-        assert!(cont.contains("query"));
     }
 
     #[test]
@@ -103,7 +150,7 @@ mod tests {
     #[test]
     fn strips_ansi() {
         let p = AuraLoggerParser;
-        let line = "I/flutter (14114): \x1b[34m18:05:26.675 │ INFO    │ Network        │ test\x1b[0m";
+        let line = "I/flutter (14114): \x1b[34m[INFO][Network] test\x1b[0m";
         let entry = p.try_parse(line).unwrap();
         assert_eq!(entry.tag, "Network");
     }
