@@ -241,7 +241,21 @@ impl App {
                 self.store.append_continuation(content);
                 self.filter_dirty = true;
             }
-            ParseResult::Ignored => {}
+            ParseResult::Ignored => {
+                // Never drop a line — show as SYSTEM level
+                let trimmed = raw.trim();
+                if !trimmed.is_empty() {
+                    let mut entry = LogEntry::new(
+                        crate::domain::LogLevel::System,
+                        "App",
+                        trimmed,
+                    );
+                    if !timestamp.is_empty() {
+                        entry.timestamp = timestamp.to_string();
+                    }
+                    self.add_entry(entry);
+                }
+            }
         }
     }
 
