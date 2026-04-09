@@ -3,10 +3,52 @@
 use std::collections::BTreeSet;
 use std::time::Instant;
 
+use regex::Regex;
+
 use crate::domain::{FilterState, LogEntry, LogLevel, LogStore, ParseResult};
 use crate::input::adb::AdbDevice;
 use crate::input::discover::DiscoveredService;
 use crate::parser::MultiStrategyParser;
+
+/// Infer tag and level from unrecognized raw text content.
+fn infer_system_tag(text: &str) -> (LogLevel, &'static str) {
+    static EXCEPTION_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"(?i)══.*exception|exception caught|thrown").unwrap()
+    });
+    static STACKTRACE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"^#\d+\s+").unwrap()
+    });
+
+    let trimmed = text.trim_start();
+
+    // Flutter framework exception output
+    if trimmed.starts_with('═')
+        || EXCEPTION_RE.is_match(trimmed)
+        || trimmed.starts_with("Handler:")
+        || trimmed.starts_with("Recognizer:")
+        || trimmed.starts_with("The following")
+        || trimmed.starts_with("When the exception")
+    {
+        return (LogLevel::Error, "Flutter");
+    }
+
+    // Dart stacktrace
+    if STACKTRACE_RE.is_match(trimmed)
+        || trimmed.starts_with("(elided")
+    {
+        return (LogLevel::Error, "Stacktrace");
+    }
+
+    // Dart/Flutter assertion
+    if trimmed.starts_with("Failed assertion")
+        || trimmed.starts_with("'package:")
+    {
+        return (LogLevel::Error, "Assert");
+    }
+
+    // General stdout — likely print() or debugPrint()
+    (LogLevel::System, "stdout")
+}
 
 // ── Mode ──
 
@@ -242,14 +284,11 @@ impl App {
                 self.filter_dirty = true;
             }
             ParseResult::Ignored => {
-                // Never drop a line — show as SYSTEM level
+                // Never drop a line — show as SYSTEM with tag inferred from content
                 let trimmed = raw.trim();
                 if !trimmed.is_empty() {
-                    let mut entry = LogEntry::new(
-                        crate::domain::LogLevel::System,
-                        "App",
-                        trimmed,
-                    );
+                    let (level, tag) = infer_system_tag(trimmed);
+                    let mut entry = LogEntry::new(level, tag, trimmed);
                     if !timestamp.is_empty() {
                         entry.timestamp = timestamp.to_string();
                     }
