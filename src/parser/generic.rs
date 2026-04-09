@@ -22,6 +22,11 @@ static EXCEPTION_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"══+╡\s*EXCEPTION\s*╞══+").unwrap()
 });
 
+/// Dart stacktrace frame: `#N  ClassName.method (package:...)`
+static STACKTRACE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^#\d+\s+").unwrap()
+});
+
 /// `I/flutter (PID): content` or `flutter: content` — main Flutter output
 static FLUTTER_PLAIN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:I/flutter\s*\(\s*\d+\)|flutter):\s?(.*)$").unwrap());
@@ -42,19 +47,47 @@ impl LogLineParser for GenericParser {
     }
 
     fn try_parse(&self, line: &str) -> Option<LogEntry> {
-        // Flutter exception block
-        if EXCEPTION_RE.is_match(line) {
+        let stripped = ANSI_RE.replace_all(line, "");
+        let clean = stripped.as_ref();
+
+        // Flutter exception block (works with or without flutter: prefix)
+        if EXCEPTION_RE.is_match(clean) {
             return Some(LogEntry {
                 timestamp: String::new(),
                 level: LogLevel::Error,
                 tag: "Flutter".to_string(),
-                message: line.to_string(),
+                message: clean.to_string(),
                 extra_lines: Vec::new(),
                 repeat_count: 1,
                 source: InputSource::Adb,
                 error: None,
                 stacktrace: None,
             });
+        }
+
+        // Flutter exception related lines: decoration, stacktrace, assertion messages
+        {
+            let trimmed = clean.trim_start();
+            if trimmed.starts_with('═')
+                || trimmed.starts_with("Handler:")
+                || trimmed.starts_with("Recognizer:")
+                || trimmed.starts_with("The following")
+                || trimmed.starts_with("When the exception")
+                || trimmed.starts_with("Failed assertion:")
+                || STACKTRACE_RE.is_match(trimmed)
+            {
+                return Some(LogEntry {
+                    timestamp: String::new(),
+                    level: LogLevel::Error,
+                    tag: "Flutter".to_string(),
+                    message: clean.to_string(),
+                    extra_lines: Vec::new(),
+                    repeat_count: 1,
+                    source: InputSource::Adb,
+                    error: None,
+                    stacktrace: None,
+                });
+            }
         }
 
         // Path 1: `I/flutter (PID): content` — main Flutter output
