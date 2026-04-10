@@ -702,6 +702,13 @@ fn handle_overlay_mouse(app: &mut App, mouse: MouseEvent) {
 fn handle_normal_key(app: &mut App, key: KeyEvent) {
     app.status_message = None;
 
+    // Exit select mode on any key press
+    if app.select_mode {
+        app.select_mode = false;
+        app.show_status("Select mode off".to_string());
+        return;
+    }
+
     // Handle source dropdown if open
     if app.show_source_dropdown {
         match key.code {
@@ -794,6 +801,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 app.network.search_active = true;
                 app.network.search_input = app.network.filter.search.clone();
             }
+            KeyCode::Char('s') => {
+                app.select_mode = true;
+                app.show_status("Select mode — use terminal to select text. Press any key to exit.".to_string());
+            }
             KeyCode::Char('c') => copy_as_curl(app),
             KeyCode::Char('y') => copy_response(app),
             KeyCode::Char('?') => app.enter_help(),
@@ -822,6 +833,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('n') => app.next_match(),
         KeyCode::Char('N') => app.prev_match(),
         KeyCode::Enter => app.toggle_detail_panel(),
+        KeyCode::Char('s') => {
+            app.select_mode = true;
+            app.show_status("Select mode \u{2014} use terminal to select text. Press any key to exit.".to_string());
+        }
         KeyCode::Char('c') => copy_current_log(app),
         KeyCode::Char('e') => app.export_logs(),
         KeyCode::Char('?') => app.enter_help(),

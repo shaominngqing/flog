@@ -282,6 +282,8 @@ pub struct App {
     // Navigation
     pub mode: AppMode,
     pub should_quit: bool,
+    /// When true, mouse capture is disabled so the terminal handles text selection.
+    pub select_mode: bool,
     pub selected: usize,
     pub scroll_offset: usize,
     pub show_detail_panel: bool,
@@ -331,6 +333,7 @@ impl App {
             network: NetworkState::new(),
             mode: AppMode::Normal,
             should_quit: false,
+            select_mode: false,
             selected: 0,
             scroll_offset: 0,
             show_detail_panel: false,

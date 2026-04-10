@@ -415,10 +415,20 @@ async fn run_loop(
     app: &Arc<Mutex<App>>,
 ) -> io::Result<()> {
     let mut dropdown_task: Option<tokio::task::JoinHandle<()>> = None;
+    let mut mouse_captured = true;
 
     loop {
         {
             let mut app_guard = app.lock().await;
+
+            // Toggle mouse capture for select mode
+            if app_guard.select_mode && mouse_captured {
+                let _ = execute!(io::stdout(), DisableMouseCapture);
+                mouse_captured = false;
+            } else if !app_guard.select_mode && !mouse_captured {
+                let _ = execute!(io::stdout(), EnableMouseCapture);
+                mouse_captured = true;
+            }
 
             // Check if dropdown scan was requested
             if app_guard.dropdown_scan_requested {
