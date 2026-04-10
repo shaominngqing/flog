@@ -1,4 +1,4 @@
-//! Parser for the AuraLogger format.
+//! Parser for the structured `[LEVEL][Tag]` format.
 //!
 //! Recognizes two formats:
 //!   1. Bracket: `[LEVEL][Tag] message`       (via print / stdout)
@@ -41,11 +41,11 @@ fn extract_content(line: &str) -> String {
     ANSI_RE.replace_all(raw, "").to_string()
 }
 
-pub struct AuraLoggerParser;
+pub struct StructuredParser;
 
-impl LogLineParser for AuraLoggerParser {
+impl LogLineParser for StructuredParser {
     fn name(&self) -> &'static str {
-        "AuraLogger"
+        "Structured"
     }
 
     fn try_parse(&self, line: &str) -> Option<LogEntry> {
@@ -92,7 +92,7 @@ impl LogLineParser for AuraLoggerParser {
     }
 
     fn try_continuation(&self, _line: &str) -> Option<String> {
-        // No continuation — every AuraLogger line is self-contained
+        // No continuation — every structured-format line is self-contained
         None
     }
 }
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn parse_bracket_with_flutter_prefix() {
-        let p = AuraLoggerParser;
+        let p = StructuredParser;
         let line = "I/flutter (14114): [INFO][Network] → GET /api/scene-types";
         let entry = p.try_parse(line).unwrap();
         assert_eq!(entry.level, LogLevel::Info);
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn parse_bracket_raw() {
-        let p = AuraLoggerParser;
+        let p = StructuredParser;
         let line = "[DEBUG][GoalRepo] Loaded 42 scene types";
         let entry = p.try_parse(line).unwrap();
         assert_eq!(entry.level, LogLevel::Debug);
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn parse_bracket_vm_service_stdout() {
-        let p = AuraLoggerParser;
+        let p = StructuredParser;
         let line = "flutter: [WARNING][SessionCoord] GoAway received";
         let entry = p.try_parse(line).unwrap();
         assert_eq!(entry.level, LogLevel::Warning);
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn parse_pipe_format() {
-        let p = AuraLoggerParser;
+        let p = StructuredParser;
         let line = "I/flutter (14114): 18:05:26.675 │ INFO    │ Network        │ → GET /api/scene-types";
         let entry = p.try_parse(line).unwrap();
         assert_eq!(entry.timestamp, "18:05:26.675");
@@ -143,13 +143,13 @@ mod tests {
 
     #[test]
     fn ignores_non_flutter() {
-        let p = AuraLoggerParser;
+        let p = StructuredParser;
         assert!(p.try_parse("W/1.raster(13383): type=1400").is_none());
     }
 
     #[test]
     fn strips_ansi() {
-        let p = AuraLoggerParser;
+        let p = StructuredParser;
         let line = "I/flutter (14114): \x1b[34m[INFO][Network] test\x1b[0m";
         let entry = p.try_parse(line).unwrap();
         assert_eq!(entry.tag, "Network");

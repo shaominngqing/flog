@@ -17,22 +17,30 @@ cargo install flog
 ## Features
 
 - **Cross-platform** — Android (ADB), VM Service WebSocket (all platforms), stdin pipe
-- **Intelligent** — Multi-strategy parser chain auto-detects AuraLogger structured format, generic Flutter patterns, and keyword-based levels
+- **Intelligent** — Multi-strategy parser chain auto-detects structured `[LEVEL][Tag]` format, generic Flutter patterns, and keyword-based levels
 - **Interactive** — Search (text or `/regex/i`), filter by level/tag, bookmarks, statistics, timeline heatmap
 - **Mouse-friendly** — Click to select, double-click for detail, right-click to bookmark
 - **Persistent** — Saves session (filters, bookmarks, search) across runs
 - **Non-intrusive** — Connects via DDS proxy, never blocks `flutter run`
 
-## AuraLogger Integration
+## flog_logger Integration
 
-flog natively parses the [AuraLogger](https://pub.zhenguanyu.com/#/packages/aura_logger) structured format:
+flog natively parses the [flog_logger](https://pub.dev/packages/flog_logger) structured format:
+
+```dart
+final log = FlogLogger('Network');
+log.i('-> GET /api/scene-types');
+log.d('  query: {_productId: 66000001}');
+```
+
+Output in your terminal:
 
 ```
 [INFO][Network] -> GET /api/scene-types
 [DEBUG][Network]   query: {_productId: 66000001}
 ```
 
-When your Flutter app uses `AuraLogger.i('message', tag: 'Network')`, flog displays it with proper level coloring, tag filtering, and full-width messages — no truncation, no noise.
+flog displays these logs with proper level coloring, tag filtering, and full-width messages — no truncation, no noise.
 
 ## Usage
 
@@ -96,7 +104,7 @@ flog --level d
 src/
 ├── domain/     — Core types (LogEntry, LogLevel, LogStore, FilterState)
 ├── input/      — Source abstraction (ADB, VM Service, stdin, auto-discovery)
-├── parser/     — Multi-strategy format detection (AuraLogger, Generic, Keyword)
+├── parser/     — Multi-strategy format detection (Structured, Generic, Keyword)
 └── ui/         — Terminal UI (ratatui + crossterm)
 ```
 

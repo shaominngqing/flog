@@ -4,7 +4,7 @@
 //!   - `[LEVEL] [Tag] message`
 //!   - `[LEVEL] message`
 //!   - Flutter framework exception blocks (`══╡ EXCEPTION ╞══`)
-//!   - Plain `I/flutter (PID): message` (no AuraLogger formatting)
+//!   - Plain `I/flutter (PID): message` (no structured `[LEVEL][Tag]` formatting)
 
 use regex::Regex;
 use std::sync::LazyLock;

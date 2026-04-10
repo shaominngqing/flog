@@ -1,0 +1,8 @@
+name: flog_logger
+description: Lightweight structured logger for Flutter. Outputs [LEVEL][Tag] format that flog parses natively.
+version: 0.1.0
+homepage: https://github.com/shaomingqing/flog
+repository: https://github.com/shaomingqing/flog/tree/master/flog_logger
+
+environment:
+  sdk: ^3.0.0

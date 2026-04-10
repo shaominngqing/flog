@@ -77,16 +77,17 @@ flog --level w
 flog --tag Network
 ```
 
-## 搭配 AuraLogger
+## 搭配 flog_logger
 
-flog 能识别任何 Flutter 日志输出，但搭配 [AuraLogger](https://pub.zhenguanyu.com/#/packages/aura_logger) 可以获得精确的级别和 Tag 解析：
+flog 能识别任何 Flutter 日志输出，但搭配 [flog_logger](https://pub.dev/packages/flog_logger) 可以获得精确的级别和 Tag 解析：
 
 ```dart
-AuraLogger.i('-> GET /api/users', tag: 'Network');
-AuraLogger.e('Connection failed: $e', tag: 'WS');
+final log = FlogLogger('Network');
+log.i('-> GET /api/users');
+log.e('Connection failed: $e');
 ```
 
-没有 AuraLogger 也能用，flog 会自动识别 Flutter 标准输出格式。
+没有 flog_logger 也能用，flog 会自动识别 Flutter 标准输出格式。
 
 ## 快捷键
 

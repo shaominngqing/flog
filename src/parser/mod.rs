@@ -3,7 +3,7 @@
 //! Uses the Strategy pattern: a chain of parsers is tried in priority order.
 //! The first parser that recognizes the line wins.
 
-pub mod aura_logger;
+pub mod structured;
 pub mod generic;
 pub mod keyword;
 
@@ -14,7 +14,7 @@ use crate::domain::{LogEntry, ParseResult};
 /// Implementations should return `Some(LogEntry)` if the line matches their format,
 /// or `None` to pass to the next parser in the chain.
 pub trait LogLineParser: Send + Sync {
-    /// Human-readable name (e.g., "AuraLogger", "Generic").
+    /// Human-readable name (e.g., "Structured", "Generic").
     fn name(&self) -> &'static str;
 
     /// Try to parse a raw line as a new log entry.
@@ -34,7 +34,7 @@ impl MultiStrategyParser {
     pub fn default_chain() -> Self {
         Self {
             strategies: vec![
-                Box::new(aura_logger::AuraLoggerParser),
+                Box::new(structured::StructuredParser),
                 Box::new(generic::GenericParser),
                 Box::new(keyword::KeywordParser),
             ],
