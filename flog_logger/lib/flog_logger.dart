@@ -8,7 +8,7 @@
 /// log.i('-> GET /api/users');
 /// log.e('Connection failed', error: e, stackTrace: st);
 /// ```
-library flog_logger;
+library flog_dart;
 
 export 'src/flog_net.dart' show nextNetId, emitNet;
 export 'src/flog_http_interceptor.dart';

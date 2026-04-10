@@ -1,8 +1,8 @@
-name: flog_logger
-description: Lightweight structured logger for Flutter. Outputs [LEVEL][Tag] format that flog parses natively.
+name: flog_dart
+description: Flutter companion for flog terminal log viewer. Structured logging + Network Inspector (HTTP/SSE/WS).
 version: 0.2.0
-homepage: https://github.com/shaomingqing/flog
-repository: https://github.com/shaomingqing/flog/tree/master/flog_logger
+homepage: https://github.com/shaominngqing/flog
+repository: https://github.com/shaominngqing/flog/tree/master/flog_logger
 
 dependencies:
   dio: ">=4.0.0 <6.0.0"
