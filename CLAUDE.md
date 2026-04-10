@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-flog is a terminal-native log viewer for Flutter developers, written in Rust. It connects to Flutter apps via VM Service WebSocket, ADB logcat, or stdin pipe and displays structured, filterable logs in an interactive TUI.
+flog is a terminal-native log viewer + network inspector for Flutter developers, written in Rust. It connects to Flutter apps via VM Service WebSocket, ADB logcat, or stdin pipe and displays structured, filterable logs and network requests in an interactive TUI.
 
 ## Build & Test Commands
 
@@ -15,6 +15,7 @@ cargo test                     # Run all tests
 cargo test --test ws_connect_test -- --nocapture  # Single test with output
 cargo clippy                   # Lint
 cargo fmt                      # Format
+cargo install --path .         # Install to ~/.cargo/bin/
 ```
 
 ## Architecture
@@ -27,44 +28,81 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `entry.rs` — `LogEntry`, `LogLevel`, `InputSource` types
   - `filter.rs` — `FilterState` with level/tag/search filtering, pre-compiled regex
   - `store.rs` — Ring-buffer log storage (100K cap, drains oldest 10% when full, folds consecutive duplicates)
+  - `network.rs` — `NetworkEntry`, `Protocol` (Http/Sse/Ws), `NetworkStatus`, `SseChunk`, `WsMessage`, `FlogNetMessage`
+  - `network_store.rs` — Network request storage (10K cap), processes flog_net protocol messages
+  - `network_filter.rs` — `NetworkFilter` with `ProtocolFilter`, `MethodFilter`, `StatusFilter`
 
 - **`parser/`** — Strategy-pattern log format parser chain, tried in order:
   1. `structured.rs` — Structured `[LEVEL][Tag] message` format
   2. `generic.rs` — Flutter standard patterns (`I/flutter`, VM Service timestamps, exception blocks)
   3. `keyword.rs` — Fallback heuristic scanning for level keywords
+  4. `network.rs` — Parses `[INFO][flog_net]` tagged lines as `FlogNetMessage` JSON
   - Unrecognized lines get SYSTEM level (never dropped)
 
 - **`input/`** — Async input source abstraction
   - `discover.rs` — Auto-discovers Flutter VM Service via `ps aux` scanning
-  - `vm_service.rs` — WebSocket connection to Dart VM Service
+  - `vm_service.rs` — WebSocket connection to Dart VM Service (Logging + Stdout streams)
   - `adb.rs` — ADB logcat integration
   - `stdin_source.rs` — Pipe mode (`flutter run | flog --stdin`)
   - All sources emit `SourceEvent` (RawLine, RawLineWithTimestamp, ParsedEntry)
 
-- **`ui/`** — ratatui-based TUI with Catppuccin Macchiato theme
-  - `mod.rs` — Main rendering (log list, toolbar, status bar)
-  - `detail.rs` — JSON detail panel with syntax highlighting
+- **`ui/`** — ratatui-based TUI with Catppuccin Macchiato theme, dual-tab architecture
+  - `mod.rs` — Top-level dispatcher, shared palette constants, utility functions
+  - `tab_bar.rs` — Tab bar renderer (▤ Logs / ⇄ Network)
+  - `json_viewer.rs` — **Shared** collapsible JSON tree component (bracket formatter, depth-aware coloring, fold/unfold)
+  - `logs/mod.rs` — Logs view (toolbar, log list with level colors/tag pills, timeline, status bar)
+  - `logs/detail.rs` — Log detail panel using json_viewer
+  - `logs/highlight.rs` — Auto-highlight (HTTP methods, status codes, URLs, durations)
+  - `logs/timeline.rs` — Timeline heatmap
+  - `logs/stats.rs` — Statistics view
+  - `network/mod.rs` — Network view (toolbar with filter pills, request table, status bar)
+  - `network/detail.rs` — Network detail panel (General, Query Params, Headers, Body, SSE Events, WS Messages)
+  - `network/filter.rs` — Network toolbar renderer (2-line: search + protocol/method/status pills)
   - `source_select.rs` — Source picker UI
-  - `stats.rs` — Statistics view (level distribution, tag ranking)
-  - `timeline.rs` — Timeline heatmap
-  - `help.rs` — Keyboard shortcut overlay
-  - `highlight.rs` — JSON syntax highlighting
+  - `help.rs` — Comprehensive help overlay
 
 ### Key Top-Level Modules
 
-- `app.rs` — Central state machine (`AppMode`: Normal, Search, TagFilter, Help, Stats, SourceSelect)
-- `event.rs` — Keyboard/mouse event dispatch
+- `app.rs` — Central state machine
+  - `AppMode`: Normal, Search, TagFilter, Help, Stats, SourceSelect
+  - `ViewTab`: Logs, Network
+  - `NetworkState`: selected, scroll_offset, auto_scroll, filter, collapsed_sections, json_viewer_states
+  - `DetailState`: scroll, header_lines, viewer_state (JsonViewerState)
+- `event.rs` — Keyboard/mouse event dispatch (tab bar clicks, detail panel scroll, filter pill clicks)
 - `cli.rs` — CLI argument parsing (clap)
-- `session.rs` — Session persistence to `~/.config/flog/session.toml`
-- `main.rs` — Tokio async entry point, terminal setup, event loop
+- `session.rs` — Session persistence (active_tab, filters, bookmarks)
+- `main.rs` — Tokio async entry point, terminal setup, event loop, select mode (mouse capture toggle)
+
+### Data Flow
+
+1. Source task receives log line
+2. Parser chain recognizes format → `LogEntry`
+3. `app.add_entry()` checks if tag == `flog_net`:
+   - Yes → parse JSON, route to `NetworkStore`
+   - No → add to `LogStore`
+4. Renderer reads filtered indices, renders to terminal
 
 ### Concurrency Model
 
 Tokio multi-threaded runtime. Source tasks run in background, sending `SourceEvent`s through channels. Main thread polls terminal events and source events in a unified loop. App state is behind `Arc<Mutex<App>>`.
 
-## flog_logger Dart Package
+### Scroll Model
 
-`flog_logger/` contains a lightweight Dart package published on pub.dev. It provides `FlogLogger` class that prints `[LEVEL][Tag] message` format — the structured format that the Rust parser recognizes natively. Pure Dart, no Flutter SDK dependency.
+Both Logs and Network use the same pattern:
+- `move_up/down(n)` — viewport scroll (mouse wheel, PageUp/Down), moves offset + selected
+- `select_up/down(n)` — cursor move (j/k), moves only selected
+- `go_top/go_bottom` — Home/End
+- **Renderer is the scroll authority** — clamps offset, detects bottom for auto_scroll
+
+## flog_dart Dart Package
+
+`flog_logger/` contains the Dart companion package published as [flog_dart](https://pub.dev/packages/flog_dart) on pub.dev.
+
+- `FlogLogger` — Structured `[LEVEL][Tag] message` logging
+- `FlogHttpInterceptor` — Dio interceptor for HTTP request/response logging (⚠ must be added BEFORE response-modifying interceptors)
+- `FlogSseParser` — SSE stream wrapper with chunk-level logging
+- `FlogWebSocket` — WebSocket wrapper with send/recv logging
+- Protocol: `[INFO][flog_net] {JSON}` via `print()`
 
 ## CI/CD
 
