@@ -219,13 +219,23 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    // Clamp selection and scroll
-    app.network.selected = app.network.selected.min(filtered_count.saturating_sub(1));
-    if app.network.selected < app.network.scroll_offset {
-        app.network.scroll_offset = app.network.selected;
-    }
-    if app.network.selected >= app.network.scroll_offset + height {
-        app.network.scroll_offset = app.network.selected.saturating_sub(height - 1);
+    // Auto-scroll: keep selection at bottom when new entries arrive
+    if app.network.auto_scroll {
+        app.network.selected = filtered_count.saturating_sub(1);
+        app.network.scroll_offset = filtered_count.saturating_sub(height);
+    } else {
+        // Clamp selection and scroll
+        app.network.selected = app.network.selected.min(filtered_count.saturating_sub(1));
+        if app.network.selected < app.network.scroll_offset {
+            app.network.scroll_offset = app.network.selected;
+        }
+        if app.network.selected >= app.network.scroll_offset + height {
+            app.network.scroll_offset = app.network.selected.saturating_sub(height - 1);
+        }
+        // Re-enable auto-scroll if scrolled to bottom
+        if app.network.scroll_offset + height >= filtered_count {
+            app.network.auto_scroll = true;
+        }
     }
 
     // Build lines

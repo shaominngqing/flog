@@ -152,6 +152,8 @@ pub struct DetailState {
 pub struct NetworkState {
     pub selected: usize,
     pub scroll_offset: usize,
+    /// Auto-scroll to bottom when new requests arrive.
+    pub auto_scroll: bool,
     pub show_detail: bool,
     pub detail_scroll: usize,
     pub filter: crate::domain::NetworkFilter,
@@ -176,6 +178,7 @@ impl NetworkState {
         Self {
             selected: 0,
             scroll_offset: 0,
+            auto_scroll: true,
             show_detail: false,
             detail_scroll: 0,
             filter: crate::domain::NetworkFilter::new(),

@@ -156,6 +156,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
 
         match mouse.kind {
             MouseEventKind::ScrollUp => {
+                app.network.auto_scroll = false;
                 app.network.selected = app.network.selected.saturating_sub(SCROLL_LINES);
                 if app.network.selected < app.network.scroll_offset {
                     app.network.scroll_offset = app.network.selected;
@@ -765,6 +766,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('q') => app.should_quit = true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
             KeyCode::Up | KeyCode::Char('k') => {
+                app.network.auto_scroll = false;
                 app.network.selected = app.network.selected.saturating_sub(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -774,6 +776,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 }
             }
             KeyCode::PageUp => {
+                app.network.auto_scroll = false;
                 app.network.selected = app.network.selected.saturating_sub(20);
                 app.network.scroll_offset = app.network.scroll_offset.saturating_sub(20);
             }
@@ -785,6 +788,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 }
             }
             KeyCode::Home => {
+                app.network.auto_scroll = false;
                 app.network.selected = 0;
                 app.network.scroll_offset = 0;
             }
