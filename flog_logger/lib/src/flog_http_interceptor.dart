@@ -46,7 +46,7 @@ class FlogHttpInterceptor extends Interceptor {
     this.includeResponseHeaders = true,
     this.includeRequestBody = true,
     this.includeResponseBody = true,
-    this.maxBodySize = 512 * 1024,
+    this.maxBodySize = 10 * 1024 * 1024,
     this.filter,
   });
 
