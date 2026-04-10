@@ -193,6 +193,8 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                     let target = app.network.scroll_offset + row_in_list;
                     let count = app.network.filtered_count(&app.network_store);
                     if target < count {
+                        // Disable auto_scroll so renderer doesn't override selection
+                        app.network.auto_scroll = false;
                         if app.network.selected == target {
                             app.network.show_detail = !app.network.show_detail;
                             app.network.detail_scroll = 0;
