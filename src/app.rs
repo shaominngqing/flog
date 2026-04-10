@@ -260,11 +260,12 @@ pub struct LayoutCache {
     pub net_buttons: Vec<(String, u16, u16)>,
     /// Network toolbar Y position.
     pub net_toolbar_y: u16,
-    /// Network toolbar click regions for filters.
+    /// Network toolbar search click region.
     pub net_search_x: (u16, u16),
-    pub net_proto_x: (u16, u16),
-    pub net_method_x: (u16, u16),
-    pub net_status_x: (u16, u16),
+    /// Network filter pill click regions: (id, x_start, x_end).
+    pub net_filter_pills: Vec<(String, u16, u16)>,
+    /// Y position of the filter pills line.
+    pub net_filter_pills_y: u16,
 }
 
 // ── App ──

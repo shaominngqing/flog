@@ -123,11 +123,11 @@ fn protocol_pill(protocol: Protocol) -> Span<'static> {
 // ══════════════════════════════════════
 
 pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
-    // Vertical: toolbar | header | body | status bar
+    // Vertical: toolbar (2 rows) | header | body | status bar
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // toolbar
+            Constraint::Length(2),  // toolbar (search + filters)
             Constraint::Length(1),  // header
             Constraint::Min(3),     // body (table + optional detail)
             Constraint::Length(1),  // status bar

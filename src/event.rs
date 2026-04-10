@@ -4,6 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 
 use crate::app::{App, AppMode, SourceSelectPhase, ViewTab};
 use crate::domain::LogLevel;
+use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 
 const SCROLL_LINES: usize = 3;
 const LEVEL_BUTTON_WIDTH: u16 = 3;
@@ -69,27 +70,41 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
     if app.active_tab == ViewTab::Network {
         // Network toolbar click handling
         if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
-            if mouse.row == app.layout.net_toolbar_y {
-                let x = mouse.column;
+            let x = mouse.column;
+            let y = mouse.row;
+            // Line 1: search
+            if y == app.layout.net_toolbar_y {
                 if x >= app.layout.net_search_x.0 && x < app.layout.net_search_x.1 {
                     app.network.search_active = true;
                     app.network.search_input = app.network.filter.search.clone();
                     return;
                 }
-                if x >= app.layout.net_proto_x.0 && x < app.layout.net_proto_x.1 {
-                    app.network.filter.protocol = app.network.filter.protocol.next();
-                    app.network.invalidate_filter();
-                    return;
-                }
-                if x >= app.layout.net_method_x.0 && x < app.layout.net_method_x.1 {
-                    app.network.filter.method = app.network.filter.method.next();
-                    app.network.invalidate_filter();
-                    return;
-                }
-                if x >= app.layout.net_status_x.0 && x < app.layout.net_status_x.1 {
-                    app.network.filter.status = app.network.filter.status.next();
-                    app.network.invalidate_filter();
-                    return;
+            }
+            // Line 2: filter pills
+            if y == app.layout.net_filter_pills_y {
+                for (id, x_start, x_end) in &app.layout.net_filter_pills {
+                    if x >= *x_start && x < *x_end {
+                        match id.as_str() {
+                            "proto_All" => app.network.filter.protocol = ProtocolFilter::All,
+                            "proto_HTTP" => app.network.filter.protocol = ProtocolFilter::Http,
+                            "proto_SSE" => app.network.filter.protocol = ProtocolFilter::Sse,
+                            "proto_WS" => app.network.filter.protocol = ProtocolFilter::Ws,
+                            "method_All" => app.network.filter.method = MethodFilter::All,
+                            "method_GET" => app.network.filter.method = MethodFilter::Get,
+                            "method_POST" => app.network.filter.method = MethodFilter::Post,
+                            "method_PUT" => app.network.filter.method = MethodFilter::Put,
+                            "method_DEL" => app.network.filter.method = MethodFilter::Delete,
+                            "method_PATCH" => app.network.filter.method = MethodFilter::Patch,
+                            "status_All" => app.network.filter.status = StatusFilter::All,
+                            "status_OK" => app.network.filter.status = StatusFilter::Completed,
+                            "status_Fail" => app.network.filter.status = StatusFilter::Failed,
+                            "status_Active" => app.network.filter.status = StatusFilter::Active,
+                            "status_Pending" => app.network.filter.status = StatusFilter::Pending,
+                            _ => {}
+                        }
+                        app.network.invalidate_filter();
+                        return;
+                    }
                 }
             }
         }
