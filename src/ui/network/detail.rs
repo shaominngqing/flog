@@ -1,25 +1,30 @@
-//! Network detail panel — shows request/response headers, body, SSE chunks, WS messages.
+//! Network detail panel — Flipper-style collapsible sections with full content display.
 
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::domain::network::{NetworkStatus, Protocol, WsDirection};
 
-// Import shared palette from parent
 use super::super::{
     MANTLE, SURFACE0, OVERLAY0, TEXT, SUBTEXT0,
-    BLUE, GREEN, RED, MAUVE, SAPPHIRE,
+    BLUE, GREEN, YELLOW, PEACH, RED, MAUVE, SAPPHIRE, PINK,
+    wrap_text,
 };
 use super::{format_duration, format_size, method_color, status_color};
 
-const STR_COLOR: Color = GREEN;
-const KEY_COLOR: Color = MAUVE;
+const KEY_COLOR: ratatui::style::Color = MAUVE;
+const STR_COLOR: ratatui::style::Color = GREEN;
+const NUM_COLOR: ratatui::style::Color = PEACH;
+const BOOL_COLOR: ratatui::style::Color = PINK;
+const NULL_COLOR: ratatui::style::Color = OVERLAY0;
+const BRACE_COLOR: ratatui::style::Color = OVERLAY0;
 
 pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let indices = app.network.filtered_indices(&app.network_store).to_vec();
@@ -49,146 +54,221 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(3) as usize;
+    let collapsed = &app.network.collapsed_sections;
 
     let mut all_lines: Vec<Line> = Vec::new();
+    // Track which line indices are section headers (for click toggling)
+    let mut section_line_map: Vec<Option<String>> = Vec::new();
 
-    // Header: method pill + path
+    // ── Header: method pill + full URL (wrapped) ──
     let method_c = method_color(&entry.method);
-    let mut header_spans: Vec<Span> = Vec::new();
     if !entry.method.is_empty() {
-        header_spans.push(Span::styled(
-            format!(" {} ", entry.method),
-            Style::default().fg(MANTLE).bg(method_c).add_modifier(Modifier::BOLD),
-        ));
-        header_spans.push(Span::raw(" "));
+        all_lines.push(Line::from(vec![
+            Span::styled(format!(" {} ", entry.method), Style::default().fg(MANTLE).bg(method_c).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {}", entry.path), Style::default().fg(TEXT)),
+        ]));
+        section_line_map.push(None);
     }
-    header_spans.push(Span::styled(
-        truncate_path(&entry.path, inner_w.saturating_sub(entry.method.len() + 3)),
-        Style::default().fg(TEXT),
-    ));
-    all_lines.push(Line::from(header_spans));
-    all_lines.push(Line::from(Span::styled("-".repeat(inner_w), Style::default().fg(SURFACE0))));
+    all_lines.push(Line::from(Span::styled("─".repeat(inner_w), Style::default().fg(SURFACE0))));
+    section_line_map.push(None);
 
-    // General section
-    all_lines.push(section_header("General"));
-    all_lines.push(kv_line("URL", &entry.url, inner_w));
-    if !entry.method.is_empty() {
-        all_lines.push(kv_line("Method", &entry.method, inner_w));
+    // ── General ──
+    let sec = "General";
+    let is_collapsed = collapsed.contains(sec);
+    push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+    if !is_collapsed {
+        // URL — full, wrapped
+        push_kv_wrapped(&mut all_lines, &mut section_line_map, "URL", &entry.url, inner_w);
+        if !entry.method.is_empty() {
+            push_kv_single(&mut all_lines, &mut section_line_map, "Method", &entry.method);
+        }
+        let status_str = match entry.status {
+            NetworkStatus::Pending => "Pending".to_string(),
+            NetworkStatus::Active => match entry.protocol {
+                Protocol::Sse => format!("Streaming ({} chunks)", entry.sse_chunks.len()),
+                Protocol::Ws => format!("Connected ({} msgs)", entry.ws_messages.len()),
+                _ => "Active".to_string(),
+            },
+            NetworkStatus::Completed => entry.http_status.map_or("OK".to_string(), |s| format!("{} {}", s, http_status_text(s))),
+            NetworkStatus::Failed => entry.error.clone().unwrap_or_else(|| "Failed".to_string()),
+        };
+        let sc = status_color(entry.status, entry.http_status);
+        all_lines.push(Line::from(vec![
+            Span::styled("   Status: ", Style::default().fg(KEY_COLOR)),
+            Span::styled(status_str, Style::default().fg(sc)),
+        ]));
+        section_line_map.push(None);
+        if let Some(dur) = entry.duration {
+            push_kv_single(&mut all_lines, &mut section_line_map, "Duration", &format_duration(dur));
+        }
+        let size = entry.display_size();
+        if size > 0 {
+            push_kv_single(&mut all_lines, &mut section_line_map, "Size", &format_size(size));
+        }
+        all_lines.push(Line::raw(""));
+        section_line_map.push(None);
     }
 
-    let status_str = match entry.status {
-        NetworkStatus::Pending => "Pending".to_string(),
-        NetworkStatus::Active => "Active".to_string(),
-        NetworkStatus::Completed => {
-            if let Some(code) = entry.http_status {
-                format!("{} {}", code, http_status_text(code))
-            } else {
-                "Completed".to_string()
+    // ── Request Headers ──
+    if entry.request_headers.is_some() {
+        let sec = "Request Headers";
+        let is_collapsed = collapsed.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        if !is_collapsed {
+            if let Some(ref headers) = entry.request_headers {
+                render_json_block(&mut all_lines, &mut section_line_map, headers, inner_w);
+            }
+            all_lines.push(Line::raw(""));
+            section_line_map.push(None);
+        }
+    }
+
+    // ── Request Body ──
+    if entry.request_body.as_ref().map_or(false, |b| !b.is_empty()) {
+        let sec = "Request Body";
+        let is_collapsed = collapsed.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        if !is_collapsed {
+            if let Some(ref body) = entry.request_body {
+                render_body_block(&mut all_lines, &mut section_line_map, body, inner_w);
+            }
+            all_lines.push(Line::raw(""));
+            section_line_map.push(None);
+        }
+    }
+
+    // ── Response Headers ──
+    if entry.response_headers.is_some() {
+        let sec = "Response Headers";
+        let is_collapsed = collapsed.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        if !is_collapsed {
+            if let Some(ref headers) = entry.response_headers {
+                render_json_block(&mut all_lines, &mut section_line_map, headers, inner_w);
+            }
+            all_lines.push(Line::raw(""));
+            section_line_map.push(None);
+        }
+    }
+
+    // ── Response Body ──
+    if entry.response_body.as_ref().map_or(false, |b| !b.is_empty()) {
+        let sec = "Response Body";
+        let is_collapsed = collapsed.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        if !is_collapsed {
+            if let Some(ref body) = entry.response_body {
+                render_body_block(&mut all_lines, &mut section_line_map, body, inner_w);
+            }
+            all_lines.push(Line::raw(""));
+            section_line_map.push(None);
+        }
+    }
+
+    // ── SSE Stream Events ──
+    if entry.protocol == Protocol::Sse && !entry.sse_chunks.is_empty() {
+        let sec_name = format!("SSE Events ({})", entry.sse_chunks.len());
+        let sec_key = "SSE Events";
+        let is_collapsed = collapsed.contains(sec_key);
+        push_section_header(&mut all_lines, &mut section_line_map, &sec_name, is_collapsed);
+        // Use sec_key for the map entry (strip count)
+        if let Some(last) = section_line_map.last_mut() {
+            *last = Some(sec_key.to_string());
+        }
+        if !is_collapsed {
+            for (i, chunk) in entry.sse_chunks.iter().enumerate() {
+                let chunk_key = format!("SSE#{}", i);
+                let chunk_collapsed = collapsed.contains(&chunk_key);
+                let prefix = if chunk_collapsed { "  ▶" } else { "  ▼" };
+                all_lines.push(Line::from(vec![
+                    Span::styled(format!("{} #{} ", prefix, i), Style::default().fg(OVERLAY0)),
+                    Span::styled(
+                        if chunk_collapsed {
+                            let preview = if chunk.data.len() > 40 { format!("{}...", &chunk.data[..40]) } else { chunk.data.clone() };
+                            preview
+                        } else {
+                            String::new()
+                        },
+                        Style::default().fg(SUBTEXT0),
+                    ),
+                ]));
+                section_line_map.push(Some(chunk_key.clone()));
+                if !chunk_collapsed {
+                    // Show full chunk data, wrapped
+                    let wrapped = wrap_text(&chunk.data, inner_w.saturating_sub(4), 50);
+                    for wl in &wrapped {
+                        all_lines.push(Line::from(Span::styled(format!("    {}", wl), Style::default().fg(STR_COLOR))));
+                        section_line_map.push(None);
+                    }
+                }
+            }
+            all_lines.push(Line::raw(""));
+            section_line_map.push(None);
+        }
+    }
+
+    // ── WebSocket Messages ──
+    if entry.protocol == Protocol::Ws && !entry.ws_messages.is_empty() {
+        let sent = entry.ws_messages.iter().filter(|m| m.direction == WsDirection::Send).count();
+        let recv = entry.ws_messages.iter().filter(|m| m.direction == WsDirection::Recv).count();
+        let sec_name = format!("Messages ({} sent / {} recv)", sent, recv);
+        let sec_key = "WS Messages";
+        let is_collapsed = collapsed.contains(sec_key);
+        push_section_header(&mut all_lines, &mut section_line_map, &sec_name, is_collapsed);
+        if let Some(last) = section_line_map.last_mut() {
+            *last = Some(sec_key.to_string());
+        }
+        if !is_collapsed {
+            for (i, msg) in entry.ws_messages.iter().enumerate() {
+                let (arrow, color) = match msg.direction {
+                    WsDirection::Send => ("→", GREEN),
+                    WsDirection::Recv => ("←", BLUE),
+                };
+                let msg_key = format!("WS#{}", i);
+                let msg_collapsed = collapsed.contains(&msg_key);
+                let prefix = if msg_collapsed { "▶" } else { "▼" };
+                all_lines.push(Line::from(vec![
+                    Span::styled(format!("  {} {} ", prefix, arrow), Style::default().fg(color)),
+                    Span::styled(
+                        if msg_collapsed {
+                            let preview = if msg.data.len() > 40 { format!("{}...", &msg.data[..40]) } else { msg.data.clone() };
+                            preview
+                        } else {
+                            format!("({} bytes)", msg.size)
+                        },
+                        Style::default().fg(SUBTEXT0),
+                    ),
+                ]));
+                section_line_map.push(Some(msg_key.clone()));
+                if !msg_collapsed {
+                    let wrapped = wrap_text(&msg.data, inner_w.saturating_sub(4), 50);
+                    for wl in &wrapped {
+                        all_lines.push(Line::from(Span::styled(format!("    {}", wl), Style::default().fg(STR_COLOR))));
+                        section_line_map.push(None);
+                    }
+                }
+            }
+            all_lines.push(Line::raw(""));
+            section_line_map.push(None);
+        }
+    }
+
+    // ── Error ──
+    if let Some(ref error) = entry.error {
+        let sec = "Error";
+        let is_collapsed = collapsed.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        if !is_collapsed {
+            let wrapped = wrap_text(error, inner_w.saturating_sub(3), 20);
+            for wl in &wrapped {
+                all_lines.push(Line::from(Span::styled(format!("   {}", wl), Style::default().fg(RED))));
+                section_line_map.push(None);
             }
         }
-        NetworkStatus::Failed => "Failed".to_string(),
-    };
-    let status_c = status_color(entry.status, entry.http_status);
-    all_lines.push(Line::from(vec![
-        Span::styled("  Status: ", Style::default().fg(KEY_COLOR)),
-        Span::styled(status_str, Style::default().fg(status_c)),
-    ]));
-
-    if let Some(dur) = entry.duration {
-        all_lines.push(kv_line("Duration", &format_duration(dur), inner_w));
-    }
-    let size = entry.display_size();
-    if size > 0 {
-        all_lines.push(kv_line("Size", &format_size(size), inner_w));
     }
 
-    // Request Headers
-    if let Some(ref headers) = entry.request_headers {
-        all_lines.push(Line::raw(""));
-        all_lines.push(section_header("Request Headers"));
-        all_lines.extend(render_json_compact(headers, inner_w));
-    }
-
-    // Request Body
-    if let Some(ref body) = entry.request_body {
-        if !body.is_empty() {
-            all_lines.push(Line::raw(""));
-            all_lines.push(section_header("Request Body"));
-            all_lines.extend(render_body_lines(body, inner_w));
-        }
-    }
-
-    // Response Headers
-    if let Some(ref headers) = entry.response_headers {
-        all_lines.push(Line::raw(""));
-        all_lines.push(section_header("Response Headers"));
-        all_lines.extend(render_json_compact(headers, inner_w));
-    }
-
-    // Response Body
-    if let Some(ref body) = entry.response_body {
-        if !body.is_empty() {
-            all_lines.push(Line::raw(""));
-            all_lines.push(section_header("Response Body"));
-            all_lines.extend(render_body_lines(body, inner_w));
-        }
-    }
-
-    // SSE Stream Events
-    if entry.protocol == Protocol::Sse && !entry.sse_chunks.is_empty() {
-        all_lines.push(Line::raw(""));
-        all_lines.push(section_header(&format!("SSE Events ({})", entry.sse_chunks.len())));
-
-        // Show last 20 chunks
-        let start = entry.sse_chunks.len().saturating_sub(20);
-        for (i, chunk) in entry.sse_chunks.iter().skip(start).enumerate() {
-            let idx = start + i;
-            all_lines.push(Line::from(vec![
-                Span::styled(format!("  #{} ", idx), Style::default().fg(OVERLAY0)),
-                Span::styled(
-                    truncate_str(&chunk.data, inner_w.saturating_sub(8)),
-                    Style::default().fg(SUBTEXT0),
-                ),
-            ]));
-        }
-    }
-
-    // WebSocket Messages
-    if entry.protocol == Protocol::Ws && !entry.ws_messages.is_empty() {
-        all_lines.push(Line::raw(""));
-        all_lines.push(section_header(&format!("WebSocket Messages ({})", entry.ws_messages.len())));
-
-        // Show last 20 messages
-        let start = entry.ws_messages.len().saturating_sub(20);
-        for msg in entry.ws_messages.iter().skip(start) {
-            let (arrow, color) = match msg.direction {
-                WsDirection::Send => ("\u{2192}", GREEN),  // ->
-                WsDirection::Recv => ("\u{2190}", BLUE),   // <-
-            };
-            all_lines.push(Line::from(vec![
-                Span::styled(format!("  {} ", arrow), Style::default().fg(color)),
-                Span::styled(
-                    truncate_str(&msg.data, inner_w.saturating_sub(6)),
-                    Style::default().fg(SUBTEXT0),
-                ),
-            ]));
-        }
-    }
-
-    // Error section
-    if let Some(ref error) = entry.error {
-        all_lines.push(Line::raw(""));
-        all_lines.push(Line::from(Span::styled(
-            "  Error",
-            Style::default().fg(RED).add_modifier(Modifier::BOLD),
-        )));
-        for line in error.lines() {
-            all_lines.push(Line::from(Span::styled(
-                format!("  {}", truncate_str(line, inner_w.saturating_sub(2))),
-                Style::default().fg(RED),
-            )));
-        }
-    }
+    // Store section_line_map for click handling
+    app.network.detail_section_map = section_line_map;
 
     // Apply scroll
     let scroll = app.network.detail_scroll;
@@ -214,26 +294,86 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     );
 }
 
-fn section_header(title: &str) -> Line<'static> {
-    Line::from(Span::styled(
-        format!("  {}", title),
+// ══════════════════════════════════════
+//  Section helpers
+// ══════════════════════════════════════
+
+fn push_section_header(
+    lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<Option<String>>,
+    title: &str,
+    collapsed: bool,
+) {
+    let icon = if collapsed { "▶" } else { "▼" };
+    lines.push(Line::from(Span::styled(
+        format!(" {} {}", icon, title),
         Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
-    ))
+    )));
+    map.push(Some(title.to_string()));
 }
 
-fn kv_line(key: &str, value: &str, max_w: usize) -> Line<'static> {
-    let key_w = key.len() + 4; // "  key: "
-    let val_w = max_w.saturating_sub(key_w);
-    Line::from(vec![
-        Span::styled(format!("  {}: ", key), Style::default().fg(KEY_COLOR)),
-        Span::styled(truncate_str(value, val_w), Style::default().fg(STR_COLOR)),
-    ])
+fn push_kv_single(
+    lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<Option<String>>,
+    key: &str,
+    value: &str,
+) {
+    lines.push(Line::from(vec![
+        Span::styled(format!("   {}: ", key), Style::default().fg(KEY_COLOR)),
+        Span::styled(value.to_string(), Style::default().fg(STR_COLOR)),
+    ]));
+    map.push(None);
 }
 
-fn render_json_compact(json_str: &str, max_w: usize) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
+fn push_kv_wrapped(
+    lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<Option<String>>,
+    key: &str,
+    value: &str,
+    max_w: usize,
+) {
+    let prefix = format!("   {}: ", key);
+    let first_line_w = max_w.saturating_sub(prefix.len());
+    let cont_indent = "   ";
+    let cont_w = max_w.saturating_sub(cont_indent.len());
 
-    // Try to parse as JSON object
+    if value.width() <= first_line_w {
+        lines.push(Line::from(vec![
+            Span::styled(prefix, Style::default().fg(KEY_COLOR)),
+            Span::styled(value.to_string(), Style::default().fg(STR_COLOR)),
+        ]));
+        map.push(None);
+    } else {
+        // First line with key
+        let wrapped = wrap_text(value, first_line_w, 20);
+        if let Some(first) = wrapped.first() {
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(KEY_COLOR)),
+                Span::styled(first.to_string(), Style::default().fg(STR_COLOR)),
+            ]));
+            map.push(None);
+        }
+        // Continuation lines
+        for wl in wrapped.iter().skip(1) {
+            lines.push(Line::from(Span::styled(
+                format!("{}{}", cont_indent, wl),
+                Style::default().fg(STR_COLOR),
+            )));
+            map.push(None);
+        }
+    }
+}
+
+// ══════════════════════════════════════
+//  JSON / Body rendering
+// ══════════════════════════════════════
+
+fn render_json_block(
+    lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<Option<String>>,
+    json_str: &str,
+    max_w: usize,
+) {
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
         if let Some(obj) = value.as_object() {
             for (key, val) in obj {
@@ -241,133 +381,99 @@ fn render_json_compact(json_str: &str, max_w: usize) -> Vec<Line<'static>> {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
-                let key_w = key.len() + 4;
-                let val_w = max_w.saturating_sub(key_w);
-                lines.push(Line::from(vec![
-                    Span::styled(format!("  {}: ", key), Style::default().fg(KEY_COLOR)),
-                    Span::styled(truncate_str(&val_str, val_w), Style::default().fg(STR_COLOR)),
-                ]));
+                push_kv_wrapped(lines, map, key, &val_str, max_w);
             }
-            return lines;
+            return;
         }
     }
-
-    // Fallback: show raw text
-    for line in json_str.lines().take(20) {
-        lines.push(Line::from(Span::styled(
-            format!("  {}", truncate_str(line, max_w.saturating_sub(2))),
-            Style::default().fg(SUBTEXT0),
-        )));
+    // Fallback: wrap raw text
+    let wrapped = wrap_text(json_str, max_w.saturating_sub(3), 30);
+    for wl in &wrapped {
+        lines.push(Line::from(Span::styled(format!("   {}", wl), Style::default().fg(SUBTEXT0))));
+        map.push(None);
     }
-    lines
 }
 
-fn render_body_lines(body: &str, max_w: usize) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-
-    // Try JSON pretty-print
+fn render_body_block(
+    lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<Option<String>>,
+    body: &str,
+    max_w: usize,
+) {
+    // Try JSON pretty-print with syntax coloring
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
         if let Ok(pretty) = serde_json::to_string_pretty(&value) {
-            for line in pretty.lines().take(50) {
-                lines.push(colorize_json_line(line, max_w));
+            for line in pretty.lines() {
+                lines.push(colorize_json_line(line));
+                map.push(None);
             }
-            if pretty.lines().count() > 50 {
-                lines.push(Line::from(Span::styled(
-                    "  ... (truncated)",
-                    Style::default().fg(OVERLAY0),
-                )));
-            }
-            return lines;
+            return;
         }
     }
-
-    // Fallback: raw text
-    for line in body.lines().take(50) {
-        lines.push(Line::from(Span::styled(
-            format!("  {}", truncate_str(line, max_w.saturating_sub(2))),
-            Style::default().fg(SUBTEXT0),
-        )));
+    // Fallback: wrap raw text
+    let wrapped = wrap_text(body, max_w.saturating_sub(3), 100);
+    for wl in &wrapped {
+        lines.push(Line::from(Span::styled(format!("   {}", wl), Style::default().fg(SUBTEXT0))));
+        map.push(None);
     }
-    if body.lines().count() > 50 {
-        lines.push(Line::from(Span::styled(
-            "  ... (truncated)",
-            Style::default().fg(OVERLAY0),
-        )));
-    }
-    lines
 }
 
-fn colorize_json_line(line: &str, _max_w: usize) -> Line<'static> {
+fn colorize_json_line(line: &str) -> Line<'static> {
     let trimmed = line.trim_start();
     let indent = line.len() - trimmed.len();
     let mut spans: Vec<Span> = Vec::new();
 
-    // Add indent
-    spans.push(Span::raw("  "));
+    spans.push(Span::raw("   ")); // base indent
     if indent > 0 {
         spans.push(Span::raw(" ".repeat(indent)));
     }
 
-    // Simple colorization
-    if trimmed.starts_with('"') && trimmed.contains(':') {
-        // Key-value pair
-        if let Some(colon_pos) = trimmed.find(':') {
-            let key = &trimmed[..colon_pos];
-            let rest = &trimmed[colon_pos..];
+    if trimmed.starts_with('"') && trimmed.contains("\": ") {
+        // "key": value
+        if let Some(colon_pos) = trimmed.find("\": ") {
+            let key = &trimmed[..colon_pos + 1]; // include closing quote
+            let rest = &trimmed[colon_pos + 1..];
             spans.push(Span::styled(key.to_string(), Style::default().fg(KEY_COLOR)));
-            spans.push(Span::styled(rest.to_string(), Style::default().fg(STR_COLOR)));
+            // Colorize the value part
+            let val_part = rest.trim_start_matches(':').trim_start();
+            spans.push(Span::styled(": ".to_string(), Style::default().fg(BRACE_COLOR)));
+            spans.push(colorize_value_span(val_part));
         } else {
             spans.push(Span::styled(trimmed.to_string(), Style::default().fg(SUBTEXT0)));
         }
-    } else if trimmed == "{" || trimmed == "}" || trimmed == "[" || trimmed == "]"
-        || trimmed == "{," || trimmed == "}," || trimmed == "[," || trimmed == "]," {
-        spans.push(Span::styled(trimmed.to_string(), Style::default().fg(OVERLAY0)));
+    } else if trimmed == "{" || trimmed == "}" || trimmed == "}," || trimmed == "[" || trimmed == "]" || trimmed == "]," {
+        spans.push(Span::styled(trimmed.to_string(), Style::default().fg(BRACE_COLOR)));
     } else {
-        spans.push(Span::styled(trimmed.to_string(), Style::default().fg(STR_COLOR)));
+        spans.push(colorize_value_span(trimmed));
     }
 
     Line::from(spans)
 }
 
-fn truncate_str(s: &str, max_w: usize) -> String {
-    if s.len() <= max_w {
-        s.to_string()
-    } else if max_w > 3 {
-        format!("{}...", &s[..max_w - 3])
+fn colorize_value_span(text: &str) -> Span<'static> {
+    let bare = text.trim_end_matches(',');
+    let v = bare.trim();
+    if v.starts_with('"') && v.ends_with('"') {
+        Span::styled(text.to_string(), Style::default().fg(STR_COLOR))
+    } else if v == "null" {
+        Span::styled(text.to_string(), Style::default().fg(NULL_COLOR).add_modifier(Modifier::ITALIC))
+    } else if v == "true" || v == "false" {
+        Span::styled(text.to_string(), Style::default().fg(BOOL_COLOR))
+    } else if v.parse::<f64>().is_ok() {
+        Span::styled(text.to_string(), Style::default().fg(NUM_COLOR))
     } else {
-        s[..max_w].to_string()
-    }
-}
-
-fn truncate_path(path: &str, max_w: usize) -> String {
-    if path.len() <= max_w {
-        path.to_string()
-    } else if max_w > 3 {
-        format!("{}...", &path[..max_w - 3])
-    } else {
-        path[..max_w].to_string()
+        Span::styled(text.to_string(), Style::default().fg(SUBTEXT0))
     }
 }
 
 fn http_status_text(code: u16) -> &'static str {
     match code {
-        200 => "OK",
-        201 => "Created",
-        204 => "No Content",
-        301 => "Moved Permanently",
-        302 => "Found",
-        304 => "Not Modified",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        408 => "Request Timeout",
-        429 => "Too Many Requests",
-        500 => "Internal Server Error",
-        502 => "Bad Gateway",
-        503 => "Service Unavailable",
-        504 => "Gateway Timeout",
+        200 => "OK", 201 => "Created", 204 => "No Content",
+        301 => "Moved Permanently", 302 => "Found", 304 => "Not Modified",
+        400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
+        404 => "Not Found", 408 => "Request Timeout", 429 => "Too Many Requests",
+        500 => "Internal Server Error", 502 => "Bad Gateway",
+        503 => "Service Unavailable", 504 => "Gateway Timeout",
         _ => "",
     }
 }

@@ -160,6 +160,10 @@ pub struct NetworkState {
     pub show_detail: bool,
     pub detail_scroll: usize,
     pub filter: crate::domain::NetworkFilter,
+    /// Section names that are collapsed (folded). Sections not in this set are expanded.
+    pub collapsed_sections: std::collections::HashSet<String>,
+    /// Maps detail panel line index → section key (for click-to-toggle). Set by renderer.
+    pub detail_section_map: Vec<Option<String>>,
     filtered_indices: Vec<usize>,
     filter_dirty: bool,
 }
@@ -172,6 +176,8 @@ impl NetworkState {
             show_detail: false,
             detail_scroll: 0,
             filter: crate::domain::NetworkFilter::new(),
+            collapsed_sections: std::collections::HashSet::new(),
+            detail_section_map: Vec::new(),
             filtered_indices: Vec::new(),
             filter_dirty: true,
         }

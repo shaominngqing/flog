@@ -82,21 +82,41 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 let y = mouse.row;
-                // Click in list area
-                if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
+                let x = mouse.column;
+                let half_w = app.layout.width / 2;
+
+                // Click in detail panel (right half) — toggle section collapse
+                if app.network.show_detail && x >= half_w {
+                    // Calculate which line in the detail was clicked
+                    // Detail starts at tab_bar(2) + toolbar(1) + header(1) = row 4
+                    let detail_content_y = app.layout.tab_bar_y + 2 + 1 + 1 + 1; // tab(2) + toolbar(1) + header(1) + border(1)
+                    if y >= detail_content_y {
+                        let line_idx = app.network.detail_scroll + (y - detail_content_y) as usize;
+                        if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
+                            let key = section_key.clone();
+                            if app.network.collapsed_sections.contains(&key) {
+                                app.network.collapsed_sections.remove(&key);
+                            } else {
+                                app.network.collapsed_sections.insert(key);
+                            }
+                        }
+                    }
+                }
+                // Click in list area (left half or full width)
+                else if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
                     let row_in_list = (y - app.layout.list_y) as usize;
                     let target = app.network.scroll_offset + row_in_list;
                     let count = app.network.filtered_count(&app.network_store);
                     if target < count {
                         if app.network.selected == target {
-                            // Click same row -> toggle detail
                             app.network.show_detail = !app.network.show_detail;
                             app.network.detail_scroll = 0;
+                            app.network.collapsed_sections.clear();
                         } else {
-                            // Click different row -> select and show detail
                             app.network.selected = target;
                             app.network.show_detail = true;
                             app.network.detail_scroll = 0;
+                            app.network.collapsed_sections.clear();
                         }
                     }
                 }
