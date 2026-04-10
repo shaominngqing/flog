@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
-use crate::app::{App, AppMode, SourceSelectPhase};
+use crate::app::{App, AppMode, SourceSelectPhase, ViewTab};
 use crate::domain::LogLevel;
 
 const SCROLL_LINES: usize = 3;
@@ -63,6 +63,18 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             let now = Instant::now();
             app.status_message = None;
 
+            // Tab bar click detection
+            if y == app.layout.tab_bar_y {
+                if x >= app.layout.tab_logs_x.0 && x < app.layout.tab_logs_x.1 {
+                    app.switch_tab(ViewTab::Logs);
+                    return;
+                }
+                if x >= app.layout.tab_network_x.0 && x < app.layout.tab_network_x.1 {
+                    app.switch_tab(ViewTab::Network);
+                    return;
+                }
+            }
+
             let is_double = if let Some((prev_time, prev_x, prev_y)) = app.layout.last_click {
                 now.duration_since(prev_time).as_millis() < DOUBLE_CLICK_MS
                     && prev_y == y
@@ -79,7 +91,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             } else if y >= app.layout.timeline_y && y < app.layout.bottom_y {
                 // Timeline click → jump to position
                 let fc = app.filtered_count();
-                let offset = crate::ui::timeline::click_to_offset(x, app.layout.width, fc);
+                let offset = crate::ui::logs::timeline::click_to_offset(x, app.layout.width, fc);
                 app.scroll_offset = offset;
                 app.selected = offset;
                 app.auto_scroll = false;
@@ -487,6 +499,8 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('e') => app.export_logs(),
         KeyCode::Char('?') => app.enter_help(),
         KeyCode::Char('S') => app.enter_stats(),
+        KeyCode::Char('1') => app.switch_tab(ViewTab::Logs),
+        KeyCode::Char('2') => app.switch_tab(ViewTab::Network),
         KeyCode::Esc => app.clear_all_filters(),
         _ => {}
     }

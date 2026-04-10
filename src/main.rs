@@ -433,7 +433,7 @@ async fn run_loop(
             terminal.draw(|f| {
                 match app_guard.mode {
                     AppMode::Help => ui::help::draw_help(f),
-                    AppMode::Stats => ui::stats::draw_stats(f, &mut app_guard),
+                    AppMode::Stats => ui::logs::stats::draw_stats(f, &mut app_guard),
                     _ => ui::draw(f, &mut app_guard),
                 }
             })?;
