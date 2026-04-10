@@ -53,7 +53,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
     if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
         let y = mouse.row;
         let x = mouse.column;
-        if y == app.layout.tab_bar_y {
+        if y >= app.layout.tab_bar_y && y < app.layout.tab_bar_y + 2 {
             if x >= app.layout.tab_logs_x.0 && x < app.layout.tab_logs_x.1 {
                 app.switch_tab(ViewTab::Logs);
                 return;

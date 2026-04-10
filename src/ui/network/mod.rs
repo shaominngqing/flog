@@ -328,12 +328,7 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
                 spans.push(Span::styled(" ".repeat(total_width - used), Style::default().bg(row_bg)));
             }
 
-            let mut line = Line::from(spans);
-            // Apply underline separator
-            for span in line.spans.iter_mut() {
-                span.style = span.style.add_modifier(Modifier::UNDERLINED);
-            }
-            lines.push(line);
+            lines.push(Line::from(spans));
         }
     }
 

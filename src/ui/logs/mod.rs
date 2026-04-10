@@ -188,14 +188,17 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
 // ══════════════════════════════════════
 
 fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
+    let mut spans: Vec<Span> = Vec::new();
+    let mut x: u16 = 0;
     let bg = MANTLE;
     let search_active = app.mode == AppMode::Search;
     let filter_active = app.mode == AppMode::TagFilter;
 
-    // Tab selector (replaces logo)
-    let (tab_spans, tab_w) = super::tab_bar::tab_spans(app, bg);
-    let mut spans: Vec<Span> = tab_spans;
-    let mut x: u16 = tab_w;
+    // Logo
+    spans.push(Span::styled(" flog ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)));
+    x += 6;
+    spans.push(Span::styled(" ", Style::default().bg(bg)));
+    x += 1;
 
     // Search
     let si = if search_active { Style::default().fg(MANTLE).bg(YELLOW) } else { Style::default().fg(OVERLAY0).bg(bg) };
@@ -208,7 +211,7 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     let ss = if search_active { Style::default().fg(TEXT).bg(SURFACE0) }
         else if !app.filter.search_query.is_empty() { Style::default().fg(YELLOW).bg(bg) }
         else { Style::default().fg(OVERLAY0).bg(bg) };
-    app.layout.search_x = (tab_w, tab_w + 1 + sw as u16);
+    app.layout.search_x = (7, 7 + 1 + sw as u16);
     spans.push(Span::styled(safe_pad(&st, sw), ss));
     x += sw as u16;
 
