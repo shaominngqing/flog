@@ -226,14 +226,20 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         // Clamp selection and scroll
         app.network.selected = app.network.selected.min(filtered_count.saturating_sub(1));
+        app.network.scroll_offset = app.network.scroll_offset.min(filtered_count.saturating_sub(1));
+
+        // Keep selected within visible viewport
         if app.network.selected < app.network.scroll_offset {
             app.network.scroll_offset = app.network.selected;
         }
         if app.network.selected >= app.network.scroll_offset + height {
             app.network.scroll_offset = app.network.selected.saturating_sub(height - 1);
         }
-        // Re-enable auto-scroll if scrolled to bottom
-        if app.network.scroll_offset + height >= filtered_count {
+
+        // Re-enable auto-scroll when selected is at the very bottom
+        if app.network.selected + 1 >= filtered_count
+            && app.network.scroll_offset + height >= filtered_count
+        {
             app.network.auto_scroll = true;
         }
     }
@@ -438,6 +444,19 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         .filter(|e| e.status == NetworkStatus::Failed || e.http_status.map(|c| c >= 400).unwrap_or(false))
         .count();
 
+    // LIVE / scroll indicator (matching Logs view)
+    let (live_text, live_style) = if app.network.auto_scroll {
+        let dot = match (app.tick / 8) % 4 { 0 => "\u{25cf}", 1 => "\u{25c9}", 2 => "\u{25cf}", _ => "\u{25cb}" };
+        (format!(" {} LIVE ", dot), Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD))
+    } else {
+        let pct = if filtered > 0 {
+            ((app.network.selected + 1) * 100) / filtered
+        } else {
+            100
+        };
+        (format!(" {}% ", pct.min(100)), Style::default().fg(TEXT).bg(SURFACE0))
+    };
+
     let info = format!(" {}/{} requests", filtered, total);
     let failed_info = if failed_count > 0 {
         format!("  {} failed", failed_count)
@@ -452,12 +471,14 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         ("help", " ? ", Style::default().fg(MANTLE).bg(OVERLAY0).add_modifier(Modifier::BOLD)),
     ];
 
+    let lw = live_text.width() as u16;
     let info_w = info.width() as u16;
     let failed_w = failed_info.width() as u16;
     let bw: u16 = buttons.iter().map(|(_, l, _)| l.width() as u16 + 1).sum();
-    let spacer = area.width.saturating_sub(info_w + failed_w + bw).max(1);
+    let spacer = area.width.saturating_sub(lw + info_w + failed_w + bw).max(1);
 
     let mut spans = vec![
+        Span::styled(&live_text, live_style),
         Span::styled(&info, Style::default().fg(SUBTEXT0).bg(bg)),
     ];
 

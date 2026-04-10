@@ -157,14 +157,13 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
                 app.network.auto_scroll = false;
+                app.network.scroll_offset = app.network.scroll_offset.saturating_sub(SCROLL_LINES);
                 app.network.selected = app.network.selected.saturating_sub(SCROLL_LINES);
-                if app.network.selected < app.network.scroll_offset {
-                    app.network.scroll_offset = app.network.selected;
-                }
             }
             MouseEventKind::ScrollDown => {
                 let count = app.network.filtered_count(&app.network_store);
                 if count > 0 {
+                    app.network.scroll_offset = (app.network.scroll_offset + SCROLL_LINES).min(count.saturating_sub(1));
                     app.network.selected = (app.network.selected + SCROLL_LINES).min(count - 1);
                 }
             }
@@ -768,23 +767,28 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Up | KeyCode::Char('k') => {
                 app.network.auto_scroll = false;
                 app.network.selected = app.network.selected.saturating_sub(1);
+                // Keep selected in viewport
+                if app.network.selected < app.network.scroll_offset {
+                    app.network.scroll_offset = app.network.selected;
+                }
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 let count = app.network.filtered_count(&app.network_store);
                 if count > 0 && app.network.selected + 1 < count {
                     app.network.selected += 1;
                 }
+                // Renderer will adjust scroll_offset if selected goes below viewport
             }
             KeyCode::PageUp => {
                 app.network.auto_scroll = false;
-                app.network.selected = app.network.selected.saturating_sub(20);
                 app.network.scroll_offset = app.network.scroll_offset.saturating_sub(20);
+                app.network.selected = app.network.selected.saturating_sub(20);
             }
             KeyCode::PageDown => {
                 let count = app.network.filtered_count(&app.network_store);
                 if count > 0 {
-                    app.network.selected = (app.network.selected + 20).min(count - 1);
                     app.network.scroll_offset = (app.network.scroll_offset + 20).min(count.saturating_sub(1));
+                    app.network.selected = (app.network.selected + 20).min(count - 1);
                 }
             }
             KeyCode::Home => {
@@ -793,10 +797,8 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 app.network.scroll_offset = 0;
             }
             KeyCode::End => {
-                let count = app.network.filtered_count(&app.network_store);
-                if count > 0 {
-                    app.network.selected = count - 1;
-                }
+                app.network.auto_scroll = true;
+                // Renderer will set selected and scroll_offset to bottom
             }
             KeyCode::Enter => {
                 app.network.show_detail = !app.network.show_detail;
