@@ -127,11 +127,13 @@ pub fn toggle_fold(state: &mut JsonViewerState, source_line: usize) -> bool {
 
 /// Render formatted JSON with fold/unfold, depth-aware colors.
 /// Returns the rendered lines and updates state.row_to_source.
+/// `max_width` controls line wrapping (0 = no limit).
 pub fn render_json(
     fmt_lines: &[FmtLine],
     state: &mut JsonViewerState,
     scroll: usize,
     max_lines: usize,
+    max_width: usize,
 ) -> Vec<Line<'static>> {
     let mut all_lines: Vec<Line<'static>> = Vec::new();
     let mut row_to_source: Vec<usize> = Vec::new();
@@ -168,24 +170,59 @@ pub fn render_json(
 
         // Not collapsed or not foldable
         if di >= scroll && all_lines.len() < max_lines {
-            if fl.close_line.is_some() {
+            let line = if fl.close_line.is_some() {
                 // Foldable line with expansion arrow
                 let mut spans = vec![
                     Span::styled("  ".repeat(fl.depth), Style::default()),
                     Span::styled("\u{25bc} ", Style::default().fg(BLUE)),  // ▼
                 ];
                 spans.extend(colorize_content_depth(fl.text.trim_start(), fl.depth));
-                all_lines.push(Line::from(spans));
+                Line::from(spans)
             } else {
-                all_lines.push(colorize_line_depth(&fl.text, fl.depth));
+                colorize_line_depth(&fl.text, fl.depth)
+            };
+
+            // Wrap long lines if max_width > 0
+            if max_width > 0 {
+                let raw_text = line_to_string(&line);
+                let text_width = unicode_width::UnicodeWidthStr::width(raw_text.as_str());
+                if text_width > max_width {
+                    let indent = "  ".repeat(fl.depth + 1);
+                    let wrapped = super::wrap_text(&raw_text, max_width, 30);
+                    for (wi, wl) in wrapped.iter().enumerate() {
+                        if all_lines.len() >= max_lines { break; }
+                        if wi == 0 {
+                            // First line: re-colorize the truncated portion
+                            let first_line = colorize_line_depth(wl, fl.depth);
+                            all_lines.push(first_line);
+                        } else {
+                            // Continuation lines with extra indent
+                            all_lines.push(Line::from(Span::styled(
+                                format!("{}{}", indent, wl),
+                                Style::default().fg(STR_COLOR),
+                            )));
+                        }
+                        row_to_source.push(si);
+                    }
+                } else {
+                    all_lines.push(line);
+                    row_to_source.push(si);
+                }
+            } else {
+                all_lines.push(line);
+                row_to_source.push(si);
             }
-            row_to_source.push(si);
         }
         di += 1;
     }
 
     state.row_to_source = row_to_source;
     all_lines
+}
+
+/// Extract plain text from a Line for width measurement.
+fn line_to_string(line: &Line<'_>) -> String {
+    line.spans.iter().map(|s| s.content.as_ref()).collect()
 }
 
 // ══════════════════════════════════════

@@ -488,7 +488,7 @@ fn render_json_section(
         let fmt_lines = json_viewer::bracket_format(json_text);
         let state = viewer_states.entry(section_key.to_string())
             .or_insert_with(|| json_viewer::init_state(&fmt_lines, 1));
-        let rendered = json_viewer::render_json(&fmt_lines, state, 0, usize::MAX);
+        let rendered = json_viewer::render_json(&fmt_lines, state, 0, usize::MAX, max_w.saturating_sub(3));
         let _base = lines.len();
         for (i, line) in rendered.into_iter().enumerate() {
             // Add indent prefix

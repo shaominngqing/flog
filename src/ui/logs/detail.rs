@@ -78,7 +78,7 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     let body_height = inner_h.saturating_sub(all_lines.len());
-    let body_lines = json_viewer::render_json(&fmt_lines, &mut app.detail.viewer_state, app.detail.scroll, body_height);
+    let body_lines = json_viewer::render_json(&fmt_lines, &mut app.detail.viewer_state, app.detail.scroll, body_height, inner_w);
     all_lines.extend(body_lines);
 
     // Track total content lines for scrollbar
