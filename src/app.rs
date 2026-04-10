@@ -250,6 +250,8 @@ pub struct LayoutCache {
     pub net_detail_x: u16,
     /// Y position where network detail content starts (set by detail renderer).
     pub net_detail_content_y: u16,
+    /// Network status bar button regions: (name, x_start, x_end).
+    pub net_buttons: Vec<(String, u16, u16)>,
 }
 
 // ── App ──

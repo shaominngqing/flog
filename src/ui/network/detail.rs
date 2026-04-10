@@ -246,12 +246,17 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                 let chunk_key = format!("SSE#{}", i);
                 let chunk_collapsed = app.network.collapsed_sections.contains(&chunk_key);
                 let prefix = if chunk_collapsed { "  \u{25b6}" } else { "  \u{25bc}" };
+                let prefix_text = format!("{} #{} ", prefix, i);
+                let preview_w = inner_w.saturating_sub(prefix_text.len() + 1);
                 all_lines.push(Line::from(vec![
-                    Span::styled(format!("{} #{} ", prefix, i), Style::default().fg(OVERLAY0)),
+                    Span::styled(prefix_text, Style::default().fg(OVERLAY0)),
                     Span::styled(
                         if chunk_collapsed {
-                            let preview = if chunk.data.len() > 40 { format!("{}...", &chunk.data[..40]) } else { chunk.data.clone() };
-                            preview
+                            if chunk.data.len() > preview_w {
+                                format!("{}...", &chunk.data[..preview_w.saturating_sub(3)])
+                            } else {
+                                chunk.data.clone()
+                            }
                         } else {
                             String::new()
                         },
@@ -298,12 +303,17 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                 let msg_key = format!("WS#{}", i);
                 let msg_collapsed = app.network.collapsed_sections.contains(&msg_key);
                 let prefix = if msg_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+                let ws_prefix_text = format!("  {} {} ", prefix, arrow);
+                let ws_preview_w = inner_w.saturating_sub(ws_prefix_text.len() + 1);
                 all_lines.push(Line::from(vec![
-                    Span::styled(format!("  {} {} ", prefix, arrow), Style::default().fg(color)),
+                    Span::styled(ws_prefix_text, Style::default().fg(color)),
                     Span::styled(
                         if msg_collapsed {
-                            let preview = if msg.data.len() > 40 { format!("{}...", &msg.data[..40]) } else { msg.data.clone() };
-                            preview
+                            if msg.data.len() > ws_preview_w {
+                                format!("{}...", &msg.data[..ws_preview_w.saturating_sub(3)])
+                            } else {
+                                msg.data.clone()
+                            }
                         } else {
                             format!("({} bytes)", msg.size)
                         },

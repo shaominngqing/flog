@@ -127,6 +127,25 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 let y = mouse.row;
+                let x = mouse.column;
+
+                // Click on status bar buttons
+                if y == app.layout.bottom_y {
+                    for (name, x_start, x_end) in &app.layout.net_buttons {
+                        if x >= *x_start && x < *x_end {
+                            match name.as_str() {
+                                "curl" => copy_as_curl(app),
+                                "clear" => {
+                                    app.network_store.clear();
+                                    app.network.invalidate_filter();
+                                    app.network.show_detail = false;
+                                }
+                                _ => {}
+                            }
+                            return;
+                        }
+                    }
+                }
 
                 // Click in list area (left half or full width)
                 if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {

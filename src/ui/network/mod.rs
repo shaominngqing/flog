@@ -268,10 +268,11 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(method_c).bg(row_bg),
             );
 
-            // URL (takes remaining space)
+            // URL (takes remaining space) — show path only (strip query) for compact display
             let fixed_width = 1 + PROTO_W + 1 + METHOD_W + 1 + STATUS_W + 1 + TIME_W + 1 + SIZE_W + 1;
             let url_width = total_width.saturating_sub(fixed_width);
-            let url_display = safe_truncate(&entry.path, url_width);
+            let path_only = entry.path.split('?').next().unwrap_or(&entry.path);
+            let url_display = safe_truncate(path_only, url_width);
             let url_span = Span::styled(
                 safe_pad(&url_display, url_width),
                 Style::default().fg(TEXT).bg(row_bg),
@@ -424,6 +425,7 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let buttons: Vec<(&str, &str, Style)> = vec![
+        ("curl", " cURL ", Style::default().fg(GREEN).bg(bg)),
         ("clear", " Clear ", Style::default().fg(PEACH).bg(bg)),
         ("help", " ? ", Style::default().fg(SAPPHIRE).bg(bg)),
     ];
@@ -443,10 +445,17 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
     spans.push(Span::styled(" ".repeat(spacer as usize), Style::default().bg(bg)));
 
-    for (i, (_, label, style)) in buttons.iter().enumerate() {
+    // Store button click regions
+    let mut xc = info_w + failed_w + spacer as u16;
+    app.layout.net_buttons.clear();
+    for (i, (name, label, style)) in buttons.iter().enumerate() {
+        let start = xc;
         spans.push(Span::styled(*label, *style));
+        xc += label.width() as u16;
+        app.layout.net_buttons.push((name.to_string(), start, xc));
         if i < buttons.len() - 1 {
             spans.push(Span::styled(" ", Style::default().bg(bg)));
+            xc += 1;
         }
     }
 
