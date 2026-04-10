@@ -9,9 +9,19 @@ typedef FlogHttpFilter = bool Function(RequestOptions options);
 
 /// Dio interceptor that emits flog_net protocol messages for HTTP traffic.
 ///
+/// **Important:** Add this interceptor **before** any interceptor that modifies
+/// or rejects responses (e.g., an envelope-unwrapping interceptor that calls
+/// `handler.reject()` on business errors). Otherwise, `FlogHttpInterceptor`
+/// won't see the original response and failed requests will appear stuck
+/// in "Pending" state in flog's Network Inspector.
+///
 /// ```dart
 /// final dio = Dio();
-/// dio.interceptors.add(FlogHttpInterceptor());
+/// dio.interceptors.addAll([
+///   FlogHttpInterceptor(),        // ← must be before response interceptors
+///   ApiResponseInterceptor(),     // envelope unwrap, may reject
+///   LoggingInterceptor(),
+/// ]);
 /// ```
 class FlogHttpInterceptor extends Interceptor {
   /// Whether to include request headers in log output.

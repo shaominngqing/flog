@@ -89,6 +89,34 @@ log.e('Connection failed: $e');
 
 没有 flog_logger 也能用，flog 会自动识别 Flutter 标准输出格式。
 
+### Network Inspector
+
+搭配 `FlogHttpInterceptor` 可以在 flog 的 Network 标签页查看 HTTP/SSE 请求详情：
+
+```dart
+final dio = Dio();
+dio.interceptors.addAll([
+  FlogHttpInterceptor(),        // ← 必须放在最前面
+  ApiResponseInterceptor(),     // 业务逻辑拦截器
+  LoggingInterceptor(),
+]);
+```
+
+> **注意：** `FlogHttpInterceptor` 必须添加在其他会修改或拦截响应的 interceptor **之前**。如果放在后面，当其他 interceptor 调用 `handler.reject()` 时，flog 看不到原始响应，请求会一直显示为 Pending 状态。
+
+SSE 流式请求使用 `FlogSseParser`：
+
+```dart
+await for (final data in FlogSseParser.wrap(
+  response.data!.stream,
+  url: '/api/chat/completions',
+  method: 'POST',
+)) {
+  final json = jsonDecode(data);
+  // ...
+}
+```
+
 ## 快捷键
 
 | 按键 | 功能 |
