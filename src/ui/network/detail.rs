@@ -232,11 +232,13 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
             *last = Some(sec_key.to_string());
         }
         if !is_collapsed {
-            // Pre-collapse SSE chunks by default on first render
-            for i in 0..entry.sse_chunks.len() {
-                let chunk_key = format!("SSE#{}", i);
-                if !app.network.collapsed_sections.contains(&chunk_key) && app.network.json_viewer_states.is_empty() {
-                    app.network.collapsed_sections.insert(chunk_key);
+            // Pre-collapse SSE chunks by default on FIRST render only.
+            // Use a sentinel key to track whether we've initialized.
+            let init_key = "_sse_init";
+            if !app.network.collapsed_sections.contains(init_key) {
+                app.network.collapsed_sections.insert(init_key.to_string());
+                for i in 0..entry.sse_chunks.len() {
+                    app.network.collapsed_sections.insert(format!("SSE#{}", i));
                 }
             }
 
