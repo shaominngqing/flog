@@ -157,13 +157,11 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
                 app.network.auto_scroll = false;
-                app.network.scroll_offset = app.network.scroll_offset.saturating_sub(SCROLL_LINES);
                 app.network.selected = app.network.selected.saturating_sub(SCROLL_LINES);
             }
             MouseEventKind::ScrollDown => {
                 let count = app.network.filtered_count(&app.network_store);
                 if count > 0 {
-                    app.network.scroll_offset = (app.network.scroll_offset + SCROLL_LINES).min(count.saturating_sub(1));
                     app.network.selected = (app.network.selected + SCROLL_LINES).min(count - 1);
                 }
             }
@@ -781,13 +779,11 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             }
             KeyCode::PageUp => {
                 app.network.auto_scroll = false;
-                app.network.scroll_offset = app.network.scroll_offset.saturating_sub(20);
                 app.network.selected = app.network.selected.saturating_sub(20);
             }
             KeyCode::PageDown => {
                 let count = app.network.filtered_count(&app.network_store);
                 if count > 0 {
-                    app.network.scroll_offset = (app.network.scroll_offset + 20).min(count.saturating_sub(1));
                     app.network.selected = (app.network.selected + 20).min(count - 1);
                 }
             }

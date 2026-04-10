@@ -219,27 +219,28 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    // Auto-scroll: keep selection at bottom when new entries arrive
+    // Clamp selected first
+    app.network.selected = app.network.selected.min(filtered_count.saturating_sub(1));
+
     if app.network.auto_scroll {
+        // Pin to bottom
         app.network.selected = filtered_count.saturating_sub(1);
         app.network.scroll_offset = filtered_count.saturating_sub(height);
     } else {
-        // Clamp selection and scroll
-        app.network.selected = app.network.selected.min(filtered_count.saturating_sub(1));
-        app.network.scroll_offset = app.network.scroll_offset.min(filtered_count.saturating_sub(1));
+        // Ensure scroll_offset is valid: never exceed max scrollable position
+        let max_offset = filtered_count.saturating_sub(height);
+        app.network.scroll_offset = app.network.scroll_offset.min(max_offset);
 
         // Keep selected within visible viewport
         if app.network.selected < app.network.scroll_offset {
             app.network.scroll_offset = app.network.selected;
         }
-        if app.network.selected >= app.network.scroll_offset + height {
+        if height > 0 && app.network.selected >= app.network.scroll_offset + height {
             app.network.scroll_offset = app.network.selected.saturating_sub(height - 1);
         }
 
         // Re-enable auto-scroll when selected is at the very bottom
-        if app.network.selected + 1 >= filtered_count
-            && app.network.scroll_offset + height >= filtered_count
-        {
+        if app.network.selected + 1 >= filtered_count {
             app.network.auto_scroll = true;
         }
     }
