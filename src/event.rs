@@ -68,7 +68,11 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
     // Network tab mouse handling
     if app.active_tab == ViewTab::Network {
         // Network detail scroll handling (must be checked before list scroll)
-        if app.network.show_detail && mouse.column >= app.layout.net_detail_x {
+        if app.network.show_detail
+            && mouse.column >= app.layout.net_detail_x
+            && mouse.row >= app.layout.list_y
+            && mouse.row < app.layout.bottom_y
+        {
             match mouse.kind {
                 MouseEventKind::ScrollUp => {
                     app.network.detail_scroll = app.network.detail_scroll.saturating_sub(SCROLL_LINES);
@@ -80,10 +84,9 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                 }
                 MouseEventKind::Down(MouseButton::Left) => {
                     let y = mouse.row;
-                    // Calculate which line in the detail was clicked
-                    // Detail starts at tab_bar(2) + toolbar(1) + header(1) = row 4
-                    let detail_content_y = app.layout.tab_bar_y + 2 + 1 + 1 + 1; // tab(2) + toolbar(1) + header(1) + border(1)
-                    if y >= detail_content_y {
+                    // Detail content starts at list_y + 1 (Block title/border takes 1 row)
+                    let detail_content_y = app.layout.list_y + 1;
+                    if y >= detail_content_y && y < app.layout.bottom_y {
                         let line_idx = app.network.detail_scroll + (y - detail_content_y) as usize;
                         // First check section_line_map for section toggle
                         if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
