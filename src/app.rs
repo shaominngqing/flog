@@ -174,6 +174,45 @@ pub struct NetworkState {
 }
 
 impl NetworkState {
+    /// Scroll viewport up (mouse wheel, PageUp). Moves both offset and selected.
+    pub fn move_up(&mut self, n: usize) {
+        self.auto_scroll = false;
+        self.scroll_offset = self.scroll_offset.saturating_sub(n);
+        self.selected = self.selected.saturating_sub(n);
+    }
+
+    /// Scroll viewport down (mouse wheel, PageDown). Moves both offset and selected.
+    pub fn move_down(&mut self, n: usize, count: usize) {
+        if count == 0 { return; }
+        self.scroll_offset = (self.scroll_offset + n).min(count.saturating_sub(1));
+        self.selected = (self.selected + n).min(count - 1);
+    }
+
+    /// Move selection up (k/Up). Viewport follows if needed.
+    pub fn select_up(&mut self, n: usize) {
+        self.auto_scroll = false;
+        self.selected = self.selected.saturating_sub(n);
+        if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        }
+    }
+
+    /// Move selection down (j/Down). Renderer adjusts viewport.
+    pub fn select_down(&mut self, n: usize, count: usize) {
+        if count == 0 { return; }
+        self.selected = (self.selected + n).min(count - 1);
+    }
+
+    pub fn go_top(&mut self) {
+        self.auto_scroll = false;
+        self.selected = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn go_bottom(&mut self) {
+        self.auto_scroll = true;
+    }
+
     pub fn new() -> Self {
         Self {
             selected: 0,

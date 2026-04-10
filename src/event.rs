@@ -156,14 +156,11 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
 
         match mouse.kind {
             MouseEventKind::ScrollUp => {
-                app.network.auto_scroll = false;
-                app.network.selected = app.network.selected.saturating_sub(SCROLL_LINES);
+                app.network.move_up(SCROLL_LINES);
             }
             MouseEventKind::ScrollDown => {
                 let count = app.network.filtered_count(&app.network_store);
-                if count > 0 {
-                    app.network.selected = (app.network.selected + SCROLL_LINES).min(count - 1);
-                }
+                app.network.move_down(SCROLL_LINES, count);
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 let y = mouse.row;
@@ -763,38 +760,24 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('q') => app.should_quit = true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
             KeyCode::Up | KeyCode::Char('k') => {
-                app.network.auto_scroll = false;
-                app.network.selected = app.network.selected.saturating_sub(1);
-                // Keep selected in viewport
-                if app.network.selected < app.network.scroll_offset {
-                    app.network.scroll_offset = app.network.selected;
-                }
+                app.network.select_up(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 let count = app.network.filtered_count(&app.network_store);
-                if count > 0 && app.network.selected + 1 < count {
-                    app.network.selected += 1;
-                }
-                // Renderer will adjust scroll_offset if selected goes below viewport
+                app.network.select_down(1, count);
             }
             KeyCode::PageUp => {
-                app.network.auto_scroll = false;
-                app.network.selected = app.network.selected.saturating_sub(20);
+                app.network.move_up(20);
             }
             KeyCode::PageDown => {
                 let count = app.network.filtered_count(&app.network_store);
-                if count > 0 {
-                    app.network.selected = (app.network.selected + 20).min(count - 1);
-                }
+                app.network.move_down(20, count);
             }
             KeyCode::Home => {
-                app.network.auto_scroll = false;
-                app.network.selected = 0;
-                app.network.scroll_offset = 0;
+                app.network.go_top();
             }
             KeyCode::End => {
-                app.network.auto_scroll = true;
-                // Renderer will set selected and scroll_offset to bottom
+                app.network.go_bottom();
             }
             KeyCode::Enter => {
                 app.network.show_detail = !app.network.show_detail;
