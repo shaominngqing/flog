@@ -545,7 +545,7 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(" ", dim_s),
                 Span::styled(
                     safe_pad(&entry.tag, TAG_WIDTH),
-                    Style::default().fg(MANTLE).bg(tag_color(&entry.tag)),
+                    Style::default().fg(tag_color(&entry.tag)).bg(row_bg),
                 ),
                 Span::styled(" ", dim_s),
             ];
@@ -650,12 +650,8 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 }
             }
 
-            // Apply underline separator to last line of this entry
-            if entry.tag != "────" {
-                if let Some(last_line) = lines.last_mut() {
-                    apply_row_underline(last_line, row_bg);
-                }
-            }
+            // Row separator: removed underline (too noisy), relying on
+            // level-based background colors for visual grouping instead.
 
             if lines.len() >= height { break; }
         }
