@@ -40,8 +40,8 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
         return;
     }
 
-    // Check if click is in the detail side panel
-    if app.show_detail_panel {
+    // Check if click is in the detail side panel (Logs view only)
+    if app.active_tab == ViewTab::Logs && app.show_detail_panel {
         let panel_start = (app.layout.width as u32 * (100 - app.detail_panel_pct as u32) / 100) as u16;
         if mouse.column >= panel_start && mouse.row > app.layout.toolbar_y && mouse.row < app.layout.timeline_y {
             handle_detail_panel_click(app, &mouse);
@@ -49,6 +49,64 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
         }
     }
 
+    // Tab bar click detection (common to both tabs)
+    if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+        let y = mouse.row;
+        let x = mouse.column;
+        if y == app.layout.tab_bar_y {
+            if x >= app.layout.tab_logs_x.0 && x < app.layout.tab_logs_x.1 {
+                app.switch_tab(ViewTab::Logs);
+                return;
+            }
+            if x >= app.layout.tab_network_x.0 && x < app.layout.tab_network_x.1 {
+                app.switch_tab(ViewTab::Network);
+                return;
+            }
+        }
+    }
+
+    // Network tab mouse handling
+    if app.active_tab == ViewTab::Network {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                app.network.selected = app.network.selected.saturating_sub(SCROLL_LINES);
+                if app.network.selected < app.network.scroll_offset {
+                    app.network.scroll_offset = app.network.selected;
+                }
+            }
+            MouseEventKind::ScrollDown => {
+                let count = app.network.filtered_count(&app.network_store);
+                if count > 0 {
+                    app.network.selected = (app.network.selected + SCROLL_LINES).min(count - 1);
+                }
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                let y = mouse.row;
+                // Click in list area
+                if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
+                    let row_in_list = (y - app.layout.list_y) as usize;
+                    let target = app.network.scroll_offset + row_in_list;
+                    let count = app.network.filtered_count(&app.network_store);
+                    if target < count {
+                        if app.network.selected == target {
+                            // Click same row -> toggle detail
+                            app.network.show_detail = !app.network.show_detail;
+                            app.network.detail_scroll = 0;
+                        } else {
+                            // Click different row -> select and show detail
+                            app.network.selected = target;
+                            app.network.show_detail = true;
+                            app.network.detail_scroll = 0;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Logs tab mouse handling
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             app.move_up(SCROLL_LINES);
@@ -62,18 +120,6 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             let x = mouse.column;
             let now = Instant::now();
             app.status_message = None;
-
-            // Tab bar click detection
-            if y == app.layout.tab_bar_y {
-                if x >= app.layout.tab_logs_x.0 && x < app.layout.tab_logs_x.1 {
-                    app.switch_tab(ViewTab::Logs);
-                    return;
-                }
-                if x >= app.layout.tab_network_x.0 && x < app.layout.tab_network_x.1 {
-                    app.switch_tab(ViewTab::Network);
-                    return;
-                }
-            }
 
             let is_double = if let Some((prev_time, prev_x, prev_y)) = app.layout.last_click {
                 now.duration_since(prev_time).as_millis() < DOUBLE_CLICK_MS
@@ -482,6 +528,58 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
+    // Network tab key handling
+    if app.active_tab == ViewTab::Network {
+        match key.code {
+            KeyCode::Char('q') => app.should_quit = true,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.network.selected = app.network.selected.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let count = app.network.filtered_count(&app.network_store);
+                if count > 0 && app.network.selected + 1 < count {
+                    app.network.selected += 1;
+                }
+            }
+            KeyCode::PageUp => {
+                app.network.selected = app.network.selected.saturating_sub(20);
+                app.network.scroll_offset = app.network.scroll_offset.saturating_sub(20);
+            }
+            KeyCode::PageDown => {
+                let count = app.network.filtered_count(&app.network_store);
+                if count > 0 {
+                    app.network.selected = (app.network.selected + 20).min(count - 1);
+                    app.network.scroll_offset = (app.network.scroll_offset + 20).min(count.saturating_sub(1));
+                }
+            }
+            KeyCode::Home => {
+                app.network.selected = 0;
+                app.network.scroll_offset = 0;
+            }
+            KeyCode::End => {
+                let count = app.network.filtered_count(&app.network_store);
+                if count > 0 {
+                    app.network.selected = count - 1;
+                }
+            }
+            KeyCode::Enter => {
+                app.network.show_detail = !app.network.show_detail;
+                app.network.detail_scroll = 0;
+            }
+            KeyCode::Char('?') => app.enter_help(),
+            KeyCode::Char('1') => app.switch_tab(ViewTab::Logs),
+            KeyCode::Char('2') => app.switch_tab(ViewTab::Network),
+            KeyCode::Esc => {
+                app.network.filter.reset();
+                app.network.invalidate_filter();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // Logs tab key handling
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
