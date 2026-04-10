@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 import 'flog_net.dart';
@@ -40,10 +42,10 @@ class FlogHttpInterceptor extends Interceptor {
 
   /// Creates a [FlogHttpInterceptor].
   FlogHttpInterceptor({
-    this.includeRequestHeaders = false,
-    this.includeResponseHeaders = false,
-    this.includeRequestBody = false,
-    this.includeResponseBody = false,
+    this.includeRequestHeaders = true,
+    this.includeResponseHeaders = true,
+    this.includeRequestBody = true,
+    this.includeResponseBody = true,
     this.maxBodySize = 10 * 1024,
     this.filter,
   });
@@ -73,7 +75,7 @@ class FlogHttpInterceptor extends Interceptor {
     }
 
     if (includeRequestBody && options.data != null) {
-      data['body'] = _truncate(options.data.toString());
+      data['body'] = _truncate(_encodeBody(options.data));
     }
 
     emitNet(data);
@@ -111,7 +113,7 @@ class FlogHttpInterceptor extends Interceptor {
     }
 
     if (includeResponseBody && response.data != null) {
-      data['body'] = _truncate(response.data.toString());
+      data['body'] = _truncate(_encodeBody(response.data));
     }
 
     emitNet(data);
@@ -146,6 +148,18 @@ class FlogHttpInterceptor extends Interceptor {
 
     emitNet(data);
     handler.next(err);
+  }
+
+  String _encodeBody(dynamic body) {
+    if (body is String) return body;
+    if (body is Map || body is List) {
+      try {
+        return jsonEncode(body);
+      } catch (_) {
+        return body.toString();
+      }
+    }
+    return body.toString();
   }
 
   String _truncate(String value) {

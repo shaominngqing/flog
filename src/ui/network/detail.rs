@@ -194,12 +194,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                 ]));
                 section_line_map.push(Some(chunk_key.clone()));
                 if !chunk_collapsed {
-                    // Show full chunk data, wrapped
-                    let wrapped = wrap_text(&chunk.data, inner_w.saturating_sub(4), 50);
-                    for wl in &wrapped {
-                        all_lines.push(Line::from(Span::styled(format!("    {}", wl), Style::default().fg(STR_COLOR))));
-                        section_line_map.push(None);
-                    }
+                    // Try JSON pretty-print for chunk data
+                    render_body_block(&mut all_lines, &mut section_line_map, &chunk.data, inner_w);
                 }
             }
             all_lines.push(Line::raw(""));
@@ -241,11 +237,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                 ]));
                 section_line_map.push(Some(msg_key.clone()));
                 if !msg_collapsed {
-                    let wrapped = wrap_text(&msg.data, inner_w.saturating_sub(4), 50);
-                    for wl in &wrapped {
-                        all_lines.push(Line::from(Span::styled(format!("    {}", wl), Style::default().fg(STR_COLOR))));
-                        section_line_map.push(None);
-                    }
+                    render_body_block(&mut all_lines, &mut section_line_map, &msg.data, inner_w);
                 }
             }
             all_lines.push(Line::raw(""));
