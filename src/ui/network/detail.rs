@@ -63,12 +63,25 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     // ── Header: method pill + path (wrapped) ──
     let method_c = method_color(&entry.method);
     if !entry.method.is_empty() {
-        all_lines.push(Line::from(vec![
-            Span::styled(format!(" {} ", entry.method), Style::default().fg(MANTLE).bg(method_c).add_modifier(Modifier::BOLD)),
-            Span::styled(format!(" {}", entry.path), Style::default().fg(TEXT)),
-        ]));
-        section_line_map.push(None);
-        json_click_map.push(None);
+        let method_pill = format!(" {} ", entry.method);
+        let path_w = inner_w.saturating_sub(method_pill.len() + 1);
+        let path_lines = wrap_text(&entry.path, path_w, 5);
+        for (pi, pl) in path_lines.iter().enumerate() {
+            if pi == 0 {
+                all_lines.push(Line::from(vec![
+                    Span::styled(method_pill.clone(), Style::default().fg(MANTLE).bg(method_c).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!(" {}", pl), Style::default().fg(TEXT)),
+                ]));
+            } else {
+                let indent = " ".repeat(method_pill.len() + 1);
+                all_lines.push(Line::from(Span::styled(
+                    format!("{}{}", indent, pl),
+                    Style::default().fg(TEXT),
+                )));
+            }
+            section_line_map.push(None);
+            json_click_map.push(None);
+        }
     }
     all_lines.push(Line::from(Span::styled("\u{2500}".repeat(inner_w), Style::default().fg(SURFACE0))));
     section_line_map.push(None);

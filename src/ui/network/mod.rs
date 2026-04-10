@@ -425,8 +425,8 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let buttons: Vec<(&str, &str, Style)> = vec![
-        ("curl", " cURL ", Style::default().fg(GREEN).bg(bg)),
-        ("clear", " Clear ", Style::default().fg(PEACH).bg(bg)),
+        ("curl", " Copy as cURL ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
+        ("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
         ("help", " ? ", Style::default().fg(SAPPHIRE).bg(bg)),
     ];
 
