@@ -63,13 +63,23 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
     if !entry.timestamp.is_empty() {
         all_lines.push(Line::from(Span::styled(format!("  {}", entry.timestamp), Style::default().fg(OVERLAY0))));
     }
+    // Message length info
+    let full_msg = entry.full_message();
+    let msg_len = full_msg.len();
+    let len_display = if msg_len >= 1024 * 1024 {
+        format!("{:.1} MB", msg_len as f64 / (1024.0 * 1024.0))
+    } else if msg_len >= 1024 {
+        format!("{:.1} KB", msg_len as f64 / 1024.0)
+    } else {
+        format!("{} B", msg_len)
+    };
+    all_lines.push(Line::from(Span::styled(format!("  Length: {}", len_display), Style::default().fg(OVERLAY0))));
     all_lines.push(Line::from(Span::styled("\u{2500}".repeat(inner_w), Style::default().fg(SURFACE0))));
 
     // Store header line count for click handling (+ 1 for block border top)
     app.detail.header_lines = all_lines.len() + 1;
 
     // ── Body with fold/unfold using json_viewer ──
-    let full_msg = entry.full_message();
     let fmt_lines = json_viewer::bracket_format(&full_msg);
 
     // Initialize viewer state if needed (first render or selection changed)

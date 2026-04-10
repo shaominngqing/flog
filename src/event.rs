@@ -67,6 +67,33 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
 
     // Network tab mouse handling
     if app.active_tab == ViewTab::Network {
+        // Network toolbar click handling
+        if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+            if mouse.row == app.layout.net_toolbar_y {
+                let x = mouse.column;
+                if x >= app.layout.net_search_x.0 && x < app.layout.net_search_x.1 {
+                    app.network.search_active = true;
+                    app.network.search_input = app.network.filter.search.clone();
+                    return;
+                }
+                if x >= app.layout.net_proto_x.0 && x < app.layout.net_proto_x.1 {
+                    app.network.filter.protocol = app.network.filter.protocol.next();
+                    app.network.invalidate_filter();
+                    return;
+                }
+                if x >= app.layout.net_method_x.0 && x < app.layout.net_method_x.1 {
+                    app.network.filter.method = app.network.filter.method.next();
+                    app.network.invalidate_filter();
+                    return;
+                }
+                if x >= app.layout.net_status_x.0 && x < app.layout.net_status_x.1 {
+                    app.network.filter.status = app.network.filter.status.next();
+                    app.network.invalidate_filter();
+                    return;
+                }
+            }
+        }
+
         // Network detail scroll handling (must be checked before list scroll)
         if app.network.show_detail
             && mouse.column >= app.layout.net_detail_x
@@ -652,6 +679,29 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
     // Network tab key handling
     if app.active_tab == ViewTab::Network {
+        // URL search input mode
+        if app.network.search_active {
+            match key.code {
+                KeyCode::Enter => {
+                    app.network.filter.search = app.network.search_input.clone();
+                    app.network.search_active = false;
+                    app.network.invalidate_filter();
+                }
+                KeyCode::Esc => {
+                    app.network.search_active = false;
+                    app.network.search_input.clear();
+                }
+                KeyCode::Backspace => {
+                    app.network.search_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    app.network.search_input.push(c);
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') => app.should_quit = true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
@@ -688,6 +738,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Enter => {
                 app.network.show_detail = !app.network.show_detail;
                 app.network.detail_scroll = 0;
+            }
+            KeyCode::Char('/') => {
+                app.network.search_active = true;
+                app.network.search_input = app.network.filter.search.clone();
             }
             KeyCode::Char('c') => copy_as_curl(app),
             KeyCode::Char('?') => app.enter_help(),

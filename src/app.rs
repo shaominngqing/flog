@@ -155,6 +155,10 @@ pub struct NetworkState {
     pub show_detail: bool,
     pub detail_scroll: usize,
     pub filter: crate::domain::NetworkFilter,
+    /// Whether URL search input is active.
+    pub search_active: bool,
+    /// Current search input text.
+    pub search_input: String,
     /// Section names that are collapsed (folded). Sections not in this set are expanded.
     pub collapsed_sections: std::collections::HashSet<String>,
     /// Maps detail panel line index -> section key (for click-to-toggle). Set by renderer.
@@ -175,6 +179,8 @@ impl NetworkState {
             show_detail: false,
             detail_scroll: 0,
             filter: crate::domain::NetworkFilter::new(),
+            search_active: false,
+            search_input: String::new(),
             collapsed_sections: std::collections::HashSet::new(),
             detail_section_map: Vec::new(),
             json_viewer_states: std::collections::HashMap::new(),
@@ -252,6 +258,13 @@ pub struct LayoutCache {
     pub net_detail_content_y: u16,
     /// Network status bar button regions: (name, x_start, x_end).
     pub net_buttons: Vec<(String, u16, u16)>,
+    /// Network toolbar Y position.
+    pub net_toolbar_y: u16,
+    /// Network toolbar click regions for filters.
+    pub net_search_x: (u16, u16),
+    pub net_proto_x: (u16, u16),
+    pub net_method_x: (u16, u16),
+    pub net_status_x: (u16, u16),
 }
 
 // ── App ──

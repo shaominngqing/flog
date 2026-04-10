@@ -31,6 +31,16 @@ impl StatusFilter {
             Self::Failed => "Failed",
         }
     }
+
+    pub fn next(&self) -> Self {
+        match self {
+            Self::All => Self::Completed,
+            Self::Completed => Self::Failed,
+            Self::Failed => Self::Pending,
+            Self::Pending => Self::Active,
+            Self::Active => Self::All,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +75,17 @@ impl MethodFilter {
             Self::Patch => "PATCH",
         }
     }
+
+    pub fn next(&self) -> Self {
+        match self {
+            Self::All => Self::Get,
+            Self::Get => Self::Post,
+            Self::Post => Self::Put,
+            Self::Put => Self::Delete,
+            Self::Delete => Self::Patch,
+            Self::Patch => Self::All,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +112,15 @@ impl ProtocolFilter {
             Self::Http => "HTTP",
             Self::Sse => "SSE",
             Self::Ws => "WS",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            Self::All => Self::Http,
+            Self::Http => Self::Sse,
+            Self::Sse => Self::Ws,
+            Self::Ws => Self::All,
         }
     }
 }
