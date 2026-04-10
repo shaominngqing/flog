@@ -141,15 +141,10 @@ pub struct SourceDropdownState {
 #[derive(Default)]
 pub struct DetailState {
     pub scroll: usize,
-    /// Set of source line indices that are collapsed.
-    pub collapsed: std::collections::HashSet<usize>,
-    pub total_lines: usize,
-    /// Maps display row → source line index.
-    pub row_to_source: Vec<usize>,
-    /// Set of source line indices that ARE foldable (have a matching close bracket).
-    pub foldable: std::collections::HashSet<usize>,
     /// Number of header lines in the detail panel (set by renderer).
     pub header_lines: usize,
+    /// JSON viewer fold/unfold state.
+    pub viewer_state: crate::ui::json_viewer::JsonViewerState,
 }
 
 
@@ -162,8 +157,12 @@ pub struct NetworkState {
     pub filter: crate::domain::NetworkFilter,
     /// Section names that are collapsed (folded). Sections not in this set are expanded.
     pub collapsed_sections: std::collections::HashSet<String>,
-    /// Maps detail panel line index → section key (for click-to-toggle). Set by renderer.
+    /// Maps detail panel line index -> section key (for click-to-toggle). Set by renderer.
     pub detail_section_map: Vec<Option<String>>,
+    /// JSON viewer states keyed by section (e.g., "req_headers", "res_body", "sse_0").
+    pub json_viewer_states: std::collections::HashMap<String, crate::ui::json_viewer::JsonViewerState>,
+    /// Maps detail panel line index -> (section_key, source_line) for JSON bracket click.
+    pub detail_json_click_map: Vec<Option<(String, usize)>>,
     filtered_indices: Vec<usize>,
     filter_dirty: bool,
 }
@@ -178,6 +177,8 @@ impl NetworkState {
             filter: crate::domain::NetworkFilter::new(),
             collapsed_sections: std::collections::HashSet::new(),
             detail_section_map: Vec::new(),
+            json_viewer_states: std::collections::HashMap::new(),
+            detail_json_click_map: Vec::new(),
             filtered_indices: Vec::new(),
             filter_dirty: true,
         }
@@ -245,6 +246,8 @@ pub struct LayoutCache {
     pub tab_network_x: (u16, u16),
     /// Y position of the view-tab bar.
     pub tab_bar_y: u16,
+    /// X position where network detail panel starts (for mouse hit testing).
+    pub net_detail_x: u16,
 }
 
 // ── App ──
@@ -594,19 +597,11 @@ impl App {
 
     pub fn reset_detail_for_selection(&mut self) {
         self.detail.scroll = 0;
-        self.detail.collapsed.clear();
-        self.detail.row_to_source.clear();
-        self.detail.foldable.clear();
+        self.detail.viewer_state = crate::ui::json_viewer::JsonViewerState::default();
     }
 
     pub fn toggle_detail_fold(&mut self, source_line: usize) {
-        // Only toggle if the line is actually foldable
-        if !self.detail.foldable.contains(&source_line) {
-            return;
-        }
-        if !self.detail.collapsed.remove(&source_line) {
-            self.detail.collapsed.insert(source_line);
-        }
+        crate::ui::json_viewer::toggle_fold(&mut self.detail.viewer_state, source_line);
     }
 
 

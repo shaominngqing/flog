@@ -152,9 +152,11 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
             ])
             .split(rows[2]);
 
+        app.layout.net_detail_x = cols[1].x;
         draw_table_body(f, app, cols[0]);
         detail::draw_network_detail(f, app, cols[1]);
     } else {
+        app.layout.net_detail_x = app.layout.width;
         draw_table_body(f, app, rows[2]);
     }
 

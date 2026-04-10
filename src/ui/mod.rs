@@ -9,6 +9,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 pub mod help;
+pub mod json_viewer;
 pub mod logs;
 pub mod network;
 pub mod source_select;

@@ -1,30 +1,29 @@
-//! Network detail panel — Flipper-style collapsible sections with full content display.
+//! Network detail panel — Flipper-style collapsible sections with JSON viewer.
+
+use std::collections::HashMap;
 
 use ratatui::{
     Frame,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::domain::network::{NetworkStatus, Protocol, WsDirection};
+use crate::ui::json_viewer::{self, JsonViewerState};
 
 use super::super::{
     MANTLE, SURFACE0, OVERLAY0, TEXT, SUBTEXT0,
-    BLUE, GREEN, YELLOW, PEACH, RED, MAUVE, SAPPHIRE, PINK,
+    BLUE, GREEN, RED, MAUVE, SAPPHIRE,
     wrap_text,
 };
 use super::{format_duration, format_size, method_color, status_color};
 
 const KEY_COLOR: ratatui::style::Color = MAUVE;
 const STR_COLOR: ratatui::style::Color = GREEN;
-const NUM_COLOR: ratatui::style::Color = PEACH;
-const BOOL_COLOR: ratatui::style::Color = PINK;
-const NULL_COLOR: ratatui::style::Color = OVERLAY0;
-const BRACE_COLOR: ratatui::style::Color = OVERLAY0;
 
 pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let indices = app.network.filtered_indices(&app.network_store).to_vec();
@@ -54,13 +53,14 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     let inner_h = area.height.saturating_sub(2) as usize;
     let inner_w = area.width.saturating_sub(3) as usize;
-    let collapsed = &app.network.collapsed_sections;
 
     let mut all_lines: Vec<Line> = Vec::new();
     // Track which line indices are section headers (for click toggling)
     let mut section_line_map: Vec<Option<String>> = Vec::new();
+    // Track which line indices map to JSON bracket clicks
+    let mut json_click_map: Vec<Option<(String, usize)>> = Vec::new();
 
-    // ── Header: method pill + full URL (wrapped) ──
+    // ── Header: method pill + path (wrapped) ──
     let method_c = method_color(&entry.method);
     if !entry.method.is_empty() {
         all_lines.push(Line::from(vec![
@@ -68,19 +68,21 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(format!(" {}", entry.path), Style::default().fg(TEXT)),
         ]));
         section_line_map.push(None);
+        json_click_map.push(None);
     }
-    all_lines.push(Line::from(Span::styled("─".repeat(inner_w), Style::default().fg(SURFACE0))));
+    all_lines.push(Line::from(Span::styled("\u{2500}".repeat(inner_w), Style::default().fg(SURFACE0))));
     section_line_map.push(None);
+    json_click_map.push(None);
 
     // ── General ──
     let sec = "General";
-    let is_collapsed = collapsed.contains(sec);
-    push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+    let is_collapsed = app.network.collapsed_sections.contains(sec);
+    push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, sec, is_collapsed);
     if !is_collapsed {
         // URL — full, wrapped
-        push_kv_wrapped(&mut all_lines, &mut section_line_map, "URL", &entry.url, inner_w);
+        push_kv_wrapped(&mut all_lines, &mut section_line_map, &mut json_click_map, "URL", &entry.url, inner_w);
         if !entry.method.is_empty() {
-            push_kv_single(&mut all_lines, &mut section_line_map, "Method", &entry.method);
+            push_kv_single(&mut all_lines, &mut section_line_map, &mut json_click_map, "Method", &entry.method);
         }
         let status_str = match entry.status {
             NetworkStatus::Pending => "Pending".to_string(),
@@ -98,70 +100,124 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
             Span::styled(status_str, Style::default().fg(sc)),
         ]));
         section_line_map.push(None);
+        json_click_map.push(None);
         if let Some(dur) = entry.duration {
-            push_kv_single(&mut all_lines, &mut section_line_map, "Duration", &format_duration(dur));
+            push_kv_single(&mut all_lines, &mut section_line_map, &mut json_click_map, "Duration", &format_duration(dur));
         }
         let size = entry.display_size();
         if size > 0 {
-            push_kv_single(&mut all_lines, &mut section_line_map, "Size", &format_size(size));
+            push_kv_single(&mut all_lines, &mut section_line_map, &mut json_click_map, "Size", &format_size(size));
         }
         all_lines.push(Line::raw(""));
         section_line_map.push(None);
+        json_click_map.push(None);
+    }
+
+    // ── Query Parameters ──
+    let query_params = parse_query_params(&entry.url);
+    if !query_params.is_empty() {
+        let sec = "Query Parameters";
+        let is_collapsed = app.network.collapsed_sections.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, sec, is_collapsed);
+        if !is_collapsed {
+            for (key, value) in &query_params {
+                push_kv_wrapped(&mut all_lines, &mut section_line_map, &mut json_click_map, key, value, inner_w);
+            }
+            all_lines.push(Line::raw(""));
+            section_line_map.push(None);
+            json_click_map.push(None);
+        }
     }
 
     // ── Request Headers ──
     if entry.request_headers.is_some() {
         let sec = "Request Headers";
-        let is_collapsed = collapsed.contains(sec);
-        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        let is_collapsed = app.network.collapsed_sections.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, sec, is_collapsed);
         if !is_collapsed {
             if let Some(ref headers) = entry.request_headers {
-                render_json_block(&mut all_lines, &mut section_line_map, headers, inner_w);
+                render_json_section(
+                    &mut all_lines,
+                    &mut section_line_map,
+                    &mut json_click_map,
+                    headers,
+                    "req_headers",
+                    &mut app.network.json_viewer_states,
+                    inner_w,
+                );
             }
             all_lines.push(Line::raw(""));
             section_line_map.push(None);
+            json_click_map.push(None);
         }
     }
 
     // ── Request Body ──
     if entry.request_body.as_ref().map_or(false, |b| !b.is_empty()) {
         let sec = "Request Body";
-        let is_collapsed = collapsed.contains(sec);
-        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        let is_collapsed = app.network.collapsed_sections.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, sec, is_collapsed);
         if !is_collapsed {
             if let Some(ref body) = entry.request_body {
-                render_body_block(&mut all_lines, &mut section_line_map, body, inner_w);
+                render_json_section(
+                    &mut all_lines,
+                    &mut section_line_map,
+                    &mut json_click_map,
+                    body,
+                    "req_body",
+                    &mut app.network.json_viewer_states,
+                    inner_w,
+                );
             }
             all_lines.push(Line::raw(""));
             section_line_map.push(None);
+            json_click_map.push(None);
         }
     }
 
     // ── Response Headers ──
     if entry.response_headers.is_some() {
         let sec = "Response Headers";
-        let is_collapsed = collapsed.contains(sec);
-        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        let is_collapsed = app.network.collapsed_sections.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, sec, is_collapsed);
         if !is_collapsed {
             if let Some(ref headers) = entry.response_headers {
-                render_json_block(&mut all_lines, &mut section_line_map, headers, inner_w);
+                render_json_section(
+                    &mut all_lines,
+                    &mut section_line_map,
+                    &mut json_click_map,
+                    headers,
+                    "res_headers",
+                    &mut app.network.json_viewer_states,
+                    inner_w,
+                );
             }
             all_lines.push(Line::raw(""));
             section_line_map.push(None);
+            json_click_map.push(None);
         }
     }
 
     // ── Response Body ──
     if entry.response_body.as_ref().map_or(false, |b| !b.is_empty()) {
         let sec = "Response Body";
-        let is_collapsed = collapsed.contains(sec);
-        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        let is_collapsed = app.network.collapsed_sections.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, sec, is_collapsed);
         if !is_collapsed {
             if let Some(ref body) = entry.response_body {
-                render_body_block(&mut all_lines, &mut section_line_map, body, inner_w);
+                render_json_section(
+                    &mut all_lines,
+                    &mut section_line_map,
+                    &mut json_click_map,
+                    body,
+                    "res_body",
+                    &mut app.network.json_viewer_states,
+                    inner_w,
+                );
             }
             all_lines.push(Line::raw(""));
             section_line_map.push(None);
+            json_click_map.push(None);
         }
     }
 
@@ -169,17 +225,25 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     if entry.protocol == Protocol::Sse && !entry.sse_chunks.is_empty() {
         let sec_name = format!("SSE Events ({})", entry.sse_chunks.len());
         let sec_key = "SSE Events";
-        let is_collapsed = collapsed.contains(sec_key);
-        push_section_header(&mut all_lines, &mut section_line_map, &sec_name, is_collapsed);
+        let is_collapsed = app.network.collapsed_sections.contains(sec_key);
+        push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, &sec_name, is_collapsed);
         // Use sec_key for the map entry (strip count)
         if let Some(last) = section_line_map.last_mut() {
             *last = Some(sec_key.to_string());
         }
         if !is_collapsed {
+            // Pre-collapse SSE chunks by default on first render
+            for i in 0..entry.sse_chunks.len() {
+                let chunk_key = format!("SSE#{}", i);
+                if !app.network.collapsed_sections.contains(&chunk_key) && app.network.json_viewer_states.is_empty() {
+                    app.network.collapsed_sections.insert(chunk_key);
+                }
+            }
+
             for (i, chunk) in entry.sse_chunks.iter().enumerate() {
                 let chunk_key = format!("SSE#{}", i);
-                let chunk_collapsed = collapsed.contains(&chunk_key);
-                let prefix = if chunk_collapsed { "  ▶" } else { "  ▼" };
+                let chunk_collapsed = app.network.collapsed_sections.contains(&chunk_key);
+                let prefix = if chunk_collapsed { "  \u{25b6}" } else { "  \u{25bc}" };
                 all_lines.push(Line::from(vec![
                     Span::styled(format!("{} #{} ", prefix, i), Style::default().fg(OVERLAY0)),
                     Span::styled(
@@ -193,13 +257,22 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     ),
                 ]));
                 section_line_map.push(Some(chunk_key.clone()));
+                json_click_map.push(None);
                 if !chunk_collapsed {
-                    // Try JSON pretty-print for chunk data
-                    render_body_block(&mut all_lines, &mut section_line_map, &chunk.data, inner_w);
+                    render_json_section(
+                        &mut all_lines,
+                        &mut section_line_map,
+                        &mut json_click_map,
+                        &chunk.data,
+                        &format!("sse_{}", i),
+                        &mut app.network.json_viewer_states,
+                        inner_w,
+                    );
                 }
             }
             all_lines.push(Line::raw(""));
             section_line_map.push(None);
+            json_click_map.push(None);
         }
     }
 
@@ -209,20 +282,20 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         let recv = entry.ws_messages.iter().filter(|m| m.direction == WsDirection::Recv).count();
         let sec_name = format!("Messages ({} sent / {} recv)", sent, recv);
         let sec_key = "WS Messages";
-        let is_collapsed = collapsed.contains(sec_key);
-        push_section_header(&mut all_lines, &mut section_line_map, &sec_name, is_collapsed);
+        let is_collapsed = app.network.collapsed_sections.contains(sec_key);
+        push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, &sec_name, is_collapsed);
         if let Some(last) = section_line_map.last_mut() {
             *last = Some(sec_key.to_string());
         }
         if !is_collapsed {
             for (i, msg) in entry.ws_messages.iter().enumerate() {
                 let (arrow, color) = match msg.direction {
-                    WsDirection::Send => ("→", GREEN),
-                    WsDirection::Recv => ("←", BLUE),
+                    WsDirection::Send => ("\u{2192}", GREEN),  // →
+                    WsDirection::Recv => ("\u{2190}", BLUE),   // ←
                 };
                 let msg_key = format!("WS#{}", i);
-                let msg_collapsed = collapsed.contains(&msg_key);
-                let prefix = if msg_collapsed { "▶" } else { "▼" };
+                let msg_collapsed = app.network.collapsed_sections.contains(&msg_key);
+                let prefix = if msg_collapsed { "\u{25b6}" } else { "\u{25bc}" };
                 all_lines.push(Line::from(vec![
                     Span::styled(format!("  {} {} ", prefix, arrow), Style::default().fg(color)),
                     Span::styled(
@@ -236,31 +309,45 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     ),
                 ]));
                 section_line_map.push(Some(msg_key.clone()));
+                json_click_map.push(None);
                 if !msg_collapsed {
-                    render_body_block(&mut all_lines, &mut section_line_map, &msg.data, inner_w);
+                    render_json_section(
+                        &mut all_lines,
+                        &mut section_line_map,
+                        &mut json_click_map,
+                        &msg.data,
+                        &format!("ws_{}", i),
+                        &mut app.network.json_viewer_states,
+                        inner_w,
+                    );
                 }
             }
             all_lines.push(Line::raw(""));
             section_line_map.push(None);
+            json_click_map.push(None);
         }
     }
 
     // ── Error ──
     if let Some(ref error) = entry.error {
         let sec = "Error";
-        let is_collapsed = collapsed.contains(sec);
-        push_section_header(&mut all_lines, &mut section_line_map, sec, is_collapsed);
+        let is_collapsed = app.network.collapsed_sections.contains(sec);
+        push_section_header(&mut all_lines, &mut section_line_map, &mut json_click_map, sec, is_collapsed);
         if !is_collapsed {
             let wrapped = wrap_text(error, inner_w.saturating_sub(3), 20);
             for wl in &wrapped {
                 all_lines.push(Line::from(Span::styled(format!("   {}", wl), Style::default().fg(RED))));
                 section_line_map.push(None);
+                json_click_map.push(None);
             }
         }
     }
 
-    // Store section_line_map for click handling
+    // Store maps for click handling
     app.network.detail_section_map = section_line_map;
+    app.network.detail_json_click_map = json_click_map;
+
+    let total_lines = all_lines.len();
 
     // Apply scroll
     let scroll = app.network.detail_scroll;
@@ -284,6 +371,21 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
             .wrap(ratatui::widgets::Wrap { trim: false }),
         area,
     );
+
+    // Scrollbar
+    if total_lines > inner_h {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_symbol("\u{2503}")  // ┃
+            .track_symbol(Some(" "))
+            .thumb_style(Style::default().fg(SAPPHIRE))
+            .track_style(Style::default().fg(SURFACE0).bg(MANTLE))
+            .begin_symbol(None)
+            .end_symbol(None);
+        let max_scroll = total_lines.saturating_sub(inner_h);
+        let mut state = ScrollbarState::new(max_scroll)
+            .position(scroll.min(max_scroll));
+        f.render_stateful_widget(scrollbar, area, &mut state);
+    }
 }
 
 // ══════════════════════════════════════
@@ -292,21 +394,24 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn push_section_header(
     lines: &mut Vec<Line<'static>>,
-    map: &mut Vec<Option<String>>,
+    section_map: &mut Vec<Option<String>>,
+    json_click_map: &mut Vec<Option<(String, usize)>>,
     title: &str,
     collapsed: bool,
 ) {
-    let icon = if collapsed { "▶" } else { "▼" };
+    let icon = if collapsed { "\u{25b6}" } else { "\u{25bc}" };  // ▶ ▼
     lines.push(Line::from(Span::styled(
         format!(" {} {}", icon, title),
         Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
     )));
-    map.push(Some(title.to_string()));
+    section_map.push(Some(title.to_string()));
+    json_click_map.push(None);
 }
 
 fn push_kv_single(
     lines: &mut Vec<Line<'static>>,
-    map: &mut Vec<Option<String>>,
+    section_map: &mut Vec<Option<String>>,
+    json_click_map: &mut Vec<Option<(String, usize)>>,
     key: &str,
     value: &str,
 ) {
@@ -314,12 +419,14 @@ fn push_kv_single(
         Span::styled(format!("   {}: ", key), Style::default().fg(KEY_COLOR)),
         Span::styled(value.to_string(), Style::default().fg(STR_COLOR)),
     ]));
-    map.push(None);
+    section_map.push(None);
+    json_click_map.push(None);
 }
 
 fn push_kv_wrapped(
     lines: &mut Vec<Line<'static>>,
-    map: &mut Vec<Option<String>>,
+    section_map: &mut Vec<Option<String>>,
+    json_click_map: &mut Vec<Option<(String, usize)>>,
     key: &str,
     value: &str,
     max_w: usize,
@@ -327,14 +434,15 @@ fn push_kv_wrapped(
     let prefix = format!("   {}: ", key);
     let first_line_w = max_w.saturating_sub(prefix.len());
     let cont_indent = "   ";
-    let cont_w = max_w.saturating_sub(cont_indent.len());
+    let _cont_w = max_w.saturating_sub(cont_indent.len());
 
     if value.width() <= first_line_w {
         lines.push(Line::from(vec![
             Span::styled(prefix, Style::default().fg(KEY_COLOR)),
             Span::styled(value.to_string(), Style::default().fg(STR_COLOR)),
         ]));
-        map.push(None);
+        section_map.push(None);
+        json_click_map.push(None);
     } else {
         // First line with key
         let wrapped = wrap_text(value, first_line_w, 20);
@@ -343,7 +451,8 @@ fn push_kv_wrapped(
                 Span::styled(prefix, Style::default().fg(KEY_COLOR)),
                 Span::styled(first.to_string(), Style::default().fg(STR_COLOR)),
             ]));
-            map.push(None);
+            section_map.push(None);
+            json_click_map.push(None);
         }
         // Continuation lines
         for wl in wrapped.iter().skip(1) {
@@ -351,111 +460,100 @@ fn push_kv_wrapped(
                 format!("{}{}", cont_indent, wl),
                 Style::default().fg(STR_COLOR),
             )));
-            map.push(None);
+            section_map.push(None);
+            json_click_map.push(None);
         }
     }
 }
 
 // ══════════════════════════════════════
-//  JSON / Body rendering
+//  JSON rendering using json_viewer
 // ══════════════════════════════════════
 
-fn render_json_block(
+fn render_json_section(
     lines: &mut Vec<Line<'static>>,
-    map: &mut Vec<Option<String>>,
-    json_str: &str,
+    section_map: &mut Vec<Option<String>>,
+    json_click_map: &mut Vec<Option<(String, usize)>>,
+    json_text: &str,
+    section_key: &str,
+    viewer_states: &mut HashMap<String, JsonViewerState>,
     max_w: usize,
 ) {
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
-        if let Some(obj) = value.as_object() {
-            for (key, val) in obj {
-                let val_str = match val {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                };
-                push_kv_wrapped(lines, map, key, &val_str, max_w);
+    if serde_json::from_str::<serde_json::Value>(json_text).is_ok() {
+        let fmt_lines = json_viewer::bracket_format(json_text);
+        let state = viewer_states.entry(section_key.to_string())
+            .or_insert_with(|| json_viewer::init_state(&fmt_lines, 1));
+        let rendered = json_viewer::render_json(&fmt_lines, state, 0, usize::MAX);
+        let _base = lines.len();
+        for (i, line) in rendered.into_iter().enumerate() {
+            // Add indent prefix
+            let mut spans = vec![Span::raw("   ")];
+            spans.extend(line.spans);
+            lines.push(Line::from(spans));
+            section_map.push(None);
+            // Map to json click target
+            let source = state.row_to_source.get(i).copied();
+            if let Some(sl) = source {
+                json_click_map.push(Some((section_key.to_string(), sl)));
+            } else {
+                json_click_map.push(None);
             }
-            return;
         }
-    }
-    // Fallback: wrap raw text
-    let wrapped = wrap_text(json_str, max_w.saturating_sub(3), 30);
-    for wl in &wrapped {
-        lines.push(Line::from(Span::styled(format!("   {}", wl), Style::default().fg(SUBTEXT0))));
-        map.push(None);
+    } else {
+        // Fallback: wrapped text
+        for wl in wrap_text(json_text, max_w.saturating_sub(3), 100) {
+            lines.push(Line::from(Span::styled(format!("   {}", wl), Style::default().fg(SUBTEXT0))));
+            section_map.push(None);
+            json_click_map.push(None);
+        }
     }
 }
 
-fn render_body_block(
-    lines: &mut Vec<Line<'static>>,
-    map: &mut Vec<Option<String>>,
-    body: &str,
-    max_w: usize,
-) {
-    // Try JSON pretty-print with syntax coloring
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
-        if let Ok(pretty) = serde_json::to_string_pretty(&value) {
-            for line in pretty.lines() {
-                lines.push(colorize_json_line(line));
-                map.push(None);
+// ══════════════════════════════════════
+//  Query parameters parsing
+// ══════════════════════════════════════
+
+fn parse_query_params(url: &str) -> Vec<(String, String)> {
+    let mut params = Vec::new();
+    if let Some(query_start) = url.find('?') {
+        let query = &url[query_start + 1..];
+        // Strip fragment if present
+        let query = query.split('#').next().unwrap_or(query);
+        for pair in query.split('&') {
+            if pair.is_empty() { continue; }
+            if let Some(eq_pos) = pair.find('=') {
+                let key = url_decode(&pair[..eq_pos]);
+                let value = url_decode(&pair[eq_pos + 1..]);
+                params.push((key, value));
+            } else {
+                params.push((url_decode(pair), String::new()));
             }
-            return;
         }
     }
-    // Fallback: wrap raw text
-    let wrapped = wrap_text(body, max_w.saturating_sub(3), 100);
-    for wl in &wrapped {
-        lines.push(Line::from(Span::styled(format!("   {}", wl), Style::default().fg(SUBTEXT0))));
-        map.push(None);
-    }
+    params
 }
 
-fn colorize_json_line(line: &str) -> Line<'static> {
-    let trimmed = line.trim_start();
-    let indent = line.len() - trimmed.len();
-    let mut spans: Vec<Span> = Vec::new();
-
-    spans.push(Span::raw("   ")); // base indent
-    if indent > 0 {
-        spans.push(Span::raw(" ".repeat(indent)));
-    }
-
-    if trimmed.starts_with('"') && trimmed.contains("\": ") {
-        // "key": value
-        if let Some(colon_pos) = trimmed.find("\": ") {
-            let key = &trimmed[..colon_pos + 1]; // include closing quote
-            let rest = &trimmed[colon_pos + 1..];
-            spans.push(Span::styled(key.to_string(), Style::default().fg(KEY_COLOR)));
-            // Colorize the value part
-            let val_part = rest.trim_start_matches(':').trim_start();
-            spans.push(Span::styled(": ".to_string(), Style::default().fg(BRACE_COLOR)));
-            spans.push(colorize_value_span(val_part));
+fn url_decode(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if hex.len() == 2 {
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte as char);
+                    continue;
+                }
+            }
+            result.push('%');
+            result.push_str(&hex);
+        } else if c == '+' {
+            result.push(' ');
         } else {
-            spans.push(Span::styled(trimmed.to_string(), Style::default().fg(SUBTEXT0)));
+            result.push(c);
         }
-    } else if trimmed == "{" || trimmed == "}" || trimmed == "}," || trimmed == "[" || trimmed == "]" || trimmed == "]," {
-        spans.push(Span::styled(trimmed.to_string(), Style::default().fg(BRACE_COLOR)));
-    } else {
-        spans.push(colorize_value_span(trimmed));
     }
-
-    Line::from(spans)
-}
-
-fn colorize_value_span(text: &str) -> Span<'static> {
-    let bare = text.trim_end_matches(',');
-    let v = bare.trim();
-    if v.starts_with('"') && v.ends_with('"') {
-        Span::styled(text.to_string(), Style::default().fg(STR_COLOR))
-    } else if v == "null" {
-        Span::styled(text.to_string(), Style::default().fg(NULL_COLOR).add_modifier(Modifier::ITALIC))
-    } else if v == "true" || v == "false" {
-        Span::styled(text.to_string(), Style::default().fg(BOOL_COLOR))
-    } else if v.parse::<f64>().is_ok() {
-        Span::styled(text.to_string(), Style::default().fg(NUM_COLOR))
-    } else {
-        Span::styled(text.to_string(), Style::default().fg(SUBTEXT0))
-    }
+    result
 }
 
 fn http_status_text(code: u16) -> &'static str {

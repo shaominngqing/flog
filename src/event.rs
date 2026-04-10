@@ -67,6 +67,48 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
 
     // Network tab mouse handling
     if app.active_tab == ViewTab::Network {
+        // Network detail scroll handling (must be checked before list scroll)
+        if app.network.show_detail && mouse.column >= app.layout.net_detail_x {
+            match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    app.network.detail_scroll = app.network.detail_scroll.saturating_sub(SCROLL_LINES);
+                    return;
+                }
+                MouseEventKind::ScrollDown => {
+                    app.network.detail_scroll += SCROLL_LINES;
+                    return;
+                }
+                MouseEventKind::Down(MouseButton::Left) => {
+                    let y = mouse.row;
+                    // Calculate which line in the detail was clicked
+                    // Detail starts at tab_bar(2) + toolbar(1) + header(1) = row 4
+                    let detail_content_y = app.layout.tab_bar_y + 2 + 1 + 1 + 1; // tab(2) + toolbar(1) + header(1) + border(1)
+                    if y >= detail_content_y {
+                        let line_idx = app.network.detail_scroll + (y - detail_content_y) as usize;
+                        // First check section_line_map for section toggle
+                        if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
+                            let key = section_key.clone();
+                            if app.network.collapsed_sections.contains(&key) {
+                                app.network.collapsed_sections.remove(&key);
+                            } else {
+                                app.network.collapsed_sections.insert(key);
+                            }
+                            return;
+                        }
+                        // Then check json_click_map for bracket toggle
+                        if let Some(Some((section_key, source_line))) = app.network.detail_json_click_map.get(line_idx) {
+                            if let Some(state) = app.network.json_viewer_states.get_mut(section_key) {
+                                crate::ui::json_viewer::toggle_fold(state, *source_line);
+                            }
+                            return;
+                        }
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         match mouse.kind {
             MouseEventKind::ScrollUp => {
                 app.network.selected = app.network.selected.saturating_sub(SCROLL_LINES);
@@ -82,28 +124,9 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 let y = mouse.row;
-                let x = mouse.column;
-                let half_w = app.layout.width / 2;
 
-                // Click in detail panel (right half) — toggle section collapse
-                if app.network.show_detail && x >= half_w {
-                    // Calculate which line in the detail was clicked
-                    // Detail starts at tab_bar(2) + toolbar(1) + header(1) = row 4
-                    let detail_content_y = app.layout.tab_bar_y + 2 + 1 + 1 + 1; // tab(2) + toolbar(1) + header(1) + border(1)
-                    if y >= detail_content_y {
-                        let line_idx = app.network.detail_scroll + (y - detail_content_y) as usize;
-                        if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
-                            let key = section_key.clone();
-                            if app.network.collapsed_sections.contains(&key) {
-                                app.network.collapsed_sections.remove(&key);
-                            } else {
-                                app.network.collapsed_sections.insert(key);
-                            }
-                        }
-                    }
-                }
                 // Click in list area (left half or full width)
-                else if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
+                if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
                     let row_in_list = (y - app.layout.list_y) as usize;
                     let target = app.network.scroll_offset + row_in_list;
                     let count = app.network.filtered_count(&app.network_store);
@@ -112,11 +135,13 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                             app.network.show_detail = !app.network.show_detail;
                             app.network.detail_scroll = 0;
                             app.network.collapsed_sections.clear();
+                            app.network.json_viewer_states.clear();
                         } else {
                             app.network.selected = target;
                             app.network.show_detail = true;
                             app.network.detail_scroll = 0;
                             app.network.collapsed_sections.clear();
+                            app.network.json_viewer_states.clear();
                         }
                     }
                 }
@@ -439,7 +464,7 @@ fn handle_detail_panel_click(app: &mut App, mouse: &MouseEvent) {
             let header = app.detail.header_lines.max(2) as u16;
             if panel_row >= header {
                 let content_row = (panel_row - header) as usize;
-                if let Some(&source_line) = app.detail.row_to_source.get(content_row) {
+                if let Some(&source_line) = app.detail.viewer_state.row_to_source.get(content_row) {
                     app.toggle_detail_fold(source_line);
                 }
             }
