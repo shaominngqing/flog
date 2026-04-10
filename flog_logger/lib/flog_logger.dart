@@ -10,6 +10,11 @@
 /// ```
 library flog_logger;
 
+export 'src/flog_net.dart' show nextNetId, emitNet;
+export 'src/flog_http_interceptor.dart';
+export 'src/flog_sse_parser.dart';
+export 'src/flog_web_socket.dart';
+
 class FlogLogger {
   /// The tag used to identify the source of log messages.
   final String tag;
@@ -54,7 +59,7 @@ class FlogLogger {
       warning(msg, error: error, stackTrace: stackTrace);
 
   void e(String msg, {Object? error, StackTrace? stackTrace}) =>
-      error(msg, error: error, stackTrace: stackTrace);
+      _log('ERROR', msg, error: error, stackTrace: stackTrace);
 
   // ---------------------------------------------------------------------------
   // Internal
