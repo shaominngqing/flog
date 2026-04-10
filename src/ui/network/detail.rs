@@ -365,10 +365,13 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         .border_style(Style::default().fg(SURFACE0))
         .style(Style::default().bg(MANTLE));
 
+    // Record the inner area Y for click handling
+    let inner = block.inner(area);
+    app.layout.net_detail_content_y = inner.y;
+
     f.render_widget(
         Paragraph::new(visible_lines)
-            .block(block)
-            .wrap(ratatui::widgets::Wrap { trim: false }),
+            .block(block),
         area,
     );
 

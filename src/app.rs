@@ -248,6 +248,8 @@ pub struct LayoutCache {
     pub tab_bar_y: u16,
     /// X position where network detail panel starts (for mouse hit testing).
     pub net_detail_x: u16,
+    /// Y position where network detail content starts (set by detail renderer).
+    pub net_detail_content_y: u16,
 }
 
 // ── App ──

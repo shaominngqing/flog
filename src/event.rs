@@ -84,8 +84,8 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                 }
                 MouseEventKind::Down(MouseButton::Left) => {
                     let y = mouse.row;
-                    // Detail content starts at list_y + 1 (Block title/border takes 1 row)
-                    let detail_content_y = app.layout.list_y + 1;
+                    // Use the precise Y set by the detail renderer
+                    let detail_content_y = app.layout.net_detail_content_y;
                     if y >= detail_content_y && y < app.layout.bottom_y {
                         let line_idx = app.network.detail_scroll + (y - detail_content_y) as usize;
                         // First check section_line_map for section toggle
