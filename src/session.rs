@@ -11,6 +11,7 @@ pub struct SessionData {
     pub tag_filter_input: String, // 原始输入字符串，加载时走 parse_tag_filter
     pub search_query: String,
     pub bookmarks: Vec<usize>,
+    pub active_tab: u8, // 0 = Logs, 1 = Network
 }
 
 fn session_path() -> PathBuf {
@@ -51,6 +52,12 @@ pub fn load_session(app: &mut App) {
     }
 
     app.bookmarks = data.bookmarks.into_iter().collect::<BTreeSet<_>>();
+
+    app.active_tab = match data.active_tab {
+        1 => crate::app::ViewTab::Network,
+        _ => crate::app::ViewTab::Logs,
+    };
+
     app.invalidate_filter();
 }
 
@@ -73,6 +80,10 @@ pub fn save_session(app: &App) {
         tag_filter_input,
         search_query: app.filter.search_query.clone(),
         bookmarks: app.bookmarks.iter().copied().collect(),
+        active_tab: match app.active_tab {
+            crate::app::ViewTab::Logs => 0,
+            crate::app::ViewTab::Network => 1,
+        },
     };
 
     let path = session_path();
