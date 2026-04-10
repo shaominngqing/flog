@@ -162,10 +162,12 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                         if x >= *x_start && x < *x_end {
                             match name.as_str() {
                                 "curl" => copy_as_curl(app),
+                                "response" => copy_response(app),
                                 "clear" => {
                                     app.network_store.clear();
                                     app.network.invalidate_filter();
                                     app.network.show_detail = false;
+                                    app.show_status("Cleared".to_string());
                                 }
                                 _ => {}
                             }
@@ -608,6 +610,40 @@ fn copy_as_curl(app: &mut App) {
     app.show_status(format!("cURL {}", msg));
 }
 
+/// Copy selected network request's response body to clipboard.
+fn copy_response(app: &mut App) {
+    let indices = app.network.filtered_indices(&app.network_store).to_vec();
+    let entry = if let Some(&idx) = indices.get(app.network.selected) {
+        app.network_store.get(idx).cloned()
+    } else {
+        None
+    };
+
+    let entry = match entry {
+        Some(e) => e,
+        None => {
+            app.show_status("No request selected".to_string());
+            return;
+        }
+    };
+
+    let body = entry.response_body.as_deref().unwrap_or("");
+    if body.is_empty() {
+        app.show_status("No response body".to_string());
+        return;
+    }
+
+    // Try pretty-print JSON
+    let text = if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+        serde_json::to_string_pretty(&value).unwrap_or_else(|_| body.to_string())
+    } else {
+        body.to_string()
+    };
+
+    let msg = copy_to_clipboard(&text);
+    app.show_status(format!("Response {}", msg));
+}
+
 fn copy_current_log(app: &mut App) {
     if let Some(idx) = app.selected_store_index() {
         if let Some(entry) = app.store.get(idx) {
@@ -744,6 +780,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 app.network.search_input = app.network.filter.search.clone();
             }
             KeyCode::Char('c') => copy_as_curl(app),
+            KeyCode::Char('y') => copy_response(app),
             KeyCode::Char('?') => app.enter_help(),
             KeyCode::Char('1') => app.switch_tab(ViewTab::Logs),
             KeyCode::Char('2') => app.switch_tab(ViewTab::Network),

@@ -410,6 +410,17 @@ fn draw_empty_network(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
 
+    // Show toast message if active
+    if let Some(msg) = app.active_status().map(|s| s.to_string()) {
+        let line = Line::from(vec![
+            Span::styled(" OK ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {} ", msg), Style::default().fg(TEXT).bg(bg)),
+        ]);
+        f.render_widget(Paragraph::new(line).style(Style::default().bg(bg)), area);
+        app.layout.net_buttons.clear();
+        return;
+    }
+
     // Count stats
     let total = app.network_store.len();
     let filtered = app.network.filtered_indices(&app.network_store).len();
@@ -426,8 +437,8 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
     let buttons: Vec<(&str, &str, Style)> = vec![
         ("curl", " Copy as cURL ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
+        ("response", " Copy Response ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
         ("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
-        ("help", " ? ", Style::default().fg(SAPPHIRE).bg(bg)),
     ];
 
     let info_w = info.width() as u16;
