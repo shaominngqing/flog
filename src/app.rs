@@ -62,6 +62,12 @@ pub enum AppMode {
     SourceSelect,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewTab {
+    Logs,
+    Network,
+}
+
 // ── Sub-state structs ──
 
 /// Search input and match tracking.
@@ -147,6 +153,54 @@ pub struct DetailState {
 }
 
 
+/// Network tab view state.
+pub struct NetworkState {
+    pub selected: usize,
+    pub scroll_offset: usize,
+    pub show_detail: bool,
+    pub detail_scroll: usize,
+    pub filter: crate::domain::NetworkFilter,
+    filtered_indices: Vec<usize>,
+    filter_dirty: bool,
+}
+
+impl NetworkState {
+    pub fn new() -> Self {
+        Self {
+            selected: 0,
+            scroll_offset: 0,
+            show_detail: false,
+            detail_scroll: 0,
+            filter: crate::domain::NetworkFilter::new(),
+            filtered_indices: Vec::new(),
+            filter_dirty: true,
+        }
+    }
+
+    pub fn invalidate_filter(&mut self) {
+        self.filter_dirty = true;
+    }
+
+    pub fn filtered_indices(&mut self, store: &crate::domain::NetworkStore) -> &[usize] {
+        if self.filter_dirty {
+            self.filtered_indices.clear();
+            for i in 0..store.len() {
+                if let Some(entry) = store.get(i) {
+                    if self.filter.matches(entry) {
+                        self.filtered_indices.push(i);
+                    }
+                }
+            }
+            self.filter_dirty = false;
+        }
+        &self.filtered_indices
+    }
+
+    pub fn filtered_count(&mut self, store: &crate::domain::NetworkStore) -> usize {
+        self.filtered_indices(store).len()
+    }
+}
+
 /// UI layout coordinate cache (written by renderer, read by event handler).
 #[derive(Default)]
 pub struct LayoutCache {
@@ -179,6 +233,12 @@ pub struct LayoutCache {
     pub dropdown_items: Vec<(u16, u16, u16, usize)>,
     /// Y position of the tab row in the dropdown (for click-to-switch-tab).
     pub dropdown_tab_row: Option<(u16, u16, u16, u16)>, // (y, vm_x_end, adb_x_start, adb_x_end)
+    /// Clickable region of the Logs tab label: (x_start, x_end).
+    pub tab_logs_x: (u16, u16),
+    /// Clickable region of the Network tab label: (x_start, x_end).
+    pub tab_network_x: (u16, u16),
+    /// Y position of the view-tab bar.
+    pub tab_bar_y: u16,
 }
 
 // ── App ──
@@ -188,6 +248,9 @@ pub struct App {
     pub store: LogStore,
     pub filter: FilterState,
     parser: MultiStrategyParser,
+    pub active_tab: ViewTab,
+    pub network_store: crate::domain::NetworkStore,
+    pub network: NetworkState,
 
     // Navigation
     pub mode: AppMode,
@@ -236,6 +299,9 @@ impl App {
             store: LogStore::new(),
             filter: FilterState::default(),
             parser: MultiStrategyParser::default_chain(),
+            active_tab: ViewTab::Logs,
+            network_store: crate::domain::NetworkStore::new(),
+            network: NetworkState::new(),
             mode: AppMode::Normal,
             should_quit: false,
             selected: 0,
@@ -300,6 +366,14 @@ impl App {
 
     pub fn add_entry(&mut self, entry: LogEntry) {
         self.connected = true;
+
+        if entry.tag == "flog_net" {
+            if let Some(msg) = crate::parser::network::try_parse_network(&entry.tag, &entry.message) {
+                self.network_store.process_message(msg);
+                self.network.invalidate_filter();
+                return;
+            }
+        }
 
         let drained = self.store.add_entry(entry);
         if drained > 0 {
@@ -582,6 +656,19 @@ impl App {
 
     pub fn is_bookmarked(&self, store_idx: usize) -> bool {
         self.bookmarks.contains(&store_idx)
+    }
+
+    // ── Tab switching ──
+
+    pub fn switch_tab(&mut self, tab: ViewTab) {
+        self.active_tab = tab;
+    }
+
+    pub fn next_tab(&mut self) {
+        self.active_tab = match self.active_tab {
+            ViewTab::Logs => ViewTab::Network,
+            ViewTab::Network => ViewTab::Logs,
+        };
     }
 
     // ── Mode switches ──
