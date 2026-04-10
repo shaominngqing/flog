@@ -11,9 +11,17 @@
 
 **给 Flutter 开发者的终端日志查看器 + 网络调试器。**
 
-![日志列表](docs/screenshot-list.png)
+### ▤ Logs — 实时日志流
 
-![详情面板](docs/screenshot-detail.png)
+![日志列表](docs/screenshot-logs.png)
+
+![日志详情面板](docs/screenshot-logs-detail.png)
+
+### ⇄ Network — 网络请求检查器
+
+![网络请求列表](docs/screenshot-network.png)
+
+![SSE 流式请求详情](docs/screenshot-network-sse.png)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
