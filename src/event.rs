@@ -476,12 +476,24 @@ fn handle_detail_panel_click(app: &mut App, mouse: &MouseEvent) {
     }
 }
 
-fn copy_current_log(app: &mut App) {
-    if let Some(idx) = app.selected_store_index() {
-        if let Some(entry) = app.store.get(idx) {
-            let text = entry.full_message();
-            // Use pbcopy on macOS, xclip on Linux
-            let result = std::process::Command::new("pbcopy")
+/// Copy text to system clipboard (pbcopy on macOS, xclip on Linux).
+fn copy_to_clipboard(text: &str) -> String {
+    let result = std::process::Command::new("pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            if let Some(ref mut stdin) = child.stdin {
+                stdin.write_all(text.as_bytes())?;
+            }
+            child.wait()
+        });
+
+    match result {
+        Ok(_) => "Copied to clipboard".to_string(),
+        Err(_) => {
+            let r2 = std::process::Command::new("xclip")
+                .args(["-selection", "clipboard"])
                 .stdin(std::process::Stdio::piped())
                 .spawn()
                 .and_then(|mut child| {
@@ -491,27 +503,70 @@ fn copy_current_log(app: &mut App) {
                     }
                     child.wait()
                 });
-
-            let msg = match result {
+            match r2 {
                 Ok(_) => "Copied to clipboard".to_string(),
-                Err(_) => {
-                    let r2 = std::process::Command::new("xclip")
-                        .args(["-selection", "clipboard"])
-                        .stdin(std::process::Stdio::piped())
-                        .spawn()
-                        .and_then(|mut child| {
-                            use std::io::Write;
-                            if let Some(ref mut stdin) = child.stdin {
-                                stdin.write_all(text.as_bytes())?;
-                            }
-                            child.wait()
-                        });
-                    match r2 {
-                        Ok(_) => "Copied to clipboard".to_string(),
-                        Err(_) => "Copy failed (no pbcopy/xclip)".to_string(),
+                Err(_) => "Copy failed (no pbcopy/xclip)".to_string(),
+            }
+        }
+    }
+}
+
+/// Copy selected network request as cURL command.
+fn copy_as_curl(app: &mut App) {
+    let indices = app.network.filtered_indices(&app.network_store).to_vec();
+    let entry = if let Some(&idx) = indices.get(app.network.selected) {
+        app.network_store.get(idx).cloned()
+    } else {
+        None
+    };
+
+    let entry = match entry {
+        Some(e) => e,
+        None => {
+            app.show_status("No request selected".to_string());
+            return;
+        }
+    };
+
+    let mut cmd = format!("curl -X {} '{}'", entry.method, entry.url);
+
+    // Add headers
+    if let Some(ref headers_json) = entry.request_headers {
+        if let Ok(serde_json::Value::Object(map)) = serde_json::from_str(headers_json) {
+            for (key, val) in &map {
+                let val_str = match val {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Array(arr) => {
+                        // Dio stores headers as arrays
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     }
-                }
-            };
+                    other => other.to_string(),
+                };
+                cmd.push_str(&format!(" \\\n  -H '{}: {}'", key, val_str));
+            }
+        }
+    }
+
+    // Add body
+    if let Some(ref body) = entry.request_body {
+        if !body.is_empty() {
+            let escaped = body.replace('\'', "'\\''");
+            cmd.push_str(&format!(" \\\n  -d '{}'", escaped));
+        }
+    }
+
+    let msg = copy_to_clipboard(&cmd);
+    app.show_status(format!("cURL {}", msg));
+}
+
+fn copy_current_log(app: &mut App) {
+    if let Some(idx) = app.selected_store_index() {
+        if let Some(entry) = app.store.get(idx) {
+            let text = entry.full_message();
+            let msg = copy_to_clipboard(&text);
             app.show_status(msg);
         }
     }
@@ -615,6 +670,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 app.network.show_detail = !app.network.show_detail;
                 app.network.detail_scroll = 0;
             }
+            KeyCode::Char('c') => copy_as_curl(app),
             KeyCode::Char('?') => app.enter_help(),
             KeyCode::Char('1') => app.switch_tab(ViewTab::Logs),
             KeyCode::Char('2') => app.switch_tab(ViewTab::Network),
