@@ -439,6 +439,7 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         ("curl", " Copy as cURL ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
         ("response", " Copy Response ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
         ("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
+        ("help", " ? ", Style::default().fg(MANTLE).bg(OVERLAY0).add_modifier(Modifier::BOLD)),
     ];
 
     let info_w = info.width() as u16;

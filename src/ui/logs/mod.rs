@@ -332,6 +332,7 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         ("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
         ("export", " Export ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
         ("stats", " Stats ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        ("help", " ? ", Style::default().fg(MANTLE).bg(OVERLAY0).add_modifier(Modifier::BOLD)),
         ("quit", " x ", Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD)),
     ];
 

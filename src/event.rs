@@ -184,6 +184,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                     app.network.show_detail = false;
                                     app.show_status("Cleared".to_string());
                                 }
+                                "help" => app.enter_help(),
                                 _ => {}
                             }
                             return;
