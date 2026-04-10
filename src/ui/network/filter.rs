@@ -18,8 +18,8 @@ use super::super::{
     BLUE, GREEN, YELLOW, PEACH, RED, SAPPHIRE, MAUVE,
 };
 
-/// Render a filter pill: selected = colored bg, unselected = dim text.
-fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color, bg: ratatui::style::Color) -> Span<'a> {
+/// Render a filter pill: selected = bright colored bg, unselected = subtle bg.
+fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'a> {
     if selected {
         Span::styled(
             format!(" {} ", label),
@@ -28,7 +28,7 @@ fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color, bg: ratat
     } else {
         Span::styled(
             format!(" {} ", label),
-            Style::default().fg(OVERLAY0).bg(bg),
+            Style::default().fg(OVERLAY0).bg(SURFACE0),
         )
     }
 }
@@ -74,21 +74,22 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
         spans1.push(Span::styled(" ".repeat(rem1), Style::default().bg(bg)));
     }
 
-    // ── Line 2: Filter pills ──
+    // ── Line 2: Filter pills with separators ──
     let mut spans2: Vec<Span> = Vec::new();
     let mut click_regions: Vec<(String, u16, u16)> = Vec::new();
     let mut cx: u16 = 0;
+    let sep_style = Style::default().fg(SURFACE0).bg(bg);
+    let label_style = Style::default().fg(SURFACE1).bg(bg);
 
-    // Separator label
     spans2.push(Span::styled("  ", Style::default().bg(bg)));
     cx += 2;
 
-    // Protocol pills
-    spans2.push(Span::styled("Protocol ", Style::default().fg(OVERLAY0).bg(bg)));
+    // ── Protocol group ──
+    spans2.push(Span::styled("Protocol ", label_style));
     cx += 9;
 
     let proto_options: Vec<(ProtocolFilter, &str, ratatui::style::Color)> = vec![
-        (ProtocolFilter::All, "All", SURFACE1),
+        (ProtocolFilter::All, "All", BLUE),
         (ProtocolFilter::Http, "HTTP", BLUE),
         (ProtocolFilter::Sse, "SSE", PEACH),
         (ProtocolFilter::Ws, "WS", MAUVE),
@@ -96,21 +97,24 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     for (val, label, color) in &proto_options {
         let start = cx;
         let selected = app.network.filter.protocol == *val;
-        let effective_color = if *val == ProtocolFilter::All { SURFACE1 } else { *color };
-        spans2.push(pill(label, selected, effective_color, bg));
+        spans2.push(pill(label, selected, *color));
         cx += label.len() as u16 + 2;
         click_regions.push((format!("proto_{}", label), start, cx));
+        // Gap between pills
+        spans2.push(Span::styled(" ", Style::default().bg(bg)));
+        cx += 1;
     }
 
-    spans2.push(Span::styled("   ", Style::default().bg(bg)));
+    // Vertical separator
+    spans2.push(Span::styled(" \u{2502} ", sep_style)); // │
     cx += 3;
 
-    // Method pills
-    spans2.push(Span::styled("Method ", Style::default().fg(OVERLAY0).bg(bg)));
+    // ── Method group ──
+    spans2.push(Span::styled("Method ", label_style));
     cx += 7;
 
     let method_options: Vec<(MethodFilter, &str, ratatui::style::Color)> = vec![
-        (MethodFilter::All, "All", SURFACE1),
+        (MethodFilter::All, "All", GREEN),
         (MethodFilter::Get, "GET", GREEN),
         (MethodFilter::Post, "POST", BLUE),
         (MethodFilter::Put, "PUT", PEACH),
@@ -120,21 +124,23 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     for (val, label, color) in &method_options {
         let start = cx;
         let selected = app.network.filter.method == *val;
-        let effective_color = if *val == MethodFilter::All { SURFACE1 } else { *color };
-        spans2.push(pill(label, selected, effective_color, bg));
+        spans2.push(pill(label, selected, *color));
         cx += label.len() as u16 + 2;
         click_regions.push((format!("method_{}", label), start, cx));
+        spans2.push(Span::styled(" ", Style::default().bg(bg)));
+        cx += 1;
     }
 
-    spans2.push(Span::styled("   ", Style::default().bg(bg)));
+    // Vertical separator
+    spans2.push(Span::styled(" \u{2502} ", sep_style));
     cx += 3;
 
-    // Status pills
-    spans2.push(Span::styled("Status ", Style::default().fg(OVERLAY0).bg(bg)));
+    // ── Status group ──
+    spans2.push(Span::styled("Status ", label_style));
     cx += 7;
 
     let status_options: Vec<(StatusFilter, &str, ratatui::style::Color)> = vec![
-        (StatusFilter::All, "All", SURFACE1),
+        (StatusFilter::All, "All", GREEN),
         (StatusFilter::Completed, "OK", GREEN),
         (StatusFilter::Failed, "Fail", RED),
         (StatusFilter::Active, "Active", PEACH),
@@ -143,10 +149,11 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     for (val, label, color) in &status_options {
         let start = cx;
         let selected = app.network.filter.status == *val;
-        let effective_color = if *val == StatusFilter::All { SURFACE1 } else { *color };
-        spans2.push(pill(label, selected, effective_color, bg));
+        spans2.push(pill(label, selected, *color));
         cx += label.len() as u16 + 2;
         click_regions.push((format!("status_{}", label), start, cx));
+        spans2.push(Span::styled(" ", Style::default().bg(bg)));
+        cx += 1;
     }
 
     let rem2 = (area.width as usize).saturating_sub(cx as usize);
