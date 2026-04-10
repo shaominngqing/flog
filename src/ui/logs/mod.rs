@@ -328,12 +328,11 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let info = format!(" {}/{}{}", filtered, total, device);
 
     let buttons: Vec<(&str, &str, Style)> = vec![
-        ("separator", " ── ", Style::default().fg(YELLOW).bg(bg)),
-        ("clear", " Clear ", Style::default().fg(PEACH).bg(bg)),
-        ("export", " Export ", Style::default().fg(SAPPHIRE).bg(bg)),
-        ("stats", " Stats ", Style::default().fg(SAPPHIRE).bg(bg)),
-        ("help", " ? ", Style::default().fg(SAPPHIRE).bg(bg)),
-        ("quit", " x ", Style::default().fg(RED).bg(bg)),
+        ("separator", " ── ", Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD)),
+        ("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
+        ("export", " Export ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        ("stats", " Stats ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        ("quit", " x ", Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD)),
     ];
 
     let lw = live_text.width() as u16;
