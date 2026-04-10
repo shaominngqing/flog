@@ -539,9 +539,9 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
 
             let header_spans: Vec<Span> = vec![
                 cursor, bm,
-                level_span,
-                Span::styled(" ", dim_s),
                 Span::styled(time, time_style),
+                Span::styled(" ", dim_s),
+                level_span,
                 Span::styled(" ", dim_s),
                 Span::styled(
                     safe_pad(&entry.tag, TAG_WIDTH),
@@ -589,7 +589,7 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             row_map.push(fi);
 
             // Helper: build an empty header prefix aligned to columns
-            // cursor(1) + bookmark(2) + level(LEVEL_WIDTH) + sep(1) + time(TIME_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
+            // cursor(1) + bookmark(2) + time(TIME_WIDTH) + sep(1) + level(LEVEL_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
             let empty_prefix = |sel: bool, bg: Color| -> Vec<Span<'static>> {
                 let cursor_s = if sel {
                     Span::styled("▎", Style::default().fg(BLUE).bg(bg))
@@ -600,9 +600,9 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 vec![
                     cursor_s,
                     Span::styled("  ", blank),                          // bookmark
-                    Span::styled(" ".repeat(LEVEL_WIDTH), blank),       // level
-                    Span::styled(" ", blank),                           // sep
                     Span::styled(" ".repeat(TIME_WIDTH), blank),        // time
+                    Span::styled(" ", blank),                           // sep
+                    Span::styled(" ".repeat(LEVEL_WIDTH), blank),       // level
                     Span::styled(" ", blank),                           // sep
                     Span::styled(" ".repeat(TAG_WIDTH), blank),         // tag
                     Span::styled(" ", blank),                           // sep
@@ -709,7 +709,7 @@ fn entry_row_count_from_store(store: &crate::domain::LogStore, store_idx: usize,
     }
 
     // Header prefix width (must match render layout)
-    // cursor(1) + bookmark(2) + level(LEVEL_WIDTH) + sep(1) + time(TIME_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
+    // cursor(1) + bookmark(2) + time(TIME_WIDTH) + sep(1) + level(LEVEL_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
     let header_width = 1 + 2 + LEVEL_WIDTH + 1 + TIME_WIDTH + 1 + TAG_WIDTH + 1;
 
     let full_msg = if entry.repeat_count > 1 {
