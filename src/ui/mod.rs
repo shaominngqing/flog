@@ -2,7 +2,6 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::Block,
 };
@@ -142,22 +141,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Layout: tab bar + view content
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),  // tab bar
-            Constraint::Min(3),    // view content
-        ])
-        .split(full);
-
-    app.layout.tab_bar_y = rows[0].y;
+    // Tab selector is embedded in each view's toolbar — no separate tab row.
+    // The toolbar row (y=0 of the view area) doubles as the tab bar.
+    app.layout.tab_bar_y = full.y;
     app.layout.width = full.width;
 
-    tab_bar::draw_tab_bar(f, app, rows[0]);
-
     match app.active_tab {
-        ViewTab::Logs => logs::draw_logs(f, app, rows[1]),
-        ViewTab::Network => network::draw_network(f, app, rows[1]),
+        ViewTab::Logs => logs::draw_logs(f, app, full),
+        ViewTab::Network => network::draw_network(f, app, full),
     }
 }

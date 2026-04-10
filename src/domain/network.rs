@@ -126,12 +126,7 @@ fn extract_path(url: &str) -> String {
     if let Some(pos) = url.find("://") {
         let after_scheme = &url[pos + 3..];
         if let Some(slash) = after_scheme.find('/') {
-            let full_path = &after_scheme[slash..];
-            // Strip query string for cleaner display
-            if let Some(q) = full_path.find('?') {
-                return full_path[..q].to_string();
-            }
-            return full_path.to_string();
+            return after_scheme[slash..].to_string();
         }
     }
     url.to_string()

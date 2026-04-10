@@ -20,14 +20,11 @@ use super::super::{
 
 pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
-    let mut spans: Vec<Span> = Vec::new();
-    let mut x: u16 = 0;
 
-    // Logo
-    spans.push(Span::styled(" NET ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)));
-    x += 5;
-    spans.push(Span::styled(" ", Style::default().bg(bg)));
-    x += 1;
+    // Tab selector (replaces logo)
+    let (tab_spans, tab_w) = super::super::tab_bar::tab_spans(app, bg);
+    let mut spans: Vec<Span> = tab_spans;
+    let mut x: u16 = tab_w;
 
     // URL search
     let sw: usize = 24;
