@@ -46,6 +46,16 @@ const MAUVE: Color     = Color::Rgb(198, 160, 246);  // #c6a0f6 — key/label
 const PINK: Color      = Color::Rgb(245, 189, 230);  // #f5bde6 — special
 const LAVENDER: Color  = Color::Rgb(183, 189, 248);  // #b7bdf8 — subtle hl
 
+const ERROR_ROW_BG: Color   = Color::Rgb(50, 30, 35);   // subtle dark red
+const WARNING_ROW_BG: Color = Color::Rgb(50, 45, 30);   // subtle dark yellow
+
+const TAG_COLORS: [Color; 5] = [BLUE, GREEN, PEACH, MAUVE, SAPPHIRE];
+
+fn tag_color(tag: &str) -> Color {
+    let hash: usize = tag.bytes().fold(0usize, |acc, b| acc.wrapping_mul(31).wrapping_add(b as usize));
+    TAG_COLORS[hash % TAG_COLORS.len()]
+}
+
 const TAG_WIDTH: usize = 14;
 const TIME_WIDTH: usize = 12;
 const LEVEL_WIDTH: usize = 9; // " VERBOSE " is the longest
@@ -59,6 +69,17 @@ fn level_color(level: LogLevel) -> Color {
         LogLevel::Info => BLUE,
         LogLevel::Warning => YELLOW,
         LogLevel::Error => RED,
+        LogLevel::System => OVERLAY0,
+    }
+}
+
+fn message_color(level: LogLevel) -> Color {
+    match level {
+        LogLevel::Error => RED,
+        LogLevel::Warning => YELLOW,
+        LogLevel::Info => TEXT,
+        LogLevel::Debug => SUBTEXT0,
+        LogLevel::Verbose => OVERLAY0,
         LogLevel::System => OVERLAY0,
     }
 }
@@ -385,6 +406,12 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
 //  Log List
 // ══════════════════════════════════════
 
+fn apply_row_underline(line: &mut Line<'static>, _row_bg: Color) {
+    for span in line.spans.iter_mut() {
+        span.style = span.style.add_modifier(Modifier::UNDERLINED);
+    }
+}
+
 fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
     let height = area.height as usize;
     let filtered_count = app.filtered_count(); // forces filter rebuild if dirty
@@ -491,10 +518,18 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
         if let Some(entry) = app.store.get(store_idx) {
             let lc = level_color(entry.level);
 
-            let row_bg = if is_selected { SURFACE0 } else if vi % 2 == 1 { MANTLE } else { BASE };
+            let row_bg = if is_selected {
+                SURFACE1
+            } else {
+                match entry.level {
+                    LogLevel::Error => ERROR_ROW_BG,
+                    LogLevel::Warning => WARNING_ROW_BG,
+                    _ => BASE,
+                }
+            };
 
-            let base = Style::default().fg(lc).bg(row_bg);
-            let tag_s = Style::default().fg(TEAL).bg(row_bg);
+            let mc = message_color(entry.level);
+            let base = Style::default().fg(mc).bg(row_bg);
             let dim_s = Style::default().fg(SURFACE1).bg(row_bg);
 
             let cursor = if is_selected {
@@ -513,7 +548,6 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             let time_style = Style::default().fg(OVERLAY0).bg(row_bg).add_modifier(Modifier::DIM);
 
             let level_span = level_pill(entry.level, row_bg);
-            let tag = safe_pad(&entry.tag, TAG_WIDTH);
 
             // Separator: 3 rows (blank + divider + blank)
             if entry.tag == "────" {
@@ -539,11 +573,14 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
 
             let header_spans: Vec<Span> = vec![
                 cursor, bm,
-                Span::styled(time, time_style),
-                Span::styled(" ", dim_s),
                 level_span,
                 Span::styled(" ", dim_s),
-                Span::styled(tag, tag_s),
+                Span::styled(time, time_style),
+                Span::styled(" ", dim_s),
+                Span::styled(
+                    safe_pad(&entry.tag, TAG_WIDTH),
+                    Style::default().fg(MANTLE).bg(tag_color(&entry.tag)),
+                ),
                 Span::styled(" ", dim_s),
             ];
 
@@ -586,7 +623,7 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             row_map.push(fi);
 
             // Helper: build an empty header prefix aligned to columns
-            // cursor(1) + bookmark(2) + time(TIME_WIDTH) + sep(1) + level(6) + sep(1) + tag(TAG_WIDTH) + sep(1)
+            // cursor(1) + bookmark(2) + level(LEVEL_WIDTH) + sep(1) + time(TIME_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
             let empty_prefix = |sel: bool, bg: Color| -> Vec<Span<'static>> {
                 let cursor_s = if sel {
                     Span::styled("▎", Style::default().fg(BLUE).bg(bg))
@@ -597,9 +634,9 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 vec![
                     cursor_s,
                     Span::styled("  ", blank),                          // bookmark
-                    Span::styled(" ".repeat(TIME_WIDTH), blank),        // time
-                    Span::styled(" ", blank),                           // sep
                     Span::styled(" ".repeat(LEVEL_WIDTH), blank),       // level
+                    Span::styled(" ", blank),                           // sep
+                    Span::styled(" ".repeat(TIME_WIDTH), blank),        // time
                     Span::styled(" ", blank),                           // sep
                     Span::styled(" ".repeat(TAG_WIDTH), blank),         // tag
                     Span::styled(" ", blank),                           // sep
@@ -644,6 +681,13 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                     }
                     lines.push(Line::from(cs));
                     row_map.push(fi);
+                }
+            }
+
+            // Apply underline separator to last line of this entry
+            if entry.tag != "────" {
+                if let Some(last_line) = lines.last_mut() {
+                    apply_row_underline(last_line, row_bg);
                 }
             }
 
@@ -703,7 +747,7 @@ fn entry_row_count_from_store(store: &crate::domain::LogStore, store_idx: usize,
     }
 
     // Header prefix width (must match render layout)
-    // cursor(1) + bookmark(2) + time(TIME_WIDTH) + sep(1) + level(LEVEL_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
+    // cursor(1) + bookmark(2) + level(LEVEL_WIDTH) + sep(1) + time(TIME_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
     let header_width = 1 + 2 + TIME_WIDTH + 1 + LEVEL_WIDTH + 1 + TAG_WIDTH + 1;
 
     let full_msg = if entry.repeat_count > 1 {
