@@ -748,7 +748,7 @@ fn entry_row_count_from_store(store: &crate::domain::LogStore, store_idx: usize,
 
     // Header prefix width (must match render layout)
     // cursor(1) + bookmark(2) + level(LEVEL_WIDTH) + sep(1) + time(TIME_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
-    let header_width = 1 + 2 + TIME_WIDTH + 1 + LEVEL_WIDTH + 1 + TAG_WIDTH + 1;
+    let header_width = 1 + 2 + LEVEL_WIDTH + 1 + TIME_WIDTH + 1 + TAG_WIDTH + 1;
 
     let full_msg = if entry.repeat_count > 1 {
         format!("{} {}", repeat_bar(entry.repeat_count, 8), entry.message)
