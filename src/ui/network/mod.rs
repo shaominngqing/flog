@@ -34,7 +34,7 @@ const SIZE_W: usize = 8;
 const ERROR_ROW_BG: Color = Color::Rgb(50, 30, 35);
 const WARNING_ROW_BG: Color = Color::Rgb(50, 45, 30);
 const REPLAY_ROW_BG: Color = Color::Rgb(35, 45, 65); // subtle blue tint
-const MOCKED_ROW_BG: Color = Color::Rgb(110, 75, 138);
+const MOCKED_ROW_BG: Color = Color::Rgb(50, 35, 65); // subtle purple tint
 
 // ══════════════════════════════════════
 //  Helper Functions
@@ -307,15 +307,34 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(method_c).bg(row_bg),
             );
 
+            // Source tag (MOCK / REPLAY pill) — takes space before URL
+            let source_tag: Option<Span> = match entry.source {
+                EntrySource::Mocked => Some(Span::styled(
+                    " MOCK ",
+                    Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD),
+                )),
+                EntrySource::Replay => Some(Span::styled(
+                    " REPLAY ",
+                    Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD),
+                )),
+                EntrySource::App => None,
+            };
+            let tag_w = source_tag.as_ref().map(|s| s.content.width() + 1).unwrap_or(0);
+
             // URL (takes remaining space) — show path only (strip query) for compact display
             let fixed_width =
-                1 + PROTO_W + 1 + METHOD_W + 1 + STATUS_W + 1 + TIME_W + 1 + SIZE_W + 1;
+                1 + PROTO_W + 1 + METHOD_W + 1 + tag_w + STATUS_W + 1 + TIME_W + 1 + SIZE_W + 1;
             let url_width = total_width.saturating_sub(fixed_width);
             let path_only = entry.path.split('?').next().unwrap_or(&entry.path);
             let url_display = safe_truncate(path_only, url_width);
+            let url_color = match entry.source {
+                EntrySource::Mocked => MAUVE,
+                EntrySource::Replay => BLUE,
+                EntrySource::App => TEXT,
+            };
             let url_span = Span::styled(
                 safe_pad(&url_display, url_width),
-                Style::default().fg(TEXT).bg(row_bg),
+                Style::default().fg(url_color).bg(row_bg),
             );
 
             // Status
@@ -365,13 +384,19 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
                 sep.clone(),
                 method_span,
                 sep.clone(),
+            ];
+            if let Some(tag) = source_tag {
+                spans.push(tag);
+                spans.push(sep.clone());
+            }
+            spans.extend([
                 url_span,
                 status_span,
                 sep.clone(),
                 time_span,
                 sep.clone(),
                 size_span,
-            ];
+            ]);
 
             // Fill remaining width
             let used: usize = spans.iter().map(|s| s.content.width()).sum();
