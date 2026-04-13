@@ -351,6 +351,11 @@ pub struct App {
     /// return to the correct scanning phase on disconnect.
     pub last_source_type: Option<LastSourceType>,
 
+    // Proxy
+    pub proxy_port: Option<u16>,
+    pub proxy_running: bool,
+    pub mock_rules: crate::proxy::mock::MockRuleStore,
+
     // UI
     pub layout: LayoutCache,
     pub tick: u64,
@@ -397,6 +402,9 @@ impl App {
             source_command_tx: None,
             replay_tx: None,
             last_source_type: None,
+            proxy_port: None,
+            proxy_running: false,
+            mock_rules: crate::proxy::mock::MockRuleStore::new(),
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
@@ -807,6 +815,11 @@ impl App {
         if let Some(tx) = &self.source_command_tx {
             let _ = tx.send(cmd);
         }
+    }
+
+    /// Whether the app is currently connected via VM Service (WebSocket).
+    pub fn is_vm_service_connected(&self) -> bool {
+        self.connected && matches!(self.last_source_type, Some(LastSourceType::Vm))
     }
 
     // ── Clear & Separator ──

@@ -6,6 +6,7 @@ mod domain;
 mod event;
 pub mod input;
 pub mod parser;
+pub mod proxy;
 mod replay;
 mod session;
 mod ui;
@@ -72,6 +73,17 @@ async fn main() -> io::Result<()> {
             while let Some(entry) = replay_rx.recv().await {
                 let app_c = Arc::clone(&app_for_replay);
                 tokio::spawn(replay::replay_request(app_c, entry));
+            }
+        });
+    }
+
+    // Start proxy server
+    {
+        let app_proxy = Arc::clone(&app);
+        tokio::spawn(async move {
+            match crate::proxy::start_proxy(app_proxy).await {
+                Ok(_port) => {}
+                Err(e) => eprintln!("Proxy failed: {}", e),
             }
         });
     }

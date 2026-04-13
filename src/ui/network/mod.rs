@@ -472,13 +472,18 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         String::new()
     };
 
-    let buttons: Vec<(&str, &str, Style)> = vec![
+    let mut buttons: Vec<(&str, &str, Style)> = vec![
         ("replay", " Replay ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)),
         ("curl", " Copy as cURL ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
         ("response", " Copy Response ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
-        ("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
-        ("help", " ? ", Style::default().fg(MANTLE).bg(OVERLAY0).add_modifier(Modifier::BOLD)),
     ];
+
+    if app.is_vm_service_connected() {
+        buttons.push(("mock", " Mock ", Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD)));
+    }
+
+    buttons.push(("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)));
+    buttons.push(("help", " ? ", Style::default().fg(MANTLE).bg(OVERLAY0).add_modifier(Modifier::BOLD)));
 
     let lw = live_text.width() as u16;
     let info_w = info.width() as u16;

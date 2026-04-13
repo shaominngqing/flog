@@ -174,6 +174,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                 "replay" => replay_selected(app),
                                 "curl" => copy_as_curl(app),
                                 "response" => copy_response(app),
+                                "mock" => mock_from_selected(app),
                                 "clear" => {
                                     app.network_store.clear();
                                     app.network.invalidate_filter();
@@ -675,6 +676,37 @@ fn copy_response(app: &mut App) {
     app.show_status(format!("Response {}", msg));
 }
 
+/// Create a mock rule from the currently selected network request.
+fn mock_from_selected(app: &mut App) {
+    if !app.is_vm_service_connected() {
+        app.show_status("Mock requires VM Service connection".to_string());
+        return;
+    }
+
+    let indices = app.network.filtered_indices(&app.network_store).to_vec();
+    let entry = if let Some(&idx) = indices.get(app.network.selected) {
+        app.network_store.get(idx).cloned()
+    } else {
+        None
+    };
+
+    let entry = match entry {
+        Some(e) => e,
+        None => {
+            app.show_status("No request selected".to_string());
+            return;
+        }
+    };
+
+    let url_pattern = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
+    let method = if entry.method.is_empty() { None } else { Some(entry.method.clone()) };
+    let status_code = entry.http_status.unwrap_or(200);
+    let response_body = entry.response_body.clone().unwrap_or_else(|| "{}".to_string());
+
+    app.mock_rules.add(url_pattern.clone(), method, status_code, response_body, 0);
+    app.show_status(format!("Mock rule created for {}", url_pattern));
+}
+
 fn copy_current_log(app: &mut App) {
     if let Some(idx) = app.selected_store_index() {
         if let Some(entry) = app.store.get(idx) {
@@ -814,6 +846,11 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('r') => replay_selected(app),
             KeyCode::Char('c') => copy_as_curl(app),
             KeyCode::Char('y') => copy_response(app),
+            KeyCode::Char('M') => mock_from_selected(app),
+            KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let count = app.mock_rules.len();
+                app.show_status(format!("{} mock rules configured", count));
+            }
             KeyCode::Char('S') => app.enter_network_stats(),
             KeyCode::Char('?') => app.enter_help(),
             KeyCode::Char('1') => app.switch_tab(ViewTab::Logs),

@@ -18,6 +18,8 @@ use super::super::{
     BLUE, GREEN, YELLOW, PEACH, RED, SAPPHIRE, MAUVE,
 };
 
+const PROXY_GREEN: ratatui::style::Color = ratatui::style::Color::Rgb(166, 218, 149);
+
 /// Render a filter pill: selected = bright colored bg, unselected = subtle bg.
 fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'a> {
     if selected {
@@ -69,8 +71,27 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     x += sw as u16;
     let search_end = x;
 
+    // Proxy status indicator (right-aligned on line 1)
+    let proxy_text = if app.proxy_running && app.is_vm_service_connected() {
+        let port = app.proxy_port.unwrap_or(0);
+        let rule_count = app.mock_rules.enabled_count();
+        if rule_count > 0 {
+            format!("\u{25cf} Proxy :{} ({} rules) ", port, rule_count)
+        } else {
+            format!("\u{25cf} Proxy :{} (no rules) ", port)
+        }
+    } else {
+        String::new()
+    };
+
+    let proxy_w = proxy_text.width();
     let rem1 = (area.width as usize).saturating_sub(x as usize);
-    if rem1 > 0 {
+    if !proxy_text.is_empty() && rem1 > proxy_w {
+        let gap = rem1.saturating_sub(proxy_w);
+        spans1.push(Span::styled(" ".repeat(gap), Style::default().bg(bg)));
+        let proxy_color = if app.mock_rules.enabled_count() > 0 { PROXY_GREEN } else { OVERLAY0 };
+        spans1.push(Span::styled(proxy_text, Style::default().fg(proxy_color).bg(bg)));
+    } else if rem1 > 0 {
         spans1.push(Span::styled(" ".repeat(rem1), Style::default().bg(bg)));
     }
 

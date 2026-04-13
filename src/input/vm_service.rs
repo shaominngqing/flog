@@ -38,6 +38,17 @@ impl VmServiceSource {
             let _ = sender.send(Message::Text(msg.to_string().into())).await;
         }
 
+        // TODO: Notify Dart about the proxy port via ext.flog.setProxy.
+        // This requires calling getVM to obtain the main isolate ID, then
+        // callServiceExtension with extensionRpc: "ext.flog.setProxy".
+        // For now, the proxy server runs independently and the Dart side
+        // must be configured manually (or via flog_dart's built-in extension
+        // registration). A future iteration will automate this handshake:
+        //
+        //   1. Send getVM → receive isolates list
+        //   2. Extract the main isolate ID
+        //   3. Send callServiceExtension with ext.flog.setProxy + port
+
         Ok(Self { receiver, uri: uri.to_string(), pending_lines: Vec::new() })
     }
 
