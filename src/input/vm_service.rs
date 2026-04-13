@@ -27,7 +27,72 @@ impl VmServiceSource {
         uri: &str,
         proxy_port: Option<u16>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let (ws_stream, _) = connect_async(uri).await?;
+        let (mut ws_stream, _) = connect_async(uri).await?;
+
+        // ── Before split: do getVM + proxy handshake using the unsplit stream ──
+
+        // Step 1: getVM to get the real isolate ID
+        let get_vm = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getVM",
+            "id": "get_vm"
+        });
+        ws_stream
+            .send(Message::Text(get_vm.to_string().into()))
+            .await
+            .ok();
+
+        // Read getVM response and extract isolate ID
+        let mut isolate_id: Option<String> = None;
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        while tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(std::time::Duration::from_millis(500), ws_stream.next())
+                .await
+            {
+                Ok(Some(Ok(Message::Text(text)))) => {
+                    if let Ok(json) = serde_json::from_str::<Value>(&text.to_string()) {
+                        // Check if this is the getVM response
+                        if json.get("id").and_then(|v| v.as_str()) == Some("get_vm") {
+                            // Extract first isolate ID from result.isolates[0].id
+                            if let Some(isolates) =
+                                json.get("result").and_then(|r| r.get("isolates"))
+                            {
+                                if let Some(first) = isolates.as_array().and_then(|a| a.first()) {
+                                    if let Some(id) = first.get("id").and_then(|v| v.as_str()) {
+                                        isolate_id = Some(id.to_string());
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                Ok(Some(Ok(_))) => continue,  // non-text message, skip
+                Ok(Some(Err(_))) => continue,  // error, skip
+                Ok(None) => break,             // stream closed
+                Err(_) => break,               // timeout
+            }
+        }
+
+        // Step 2: If we have an isolate ID and a proxy port, call setProxy
+        if let (Some(ref iso_id), Some(port)) = (&isolate_id, proxy_port) {
+            let call_ext = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "callServiceExtension",
+                "params": {
+                    "isolateId": iso_id,
+                    "extensionRpc": "ext.flog.setProxy",
+                    "port": port.to_string(),
+                },
+                "id": "proxy_notify"
+            });
+            ws_stream
+                .send(Message::Text(call_ext.to_string().into()))
+                .await
+                .ok();
+        }
+
+        // ── Now split for normal operation ──
         let (mut sender, receiver) = ws_stream.split();
 
         // Subscribe to streams. Ignore "already subscribed" errors.
@@ -41,61 +106,11 @@ impl VmServiceSource {
             let _ = sender.send(Message::Text(msg.to_string().into())).await;
         }
 
-        // Notify Dart about the proxy port via ext.flog.setProxy.
-        if let Some(port) = proxy_port {
-            Self::notify_proxy(&mut sender, port).await;
-        }
-
         Ok(Self {
             receiver,
             uri: uri.to_string(),
             pending_lines: Vec::new(),
         })
-    }
-
-    /// Send getVM to find isolate ID, then call ext.flog.setProxy with proxy port.
-    async fn notify_proxy(
-        sender: &mut futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
-            Message,
-        >,
-        port: u16,
-    ) {
-        // Step 1: getVM to find isolate ID
-        let get_vm = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "getVM",
-            "params": {},
-            "id": "get_vm_for_proxy"
-        });
-        let _ = sender
-            .send(Message::Text(get_vm.to_string().into()))
-            .await;
-
-        // Note: We can't easily read the getVM response here since the receiver
-        // is already split off. Instead, use a well-known isolate ID format.
-        // The Dart VM Service supports calling extensions on any running isolate.
-        // We try "isolates/main" first, and if that fails the extension just won't
-        // be called — the Dart side already registers the extension in FlogDio, so
-        // if FlogDio is used, it will work when flog reconnects.
-
-        // Step 2: Call the service extension with a common isolate pattern.
-        // VM Service expects callServiceExtension format.
-        let call_ext = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "callServiceExtension",
-            "params": {
-                "isolateId": "isolates/main",
-                "extensionRpc": "ext.flog.setProxy",
-                "port": port.to_string(),
-            },
-            "id": "proxy_notify"
-        });
-        let _ = sender
-            .send(Message::Text(call_ext.to_string().into()))
-            .await;
     }
 
     pub async fn next_event(&mut self) -> Option<SourceEvent> {
