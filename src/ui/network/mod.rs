@@ -78,15 +78,14 @@ pub fn status_color(status: NetworkStatus, http_status: Option<u16>) -> Color {
     }
 }
 
+/// Color for duration based on latency thresholds.
 fn duration_color(ms: u64) -> Color {
-    if ms >= 3000 {
+    if ms > 1000 {
         RED
-    } else if ms >= 1000 {
+    } else if ms > 500 {
         YELLOW
-    } else if ms >= 500 {
-        PEACH
     } else {
-        SUBTEXT0
+        GREEN
     }
 }
 
