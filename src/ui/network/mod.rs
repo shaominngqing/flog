@@ -561,8 +561,24 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 .bg(MAUVE)
                 .add_modifier(Modifier::BOLD),
         ));
+        buttons.push((
+            "mockrules",
+            " Rules ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(MAUVE)
+                .add_modifier(Modifier::BOLD),
+        ));
     }
 
+    buttons.push((
+        "stats",
+        " Stats ",
+        Style::default()
+            .fg(MANTLE)
+            .bg(LAVENDER)
+            .add_modifier(Modifier::BOLD),
+    ));
     buttons.push((
         "clear",
         " Clear ",

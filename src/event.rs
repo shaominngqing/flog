@@ -188,6 +188,8 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                 "curl" => copy_as_curl(app),
                                 "response" => copy_response(app),
                                 "mock" => mock_from_selected(app),
+                                "mockrules" => app.enter_mock_rules(),
+                                "stats" => app.enter_network_stats(),
                                 "clear" => {
                                     app.network_store.clear();
                                     app.network.invalidate_filter();
