@@ -316,8 +316,15 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
     app.layout.mock_edit_regions.clear();
     app.layout.mock_edit_body_rect = None;
 
-    // Near full-screen: margin 2 on each side
-    let outer = ratatui::layout::Rect::new(2, 1, area.width.saturating_sub(4), area.height.saturating_sub(2));
+    // Centered overlay with comfortable margins
+    let mx: u16 = 6;
+    let my: u16 = 3;
+    let outer = ratatui::layout::Rect::new(
+        mx,
+        my,
+        area.width.saturating_sub(mx * 2),
+        area.height.saturating_sub(my * 2),
+    );
 
     // Draw border block
     let title_text = if app.mock_edit_is_new {

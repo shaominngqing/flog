@@ -852,7 +852,13 @@ impl App {
                 rule.status_code.to_string(),
                 rule.delay_ms.to_string(),
             ];
-            self.mock_edit_body = crate::ui::text_editor::TextEditor::new(&rule.response_body);
+            // Pretty-print JSON body for readability
+            let pretty_body = if let Ok(val) = serde_json::from_str::<serde_json::Value>(&rule.response_body) {
+                serde_json::to_string_pretty(&val).unwrap_or_else(|_| rule.response_body.clone())
+            } else {
+                rule.response_body.clone()
+            };
+            self.mock_edit_body = crate::ui::text_editor::TextEditor::new(&pretty_body);
             self.mode = AppMode::MockRuleEdit;
         }
     }
