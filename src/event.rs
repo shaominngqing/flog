@@ -778,8 +778,8 @@ fn copy_response(app: &mut App) {
 
 /// Create a mock rule from the currently selected network request and open editor.
 fn mock_from_selected(app: &mut App) {
-    if !app.is_vm_service_connected() {
-        app.show_status("Mock requires VM Service connection".to_string());
+    if !app.proxy_dart_connected {
+        app.show_status("Mock unavailable — Dart proxy not connected".to_string());
         return;
     }
 

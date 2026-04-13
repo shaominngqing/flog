@@ -95,7 +95,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     }
     // Divider line with [Mock] button (VM Service only)
     {
-        let mock_btn = if app.is_vm_service_connected() { " [Mock] " } else { "" };
+        let mock_btn = if app.proxy_dart_connected { " [Mock] " } else { "" };
         let divider_w = inner_w.saturating_sub(mock_btn.len());
         let mut divider_spans = vec![
             Span::styled(

@@ -840,8 +840,8 @@ impl App {
     }
 
     pub fn enter_mock_rules(&mut self) {
-        if !self.is_vm_service_connected() {
-            self.show_status("Mock requires VM Service connection".to_string());
+        if !self.proxy_dart_connected {
+            self.show_status("Mock unavailable — Dart proxy not connected".to_string());
             return;
         }
         // Toggle mock rules panel in the right side (like detail panel)

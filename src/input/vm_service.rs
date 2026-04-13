@@ -77,14 +77,15 @@ impl VmServiceSource {
         }
 
         // Step 2: If we have an isolate ID and a proxy port, call setProxy
+        // VM Service protocol: extension RPCs are called directly as the method name,
+        // with isolateId + custom args in params.
         let mut proxy_ok = false;
         if let (Some(ref iso_id), Some(port)) = (&isolate_id, proxy_port) {
             let call_ext = serde_json::json!({
                 "jsonrpc": "2.0",
-                "method": "callServiceExtension",
+                "method": "ext.flog.setProxy",
                 "params": {
                     "isolateId": iso_id,
-                    "extensionRpc": "ext.flog.setProxy",
                     "port": port.to_string(),
                 },
                 "id": "proxy_notify"
