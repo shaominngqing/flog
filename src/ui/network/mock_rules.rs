@@ -83,6 +83,14 @@ pub fn draw_mock_rules(f: &mut Frame, app: &mut App) {
     let footer = Line::from(vec![
         Span::styled(" ", Style::default().bg(MANTLE)),
         Span::styled(
+            " Enter ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" edit  ", Style::default().fg(SUBTEXT0).bg(MANTLE)),
+        Span::styled(
             " Space ",
             Style::default()
                 .fg(MANTLE)
@@ -107,7 +115,7 @@ pub fn draw_mock_rules(f: &mut Frame, app: &mut App) {
         ),
         Span::styled(" back", Style::default().fg(SUBTEXT0).bg(MANTLE)),
         Span::styled(
-            " ".repeat(w.saturating_sub(42)),
+            " ".repeat(w.saturating_sub(56)),
             Style::default().bg(MANTLE),
         ),
     ]);
@@ -220,4 +228,175 @@ fn draw_rules_table(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     );
 
     f.render_widget(table, area);
+}
+
+pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
+    let area = f.area();
+
+    // Center the edit overlay — 68 chars wide, 20 lines tall
+    let overlay_w: u16 = 68.min(area.width.saturating_sub(4));
+    let overlay_h: u16 = 20.min(area.height.saturating_sub(2));
+    let overlay_x = (area.width.saturating_sub(overlay_w)) / 2;
+    let overlay_y = (area.height.saturating_sub(overlay_h)) / 2;
+
+    let overlay_rect = ratatui::layout::Rect::new(overlay_x, overlay_y, overlay_w, overlay_h);
+
+    // Draw border block
+    let block = Block::default()
+        .title(" Edit Mock Rule ")
+        .title_style(
+            Style::default()
+                .fg(TEXT)
+                .add_modifier(Modifier::BOLD),
+        )
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(BLUE))
+        .style(Style::default().bg(BASE));
+
+    f.render_widget(block, overlay_rect);
+
+    // Inner area (inside the border)
+    let inner = ratatui::layout::Rect::new(
+        overlay_rect.x + 1,
+        overlay_rect.y + 1,
+        overlay_rect.width.saturating_sub(2),
+        overlay_rect.height.saturating_sub(2),
+    );
+
+    let field = app.mock_edit_field;
+    let values = &app.mock_edit_values;
+    if values.len() < 5 {
+        return;
+    }
+
+    let label_w: u16 = 16;
+    let input_w = inner.width.saturating_sub(label_w + 4);
+
+    let labels = ["URL Pattern:", "Method:", "Status Code:", "Delay (ms):", "Response Body:"];
+
+    let mut y = inner.y + 1;
+
+    for (i, label) in labels.iter().enumerate() {
+        if y >= inner.y + inner.height.saturating_sub(2) {
+            break;
+        }
+
+        let is_focused = i == field;
+        let label_style = if is_focused {
+            Style::default().fg(BLUE).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(SUBTEXT0)
+        };
+        let field_bg = if is_focused { SURFACE1 } else { SURFACE0 };
+
+        // For the body field (index 4), we use multiple lines
+        if i == 4 {
+            // Label on its own line
+            let label_span = Span::styled(format!("  {}", label), label_style);
+            f.render_widget(
+                Paragraph::new(Line::from(label_span)).style(Style::default().bg(BASE)),
+                ratatui::layout::Rect::new(inner.x, y, inner.width, 1),
+            );
+            y += 1;
+
+            // Body text area (remaining space minus 2 lines for footer)
+            let body_h = inner.y + inner.height - y - 2;
+            let body_h = body_h.max(3).min(5);
+
+            if y + body_h > inner.y + inner.height.saturating_sub(2) {
+                break;
+            }
+
+            let body_rect =
+                ratatui::layout::Rect::new(inner.x + 2, y, inner.width.saturating_sub(4), body_h);
+
+            let body_text = &values[4];
+            let display_text = if is_focused {
+                format!("{}_", body_text)
+            } else {
+                body_text.clone()
+            };
+
+            let body_para = Paragraph::new(display_text)
+                .style(Style::default().fg(TEXT).bg(field_bg))
+                .wrap(Wrap { trim: false });
+
+            f.render_widget(body_para, body_rect);
+            y += body_h;
+        } else {
+            // Single-line fields: label + input on same row
+            let label_rect = ratatui::layout::Rect::new(inner.x, y, label_w + 2, 1);
+            let input_rect = ratatui::layout::Rect::new(inner.x + label_w + 2, y, input_w, 1);
+
+            let label_span = Span::styled(format!("  {}", label), label_style);
+            f.render_widget(
+                Paragraph::new(Line::from(label_span)).style(Style::default().bg(BASE)),
+                label_rect,
+            );
+
+            let val = &values[i];
+            let display_val = if is_focused {
+                format!("{}_", val)
+            } else {
+                val.clone()
+            };
+
+            // Truncate if too long for the field
+            let max_chars = input_w.saturating_sub(1) as usize;
+            let truncated: String = if display_val.len() > max_chars {
+                display_val[display_val.len() - max_chars..].to_string()
+            } else {
+                // Pad to fill the input field
+                format!("{:<width$}", display_val, width = max_chars)
+            };
+
+            let input_para = Paragraph::new(Line::from(Span::styled(
+                truncated,
+                Style::default().fg(TEXT).bg(field_bg),
+            )))
+            .style(Style::default().bg(field_bg));
+
+            f.render_widget(input_para, input_rect);
+            y += 1;
+        }
+
+        // Small gap between fields
+        y += 1;
+    }
+
+    // Footer hints
+    let footer_y = overlay_rect.y + overlay_rect.height.saturating_sub(2);
+    let footer_rect = ratatui::layout::Rect::new(inner.x, footer_y, inner.width, 1);
+    let footer = Line::from(vec![
+        Span::styled("  ", Style::default().bg(BASE)),
+        Span::styled(
+            " Tab ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(MAUVE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" next  ", Style::default().fg(SUBTEXT0).bg(BASE)),
+        Span::styled(
+            " Ctrl+Enter ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" save  ", Style::default().fg(SUBTEXT0).bg(BASE)),
+        Span::styled(
+            " Esc ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(RED)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cancel", Style::default().fg(SUBTEXT0).bg(BASE)),
+    ]);
+    f.render_widget(
+        Paragraph::new(footer).style(Style::default().bg(BASE)),
+        footer_rect,
+    );
 }

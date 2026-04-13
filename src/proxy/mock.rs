@@ -112,6 +112,11 @@ impl MockRuleStore {
         self.rules.is_empty()
     }
 
+    /// Get a mutable reference to a rule by ID.
+    pub fn get_mut(&mut self, id: usize) -> Option<&mut MockRule> {
+        self.rules.iter_mut().find(|r| r.id == id)
+    }
+
     /// Number of enabled rules.
     pub fn enabled_count(&self) -> usize {
         self.rules.iter().filter(|r| r.enabled).count()

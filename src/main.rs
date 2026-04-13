@@ -515,6 +515,10 @@ async fn run_loop(
                 AppMode::MockRules => {
                     ui::network::mock_rules::draw_mock_rules(f, &mut app_guard);
                 }
+                AppMode::MockRuleEdit => {
+                    ui::network::mock_rules::draw_mock_rules(f, &mut app_guard);
+                    ui::network::mock_rules::draw_mock_rule_edit(f, &mut app_guard);
+                }
                 _ => ui::draw(f, &mut app_guard),
             })?;
             if app_guard.should_quit {

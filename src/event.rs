@@ -19,6 +19,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         AppMode::Help | AppMode::Stats => handle_overlay_key(app, key),
         AppMode::SourceSelect => handle_source_select_key(app, key),
         AppMode::MockRules => handle_mock_rules_key(app, key),
+        AppMode::MockRuleEdit => handle_mock_edit_key(app, key),
     }
 }
 
@@ -29,6 +30,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
         AppMode::Help | AppMode::Stats => handle_overlay_mouse(app, mouse),
         AppMode::SourceSelect => handle_source_select_mouse(app, mouse),
         AppMode::MockRules => handle_mock_rules_mouse(app, mouse),
+        AppMode::MockRuleEdit => {} // Ignore mouse in editor
     }
 }
 
@@ -999,6 +1001,12 @@ fn handle_mock_rules_key(app: &mut App, key: KeyEvent) {
                 app.mock_rule_selected -= 1;
             }
         }
+        KeyCode::Enter | KeyCode::Char('e') => {
+            if let Some(rule) = app.mock_rules.rules().get(app.mock_rule_selected) {
+                let id = rule.id;
+                app.enter_mock_edit(id);
+            }
+        }
         KeyCode::Char(' ') => {
             // Toggle enabled/disabled
             if let Some(rule) = app.mock_rules.rules().get(app.mock_rule_selected) {
@@ -1016,6 +1024,36 @@ fn handle_mock_rules_key(app: &mut App, key: KeyEvent) {
                 {
                     app.mock_rule_selected = app.mock_rules.len().saturating_sub(1);
                 }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_mock_edit_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.cancel_mock_edit(),
+        KeyCode::Tab | KeyCode::Down => {
+            app.mock_edit_field = (app.mock_edit_field + 1) % 5;
+        }
+        KeyCode::BackTab | KeyCode::Up => {
+            app.mock_edit_field = if app.mock_edit_field == 0 {
+                4
+            } else {
+                app.mock_edit_field - 1
+            };
+        }
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.save_mock_edit();
+        }
+        KeyCode::Char(c) => {
+            if app.mock_edit_field < app.mock_edit_values.len() {
+                app.mock_edit_values[app.mock_edit_field].push(c);
+            }
+        }
+        KeyCode::Backspace => {
+            if app.mock_edit_field < app.mock_edit_values.len() {
+                app.mock_edit_values[app.mock_edit_field].pop();
             }
         }
         _ => {}

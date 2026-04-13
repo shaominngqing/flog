@@ -56,6 +56,7 @@ pub enum AppMode {
     Stats,
     SourceSelect,
     MockRules,
+    MockRuleEdit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,6 +355,9 @@ pub struct App {
     pub proxy_running: bool,
     pub mock_rules: crate::proxy::mock::MockRuleStore,
     pub mock_rule_selected: usize,
+    pub mock_edit_rule_id: Option<usize>,
+    pub mock_edit_field: usize,
+    pub mock_edit_values: Vec<String>,
 
     // UI
     pub layout: LayoutCache,
@@ -405,6 +409,9 @@ impl App {
             proxy_running: false,
             mock_rules: crate::proxy::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
+            mock_edit_rule_id: None,
+            mock_edit_field: 0,
+            mock_edit_values: Vec::new(),
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
@@ -821,6 +828,44 @@ impl App {
         }
         self.mode = AppMode::MockRules;
         self.layout.last_click = None;
+    }
+
+    pub fn enter_mock_edit(&mut self, rule_id: usize) {
+        if let Some(rule) = self.mock_rules.rules().iter().find(|r| r.id == rule_id) {
+            self.mock_edit_rule_id = Some(rule_id);
+            self.mock_edit_field = 0;
+            self.mock_edit_values = vec![
+                rule.url_pattern.clone(),
+                rule.method.clone().unwrap_or_else(|| "*".to_string()),
+                rule.status_code.to_string(),
+                rule.delay_ms.to_string(),
+                rule.response_body.clone(),
+            ];
+            self.mode = AppMode::MockRuleEdit;
+        }
+    }
+
+    pub fn save_mock_edit(&mut self) {
+        if let Some(id) = self.mock_edit_rule_id {
+            if let Some(rule) = self.mock_rules.get_mut(id) {
+                rule.url_pattern = self.mock_edit_values[0].clone();
+                rule.method = if self.mock_edit_values[1] == "*" {
+                    None
+                } else {
+                    Some(self.mock_edit_values[1].clone())
+                };
+                rule.status_code = self.mock_edit_values[2].parse().unwrap_or(200);
+                rule.delay_ms = self.mock_edit_values[3].parse().unwrap_or(0);
+                rule.response_body = self.mock_edit_values[4].clone();
+            }
+        }
+        self.mode = AppMode::MockRules;
+        self.mock_edit_rule_id = None;
+    }
+
+    pub fn cancel_mock_edit(&mut self) {
+        self.mode = AppMode::MockRules;
+        self.mock_edit_rule_id = None;
     }
 
     pub fn exit_source_select(&mut self) {
