@@ -108,20 +108,22 @@ fn status_row(range_label: &str, count: usize, total: usize, color: Color) -> Ro
 // ── Main draw ──
 
 pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
+    app.layout.stats_slowest_regions.clear();
+
     // Collect data from network_store
     let mut total: usize = 0;
     let mut success: usize = 0;
     let mut failed: usize = 0;
     let mut in_progress: usize = 0;
     let mut durations: Vec<u64> = Vec::new();
-    let mut url_durations: Vec<(String, String, Option<u16>, u64)> = Vec::new(); // (url, method, http_status, duration)
+    let mut url_durations: Vec<(usize, String, String, Option<u16>, u64)> = Vec::new(); // (store_idx, url, method, http_status, duration)
     let mut status_2xx: usize = 0;
     let mut status_3xx: usize = 0;
     let mut status_4xx: usize = 0;
     let mut status_5xx: usize = 0;
     let mut domain_map: HashMap<String, (usize, Vec<u64>, usize)> = HashMap::new(); // domain -> (count, durations, errors)
 
-    for entry in app.network_store.iter() {
+    for (store_idx, entry) in app.network_store.iter().enumerate() {
         total += 1;
         let domain = extract_domain(&entry.url);
         let dm = domain_map.entry(domain).or_insert((0, Vec::new(), 0));
@@ -164,6 +166,7 @@ pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
             durations.push(dur);
             dm.1.push(dur);
             url_durations.push((
+                store_idx,
                 entry.url.clone(),
                 entry.method.clone(),
                 entry.http_status,
@@ -176,7 +179,7 @@ pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
 
     // Slowest top 5
     let mut slowest = url_durations.clone();
-    slowest.sort_by(|a, b| b.3.cmp(&a.3));
+    slowest.sort_by(|a, b| b.4.cmp(&a.4));
     slowest.truncate(5);
 
     // Per-domain stats sorted by count desc
@@ -328,10 +331,13 @@ pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
     let area_width = chunks[2].width.saturating_sub(2) as usize; // minus borders
     let url_max = area_width.saturating_sub(3 + 1 + 8 + 1 + 8 + 1 + 10); // #(3) + gaps + method(8) + status(8) + duration(10)
 
+    // Collect store indices for click regions
+    let slowest_store_indices: Vec<usize> = slowest.iter().map(|(idx, _, _, _, _)| *idx).collect();
+
     let slowest_rows: Vec<Row> = slowest
         .iter()
         .enumerate()
-        .map(|(i, (url, method, http_status, dur))| {
+        .map(|(i, (_store_idx, url, method, http_status, dur))| {
             let status_text = http_status
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "-".to_string());
@@ -365,6 +371,20 @@ pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
             .border_style(Style::default().fg(SURFACE0)),
     );
     f.render_widget(slowest_table, chunks[2]);
+
+    // Register click regions for slowest rows (header=1 row + border=1 row offset)
+    let slowest_area = chunks[2];
+    for (i, store_idx) in slowest_store_indices.iter().enumerate() {
+        let row_y = slowest_area.y + 2 + i as u16; // +1 border +1 header
+        if row_y < slowest_area.y + slowest_area.height.saturating_sub(1) {
+            app.layout.stats_slowest_regions.push((
+                *store_idx,
+                row_y,
+                slowest_area.x,
+                slowest_area.x + slowest_area.width,
+            ));
+        }
+    }
 
     // ── Status Code Distribution + Per-Domain (side-by-side) ──
     let bottom_cols = Layout::default()

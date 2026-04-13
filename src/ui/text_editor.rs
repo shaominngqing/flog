@@ -34,7 +34,7 @@ impl TextEditor {
     }
 
     /// Join all lines with `\n`.
-    pub fn to_string(&self) -> String {
+    pub fn content(&self) -> String {
         self.lines.join("\n")
     }
 
@@ -474,10 +474,10 @@ mod tests {
     #[test]
     fn test_to_string() {
         let ed = TextEditor::new("abc\ndef\nghi");
-        assert_eq!(ed.to_string(), "abc\ndef\nghi");
+        assert_eq!(ed.content(), "abc\ndef\nghi");
 
         let ed = TextEditor::new("");
-        assert_eq!(ed.to_string(), "");
+        assert_eq!(ed.content(), "");
     }
 
     #[test]

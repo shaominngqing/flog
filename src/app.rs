@@ -307,6 +307,14 @@ pub struct LayoutCache {
     pub net_filter_pills: Vec<(String, u16, u16)>,
     /// Y position of the filter pills line.
     pub net_filter_pills_y: u16,
+    /// Clickable regions in the mock rules table: (row_idx, action, y, x_start, x_end).
+    pub mock_rule_regions: Vec<(usize, String, u16, u16, u16)>,
+    /// Clickable regions in the mock rule editor: (field_name, y, x_start, x_end).
+    pub mock_edit_regions: Vec<(String, u16, u16, u16)>,
+    /// Body editor rect in mock rule editor: (x, y, w, h).
+    pub mock_edit_body_rect: Option<(u16, u16, u16, u16)>,
+    /// Clickable slowest rows in stats: (store_idx, y, x_start, x_end).
+    pub stats_slowest_regions: Vec<(usize, u16, u16, u16)>,
 }
 
 // ── App ──
@@ -357,7 +365,9 @@ pub struct App {
     pub mock_rule_selected: usize,
     pub mock_edit_rule_id: Option<usize>,
     pub mock_edit_field: usize,
-    pub mock_edit_values: Vec<String>,
+    pub mock_edit_top_values: Vec<String>,
+    pub mock_edit_body: crate::ui::text_editor::TextEditor,
+    pub mock_edit_is_new: bool,
 
     // UI
     pub layout: LayoutCache,
@@ -411,7 +421,9 @@ impl App {
             mock_rule_selected: 0,
             mock_edit_rule_id: None,
             mock_edit_field: 0,
-            mock_edit_values: Vec::new(),
+            mock_edit_top_values: Vec::new(),
+            mock_edit_body: crate::ui::text_editor::TextEditor::new(""),
+            mock_edit_is_new: false,
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
@@ -834,13 +846,13 @@ impl App {
         if let Some(rule) = self.mock_rules.rules().iter().find(|r| r.id == rule_id) {
             self.mock_edit_rule_id = Some(rule_id);
             self.mock_edit_field = 0;
-            self.mock_edit_values = vec![
+            self.mock_edit_top_values = vec![
                 rule.url_pattern.clone(),
                 rule.method.clone().unwrap_or_else(|| "*".to_string()),
                 rule.status_code.to_string(),
                 rule.delay_ms.to_string(),
-                rule.response_body.clone(),
             ];
+            self.mock_edit_body = crate::ui::text_editor::TextEditor::new(&rule.response_body);
             self.mode = AppMode::MockRuleEdit;
         }
     }
@@ -848,24 +860,31 @@ impl App {
     pub fn save_mock_edit(&mut self) {
         if let Some(id) = self.mock_edit_rule_id {
             if let Some(rule) = self.mock_rules.get_mut(id) {
-                rule.url_pattern = self.mock_edit_values[0].clone();
-                rule.method = if self.mock_edit_values[1] == "*" {
+                rule.url_pattern = self.mock_edit_top_values[0].clone();
+                rule.method = if self.mock_edit_top_values[1] == "*" {
                     None
                 } else {
-                    Some(self.mock_edit_values[1].clone())
+                    Some(self.mock_edit_top_values[1].clone())
                 };
-                rule.status_code = self.mock_edit_values[2].parse().unwrap_or(200);
-                rule.delay_ms = self.mock_edit_values[3].parse().unwrap_or(0);
-                rule.response_body = self.mock_edit_values[4].clone();
+                rule.status_code = self.mock_edit_top_values[2].parse().unwrap_or(200);
+                rule.delay_ms = self.mock_edit_top_values[3].parse().unwrap_or(0);
+                rule.response_body = self.mock_edit_body.content();
             }
         }
-        self.mode = AppMode::MockRules;
+        self.mock_edit_is_new = false;
         self.mock_edit_rule_id = None;
+        self.mode = AppMode::MockRules;
     }
 
     pub fn cancel_mock_edit(&mut self) {
-        self.mode = AppMode::MockRules;
+        if self.mock_edit_is_new {
+            if let Some(id) = self.mock_edit_rule_id {
+                self.mock_rules.remove(id);
+            }
+        }
+        self.mock_edit_is_new = false;
         self.mock_edit_rule_id = None;
+        self.mode = AppMode::MockRules;
     }
 
     pub fn exit_source_select(&mut self) {
