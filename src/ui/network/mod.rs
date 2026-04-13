@@ -2,6 +2,7 @@
 
 pub mod detail;
 pub mod filter;
+pub mod mock_rules;
 pub mod stats;
 
 use ratatui::{
@@ -588,7 +589,7 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     ));
 
     // Store button click regions
-    let mut xc = info_w + failed_w + spacer;
+    let mut xc = lw + info_w + failed_w + spacer;
     app.layout.net_buttons.clear();
     for (i, (name, label, style)) in buttons.iter().enumerate() {
         let start = xc;

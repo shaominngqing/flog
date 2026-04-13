@@ -18,6 +18,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         AppMode::TagFilter => handle_filter_key(app, key),
         AppMode::Help | AppMode::Stats => handle_overlay_key(app, key),
         AppMode::SourceSelect => handle_source_select_key(app, key),
+        AppMode::MockRules => handle_mock_rules_key(app, key),
     }
 }
 
@@ -27,6 +28,7 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
         AppMode::Search | AppMode::TagFilter => handle_input_mouse(app, mouse),
         AppMode::Help | AppMode::Stats => handle_overlay_mouse(app, mouse),
         AppMode::SourceSelect => handle_source_select_mouse(app, mouse),
+        AppMode::MockRules => handle_mock_rules_mouse(app, mouse),
     }
 }
 
@@ -893,8 +895,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('y') => copy_response(app),
             KeyCode::Char('M') => mock_from_selected(app),
             KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let count = app.mock_rules.len();
-                app.show_status(format!("{} mock rules configured", count));
+                app.enter_mock_rules();
             }
             KeyCode::Char('S') => app.enter_network_stats(),
             KeyCode::Char('?') => app.enter_help(),
@@ -974,6 +975,62 @@ fn handle_overlay_key(app: &mut App, key: KeyEvent) {
             AppMode::Stats => app.exit_stats(),
             _ => {}
         },
+        _ => {}
+    }
+}
+
+// ══════════════════════════════════════
+//  Mock Rules overlay
+// ══════════════════════════════════════
+
+fn handle_mock_rules_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => app.mode = AppMode::Normal,
+        KeyCode::Char('j') | KeyCode::Down => {
+            let len = app.mock_rules.len();
+            if len > 0 {
+                app.mock_rule_selected = (app.mock_rule_selected + 1).min(len - 1);
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if app.mock_rule_selected > 0 {
+                app.mock_rule_selected -= 1;
+            }
+        }
+        KeyCode::Char(' ') => {
+            // Toggle enabled/disabled
+            if let Some(rule) = app.mock_rules.rules().get(app.mock_rule_selected) {
+                let id = rule.id;
+                app.mock_rules.toggle(id);
+            }
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            // Delete rule
+            if let Some(rule) = app.mock_rules.rules().get(app.mock_rule_selected) {
+                let id = rule.id;
+                app.mock_rules.remove(id);
+                if app.mock_rule_selected > 0
+                    && app.mock_rule_selected >= app.mock_rules.len()
+                {
+                    app.mock_rule_selected = app.mock_rules.len().saturating_sub(1);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_mock_rules_mouse(app: &mut App, mouse: MouseEvent) {
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            // Click "< Back" pill in top-left
+            if mouse.row == 0 && mouse.column < 10 {
+                app.mode = AppMode::Normal;
+            }
+        }
+        MouseEventKind::Down(MouseButton::Right) => {
+            app.mode = AppMode::Normal;
+        }
         _ => {}
     }
 }

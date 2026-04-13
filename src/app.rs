@@ -55,6 +55,7 @@ pub enum AppMode {
     Help,
     Stats,
     SourceSelect,
+    MockRules,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -352,6 +353,7 @@ pub struct App {
     pub proxy_port: Option<u16>,
     pub proxy_running: bool,
     pub mock_rules: crate::proxy::mock::MockRuleStore,
+    pub mock_rule_selected: usize,
 
     // UI
     pub layout: LayoutCache,
@@ -402,6 +404,7 @@ impl App {
             proxy_port: None,
             proxy_running: false,
             mock_rules: crate::proxy::mock::MockRuleStore::new(),
+            mock_rule_selected: 0,
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
@@ -809,6 +812,15 @@ impl App {
         self.mode = AppMode::Normal;
         self.layout.last_click = None;
         self.stats_snapshot = None;
+    }
+
+    pub fn enter_mock_rules(&mut self) {
+        if !self.is_vm_service_connected() {
+            self.show_status("Mock requires VM Service connection".to_string());
+            return;
+        }
+        self.mode = AppMode::MockRules;
+        self.layout.last_click = None;
     }
 
     pub fn exit_source_select(&mut self) {
