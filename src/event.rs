@@ -1114,6 +1114,17 @@ fn handle_mock_rules_mouse(app: &mut App, mouse: MouseEvent) {
         MouseEventKind::Down(MouseButton::Left) => {
             let x = mouse.column;
             let y = mouse.row;
+            let now = Instant::now();
+
+            // Double-click detection
+            let is_double = if let Some((prev_time, prev_x, prev_y)) = app.layout.last_click {
+                now.duration_since(prev_time).as_millis() < DOUBLE_CLICK_MS
+                    && prev_x == x
+                    && prev_y == y
+            } else {
+                false
+            };
+            app.layout.last_click = Some((now, x, y));
 
             // Back button (top-left)
             if y == 0 && x < 10 {
@@ -1125,7 +1136,16 @@ fn handle_mock_rules_mouse(app: &mut App, mouse: MouseEvent) {
             for (row_idx, action, ry, x_start, x_end) in app.layout.mock_rule_regions.clone() {
                 if y == ry && x >= x_start && x < x_end {
                     match action.as_str() {
-                        "select" => app.mock_rule_selected = row_idx,
+                        "select" => {
+                            app.mock_rule_selected = row_idx;
+                            // Double-click on row → enter edit
+                            if is_double {
+                                if let Some(rule) = app.mock_rules.rules().get(row_idx) {
+                                    let id = rule.id;
+                                    app.enter_mock_edit(id);
+                                }
+                            }
+                        }
                         "edit" => {
                             if let Some(rule) = app.mock_rules.rules().get(row_idx) {
                                 let id = rule.id;

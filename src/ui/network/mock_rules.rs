@@ -459,8 +459,8 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
     let body_w = inner.width.saturating_sub(1); // 1 for scrollbar
     let _body_rect = ratatui::layout::Rect::new(body_x, y, body_w, body_h);
 
-    // Store body rect for mouse handling
-    app.layout.mock_edit_body_rect = Some((body_x, y, body_w, body_h));
+    // Store body CONTENT rect (inside border) for mouse handling
+    app.layout.mock_edit_body_rect = Some((body_x + 1, y + 1, body_w.saturating_sub(2), body_h.saturating_sub(2)));
     app.mock_edit_body.visible_height = body_h as usize;
 
     // Draw body border
