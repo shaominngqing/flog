@@ -208,7 +208,19 @@ impl TextEditor {
     /// Set cursor to the given (row, col), clamping to valid bounds.
     pub fn click(&mut self, row: usize, col: usize) {
         self.cursor_row = row.min(self.lines.len() - 1);
-        self.cursor_col = col.min(self.lines[self.cursor_row].len());
+        // Convert screen column to byte offset, accounting for wide chars
+        let line = &self.lines[self.cursor_row];
+        let mut byte_offset = 0;
+        let mut screen_col = 0;
+        for ch in line.chars() {
+            if screen_col >= col {
+                break;
+            }
+            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1);
+            screen_col += w;
+            byte_offset += ch.len_utf8();
+        }
+        self.cursor_col = byte_offset;
         self.ensure_cursor_visible();
     }
 

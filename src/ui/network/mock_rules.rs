@@ -235,10 +235,16 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
                             Style::default().fg(BASE).bg(TEXT),
                         ));
                     } else {
-                        // Find the character at cursor position
-                        let before = &raw[..col];
-                        let cursor_char = &raw[col..col + raw[col..].chars().next().map_or(1, |c| c.len_utf8())];
-                        let after_start = col + cursor_char.len();
+                        // Find the character at cursor position (snap to char boundary)
+                        let snap_col = if raw.is_char_boundary(col) {
+                            col
+                        } else {
+                            // Walk backwards to find a valid char boundary
+                            (0..col).rev().find(|&i| raw.is_char_boundary(i)).unwrap_or(0)
+                        };
+                        let before = &raw[..snap_col];
+                        let cursor_char = &raw[snap_col..snap_col + raw[snap_col..].chars().next().map_or(1, |c| c.len_utf8())];
+                        let after_start = snap_col + cursor_char.len();
                         let after = &raw[after_start..];
 
                         // Re-colorize segments
