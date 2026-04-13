@@ -301,7 +301,8 @@ async fn auto_discover_loop(app: Arc<Mutex<App>>) {
             a.source_name = format!("Connecting to {}...", discovered.name);
         }
 
-        if let Ok(mut source) = input::vm_service::VmServiceSource::new(&discovered.ws_url).await {
+        let proxy_port = { app.lock().await.proxy_port };
+        if let Ok(mut source) = input::vm_service::VmServiceSource::new(&discovered.ws_url, proxy_port).await {
             {
                 let mut a = app.lock().await;
                 a.source_name = format!("WS \u{2192} {}", discovered.name);
@@ -337,7 +338,8 @@ async fn auto_discover_loop(app: Arc<Mutex<App>>) {
 /// Connect to VM Service; on disconnect, return to scanning UI.
 async fn start_vm_service_with_reconnect(app: Arc<Mutex<App>>, uri: String) {
     let host = uri.split('/').nth(2).unwrap_or(&uri).to_string();
-    match input::vm_service::VmServiceSource::new(&uri).await {
+    let proxy_port = { app.lock().await.proxy_port };
+    match input::vm_service::VmServiceSource::new(&uri, proxy_port).await {
         Ok(mut source) => {
             {
                 let mut a = app.lock().await;
@@ -398,7 +400,8 @@ async fn start_adb(app: Arc<Mutex<App>>, serial: Option<String>) {
 
 async fn start_vm_service(app: Arc<Mutex<App>>, uri: String) {
     let host = uri.split('/').nth(2).unwrap_or(&uri).to_string();
-    match input::vm_service::VmServiceSource::new(&uri).await {
+    let proxy_port = { app.lock().await.proxy_port };
+    match input::vm_service::VmServiceSource::new(&uri, proxy_port).await {
         Ok(mut source) => {
             {
                 let mut a = app.lock().await;

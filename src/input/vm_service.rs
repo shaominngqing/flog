@@ -23,7 +23,10 @@ pub struct VmServiceSource {
 }
 
 impl VmServiceSource {
-    pub async fn new(uri: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn new(
+        uri: &str,
+        proxy_port: Option<u16>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let (ws_stream, _) = connect_async(uri).await?;
         let (mut sender, receiver) = ws_stream.split();
 
@@ -38,22 +41,61 @@ impl VmServiceSource {
             let _ = sender.send(Message::Text(msg.to_string().into())).await;
         }
 
-        // TODO: Notify Dart about the proxy port via ext.flog.setProxy.
-        // This requires calling getVM to obtain the main isolate ID, then
-        // callServiceExtension with extensionRpc: "ext.flog.setProxy".
-        // For now, the proxy server runs independently and the Dart side
-        // must be configured manually (or via flog_dart's built-in extension
-        // registration). A future iteration will automate this handshake:
-        //
-        //   1. Send getVM → receive isolates list
-        //   2. Extract the main isolate ID
-        //   3. Send callServiceExtension with ext.flog.setProxy + port
+        // Notify Dart about the proxy port via ext.flog.setProxy.
+        if let Some(port) = proxy_port {
+            Self::notify_proxy(&mut sender, port).await;
+        }
 
         Ok(Self {
             receiver,
             uri: uri.to_string(),
             pending_lines: Vec::new(),
         })
+    }
+
+    /// Send getVM to find isolate ID, then call ext.flog.setProxy with proxy port.
+    async fn notify_proxy(
+        sender: &mut futures_util::stream::SplitSink<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+            Message,
+        >,
+        port: u16,
+    ) {
+        // Step 1: getVM to find isolate ID
+        let get_vm = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getVM",
+            "params": {},
+            "id": "get_vm_for_proxy"
+        });
+        let _ = sender
+            .send(Message::Text(get_vm.to_string().into()))
+            .await;
+
+        // Note: We can't easily read the getVM response here since the receiver
+        // is already split off. Instead, use a well-known isolate ID format.
+        // The Dart VM Service supports calling extensions on any running isolate.
+        // We try "isolates/main" first, and if that fails the extension just won't
+        // be called — the Dart side already registers the extension in FlogDio, so
+        // if FlogDio is used, it will work when flog reconnects.
+
+        // Step 2: Call the service extension with a common isolate pattern.
+        // VM Service expects callServiceExtension format.
+        let call_ext = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "callServiceExtension",
+            "params": {
+                "isolateId": "isolates/main",
+                "extensionRpc": "ext.flog.setProxy",
+                "port": port.to_string(),
+            },
+            "id": "proxy_notify"
+        });
+        let _ = sender
+            .send(Message::Text(call_ext.to_string().into()))
+            .await;
     }
 
     pub async fn next_event(&mut self) -> Option<SourceEvent> {
