@@ -14,6 +14,7 @@ pub mod logs;
 pub mod network;
 pub mod source_select;
 mod tab_bar;
+pub mod text_editor;
 
 use crate::app::{App, AppMode, ViewTab};
 
