@@ -6,6 +6,7 @@ mod domain;
 mod event;
 pub mod input;
 pub mod parser;
+mod replay;
 mod session;
 mod ui;
 
@@ -57,6 +58,22 @@ async fn main() -> io::Result<()> {
     {
         let mut a = app.lock().await;
         a.source_command_tx = Some(cmd_tx.clone());
+    }
+
+    // Set up replay channel
+    let (replay_tx, mut replay_rx) = tokio::sync::mpsc::unbounded_channel::<crate::domain::network::NetworkEntry>();
+    {
+        let mut a = app.lock().await;
+        a.replay_tx = Some(replay_tx);
+    }
+    {
+        let app_for_replay = Arc::clone(&app);
+        tokio::spawn(async move {
+            while let Some(entry) = replay_rx.recv().await {
+                let app_c = Arc::clone(&app_for_replay);
+                tokio::spawn(replay::replay_request(app_c, entry));
+            }
+        });
     }
 
     // Spawn source manager

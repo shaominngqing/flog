@@ -171,6 +171,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                     for (name, x_start, x_end) in &app.layout.net_buttons {
                         if x >= *x_start && x < *x_end {
                             match name.as_str() {
+                                "replay" => replay_selected(app),
                                 "curl" => copy_as_curl(app),
                                 "response" => copy_response(app),
                                 "clear" => {
@@ -572,6 +573,23 @@ fn copy_to_clipboard(text: &str) -> String {
     }
 }
 
+/// Replay the currently selected HTTP request.
+fn replay_selected(app: &mut App) {
+    let indices = app.network.filtered_indices(&app.network_store).to_vec();
+    if let Some(&idx) = indices.get(app.network.selected) {
+        if let Some(entry) = app.network_store.get(idx).cloned() {
+            if entry.protocol == crate::domain::network::Protocol::Http {
+                if let Some(tx) = &app.replay_tx {
+                    let _ = tx.send(entry);
+                    app.show_status("Replaying request...".to_string());
+                }
+            } else {
+                app.show_status("Replay is only available for HTTP requests".to_string());
+            }
+        }
+    }
+}
+
 /// Copy selected network request as cURL command.
 fn copy_as_curl(app: &mut App) {
     let indices = app.network.filtered_indices(&app.network_store).to_vec();
@@ -793,6 +811,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 app.select_mode = true;
                 app.show_status("Select mode — use terminal to select text. Press any key to exit.".to_string());
             }
+            KeyCode::Char('r') => replay_selected(app),
             KeyCode::Char('c') => copy_as_curl(app),
             KeyCode::Char('y') => copy_response(app),
             KeyCode::Char('?') => app.enter_help(),

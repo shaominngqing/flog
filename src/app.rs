@@ -346,6 +346,7 @@ pub struct App {
     pub status_message: Option<(String, u64)>, // (message, expire_tick)
     pub connected: bool,
     pub source_command_tx: Option<tokio::sync::mpsc::UnboundedSender<SourceCommand>>,
+    pub replay_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::domain::network::NetworkEntry>>,
     /// Tracks how the current/last connection was established, so we can
     /// return to the correct scanning phase on disconnect.
     pub last_source_type: Option<LastSourceType>,
@@ -392,6 +393,7 @@ impl App {
             status_message: None,
             connected: false,
             source_command_tx: None,
+            replay_tx: None,
             last_source_type: None,
             layout: LayoutCache::default(),
             tick: 0,

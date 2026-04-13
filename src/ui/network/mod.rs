@@ -16,7 +16,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
-use crate::domain::network::{NetworkStatus, Protocol};
+use crate::domain::network::{EntrySource, NetworkStatus, Protocol};
 
 // Import shared palette from parent
 use super::{
@@ -35,6 +35,8 @@ const SIZE_W: usize = 8;
 // Row background colors for error/warning states
 const ERROR_ROW_BG: Color = Color::Rgb(50, 30, 35);
 const WARNING_ROW_BG: Color = Color::Rgb(50, 45, 30);
+const REPLAY_ROW_BG: Color = SURFACE0;
+const MOCKED_ROW_BG: Color = Color::Rgb(110, 75, 138);
 
 // ══════════════════════════════════════
 //  Helper Functions
@@ -254,6 +256,11 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
         let is_selected = fi == app.network.selected;
 
         if let Some(entry) = app.network_store.get(store_idx) {
+            let normal_bg = match entry.source {
+                EntrySource::Replay => REPLAY_ROW_BG,
+                EntrySource::Mocked => MOCKED_ROW_BG,
+                EntrySource::App => BASE,
+            };
             let row_bg = if is_selected {
                 SURFACE1
             } else if entry.status == NetworkStatus::Failed {
@@ -261,7 +268,7 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             } else if entry.http_status.map(|c| c >= 400).unwrap_or(false) {
                 WARNING_ROW_BG
             } else {
-                BASE
+                normal_bg
             };
 
             let cursor = if is_selected {
@@ -466,6 +473,7 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let buttons: Vec<(&str, &str, Style)> = vec![
+        ("replay", " Replay ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)),
         ("curl", " Copy as cURL ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
         ("response", " Copy Response ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
         ("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
