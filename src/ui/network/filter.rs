@@ -81,14 +81,16 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     x += sw as u16;
     let search_end = x;
 
-    // Proxy status indicator (right-aligned on line 1, VM Service only)
-    let proxy_text = if app.proxy_running && app.is_vm_service_connected() {
+    // Proxy status indicator (always shown when proxy is running)
+    let proxy_text = if app.proxy_running {
         let port = app.proxy_port.unwrap_or(0);
         let rule_count = app.mock_rules.enabled_count();
-        if rule_count > 0 {
-            format!("\u{25cf} Proxy :{} ({} rules) ", port, rule_count)
+        if !app.is_vm_service_connected() {
+            format!("\u{25cb} Proxy :{} ", port) // ○ hollow — not connected to Dart
+        } else if rule_count > 0 {
+            format!("\u{25cf} Proxy :{} ({} rules) ", port, rule_count) // ● solid green
         } else {
-            format!("\u{25cf} Proxy :{} ", port)
+            format!("\u{25cf} Proxy :{} ", port) // ● solid blue — connected, no rules
         }
     } else {
         String::new()
@@ -99,10 +101,12 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     if !proxy_text.is_empty() && rem1 > proxy_w {
         let gap = rem1.saturating_sub(proxy_w);
         spans1.push(Span::styled(" ".repeat(gap), Style::default().bg(bg)));
-        let proxy_color = if app.mock_rules.enabled_count() > 0 {
-            PROXY_GREEN
+        let proxy_color = if !app.is_vm_service_connected() {
+            OVERLAY0 // gray — not connected
+        } else if app.mock_rules.enabled_count() > 0 {
+            PROXY_GREEN // green — connected with active rules
         } else {
-            OVERLAY0
+            BLUE // blue — connected, no rules
         };
         spans1.push(Span::styled(
             proxy_text,
