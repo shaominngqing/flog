@@ -801,6 +801,18 @@ fn mock_from_selected(app: &mut App) {
     } else {
         Some(entry.method.clone())
     };
+
+    // Dedup: check if a rule with same URL pattern + method already exists
+    let already_exists = app.mock_rules.rules().iter().any(|r| {
+        r.url_pattern == url_pattern && r.method == method
+    });
+    if already_exists {
+        app.show_status(format!("Rule already exists: {}", url_pattern));
+        app.network.show_mock_rules_panel = true;
+        app.network.show_detail = false;
+        return;
+    }
+
     let status_code = entry.http_status.unwrap_or(200);
     let response_body = entry
         .response_body

@@ -82,9 +82,15 @@ async fn main() -> io::Result<()> {
     {
         let app_proxy = Arc::clone(&app);
         tokio::spawn(async move {
-            match crate::proxy::start_proxy(app_proxy).await {
-                Ok(_port) => {}
-                Err(e) => eprintln!("Proxy failed: {}", e),
+            match crate::proxy::start_proxy(Arc::clone(&app_proxy)).await {
+                Ok(port) => {
+                    let mut a = app_proxy.lock().await;
+                    a.show_status(format!("Proxy started on :{}", port));
+                }
+                Err(_e) => {
+                    let mut a = app_proxy.lock().await;
+                    a.show_status("Proxy failed to start".to_string());
+                }
             }
         });
     }
