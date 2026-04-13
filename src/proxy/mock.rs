@@ -117,3 +117,80 @@ impl MockRuleStore {
         self.rules.iter().filter(|r| r.enabled).count()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_add_rule() {
+        let mut store = MockRuleStore::new();
+        let id = store.add("/api/users".into(), Some("GET".into()), 200, "[]".into(), 0);
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.enabled_count(), 1);
+        assert!(id > 0);
+    }
+
+    #[test]
+    fn test_find_match_by_url() {
+        let mut store = MockRuleStore::new();
+        store.add("/api/users".into(), None, 200, "[]".into(), 0);
+
+        let matched = store.find_match("https://example.com/api/users?page=1", "GET");
+        assert!(matched.is_some());
+        assert_eq!(matched.unwrap().status_code, 200);
+    }
+
+    #[test]
+    fn test_find_match_respects_method() {
+        let mut store = MockRuleStore::new();
+        store.add("/api/users".into(), Some("POST".into()), 201, "{}".into(), 0);
+
+        // GET should NOT match
+        let matched = store.find_match("https://example.com/api/users", "GET");
+        assert!(matched.is_none());
+
+        // POST should match
+        let matched = store.find_match("https://example.com/api/users", "POST");
+        assert!(matched.is_some());
+        assert_eq!(matched.unwrap().status_code, 201);
+    }
+
+    #[test]
+    fn test_toggle_rule() {
+        let mut store = MockRuleStore::new();
+        let id = store.add("/api".into(), None, 200, "".into(), 0);
+        assert_eq!(store.enabled_count(), 1);
+
+        store.toggle(id);
+        assert_eq!(store.enabled_count(), 0);
+
+        // Disabled rule should not match
+        let matched = store.find_match("/api/test", "GET");
+        assert!(matched.is_none());
+
+        store.toggle(id);
+        assert_eq!(store.enabled_count(), 1);
+    }
+
+    #[test]
+    fn test_remove_rule() {
+        let mut store = MockRuleStore::new();
+        let id = store.add("/api".into(), None, 200, "".into(), 0);
+        assert_eq!(store.len(), 1);
+
+        store.remove(id);
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn test_hit_count_increments() {
+        let mut store = MockRuleStore::new();
+        store.add("/api".into(), None, 200, "".into(), 0);
+
+        store.find_match("/api/test", "GET");
+        store.find_match("/api/other", "POST");
+
+        assert_eq!(store.rules()[0].hit_count, 2);
+    }
+}

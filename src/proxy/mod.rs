@@ -154,6 +154,25 @@ async fn handle_request(
     forward_request(&app, &method, &target_url, req).await
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_proxy_binds_to_port() {
+        let app = Arc::new(Mutex::new(crate::app::App::new()));
+        let result = start_proxy(Arc::clone(&app)).await;
+        assert!(result.is_ok());
+
+        let port = result.unwrap();
+        assert!(port >= 9999);
+
+        let a = app.lock().await;
+        assert!(a.proxy_running);
+        assert_eq!(a.proxy_port, Some(port));
+    }
+}
+
 /// Forward request to the real server and return the response.
 async fn forward_request(
     app: &Arc<Mutex<App>>,

@@ -204,3 +204,28 @@ pub struct FlogNetMessage {
     pub reason: Option<String>,
     pub error: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_entry_source_default_is_app() {
+        let entry = NetworkEntry::new_http(1, "GET".into(), "https://example.com".into(), String::new());
+        assert_eq!(entry.source, EntrySource::App);
+    }
+
+    #[test]
+    fn test_entry_source_can_be_set_to_replay() {
+        let mut entry = NetworkEntry::new_http(1, "GET".into(), "https://example.com".into(), String::new());
+        entry.source = EntrySource::Replay;
+        assert_eq!(entry.source, EntrySource::Replay);
+    }
+
+    #[test]
+    fn test_entry_source_can_be_set_to_mocked() {
+        let mut entry = NetworkEntry::new_http(1, "GET".into(), "https://example.com".into(), String::new());
+        entry.source = EntrySource::Mocked;
+        assert_eq!(entry.source, EntrySource::Mocked);
+    }
+}
