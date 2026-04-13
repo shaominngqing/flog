@@ -81,8 +81,8 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     x += sw as u16;
     let search_end = x;
 
-    // Proxy status indicator (right-aligned on line 1)
-    let proxy_text = if app.proxy_running {
+    // Proxy status indicator (right-aligned on line 1, VM Service only)
+    let proxy_text = if app.proxy_running && app.is_vm_service_connected() {
         let port = app.proxy_port.unwrap_or(0);
         let rule_count = app.mock_rules.enabled_count();
         if rule_count > 0 {

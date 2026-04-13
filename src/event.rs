@@ -247,7 +247,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                 "curl" => copy_as_curl(app),
                                 "response" => copy_response(app),
                                 "mock" => mock_from_selected(app),
-                                "mockrules" => app.enter_mock_rules(),
+                                // mockrules removed — rules show in side panel via Mock button
                                 "stats" => app.enter_network_stats(),
                                 "clear" => {
                                     app.network_store.clear();
@@ -271,7 +271,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                     if target < count {
                         // Disable auto_scroll so renderer doesn't override selection
                         app.network.auto_scroll = false;
-                        if app.network.selected == target {
+                        if app.network.selected == target && !app.network.show_mock_rules_panel {
                             app.network.show_detail = !app.network.show_detail;
                             app.network.detail_scroll = 0;
                             app.network.collapsed_sections.clear();
@@ -279,6 +279,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                         } else {
                             app.network.selected = target;
                             app.network.show_detail = true;
+                            app.network.show_mock_rules_panel = false;
                             app.network.detail_scroll = 0;
                             app.network.collapsed_sections.clear();
                             app.network.json_viewer_states.clear();
@@ -806,12 +807,14 @@ fn mock_from_selected(app: &mut App) {
         .clone()
         .unwrap_or_else(|| "{}".to_string());
 
-    let id = app.mock_rules
-        .add(url_pattern, method, status_code, response_body, 0);
+    app.mock_rules
+        .add(url_pattern.clone(), method, status_code, response_body, 0);
 
-    // Open editor for this new rule
-    app.enter_mock_edit(id);
-    app.mock_edit_is_new = true;
+    // Show rules panel in right side and give feedback
+    app.network.show_mock_rules_panel = true;
+    app.network.show_detail = false;
+    app.mock_rule_selected = app.mock_rules.len().saturating_sub(1);
+    app.show_status(format!("Mock rule added: {}", url_pattern));
 }
 
 fn copy_current_log(app: &mut App) {
