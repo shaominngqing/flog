@@ -23,93 +23,10 @@ pub struct VmServiceSource {
 }
 
 impl VmServiceSource {
-    /// Returns (Self, proxy_handshake_ok).
-    /// proxy_handshake_ok is true if we successfully called ext.flog.setProxy.
     pub async fn new(
         uri: &str,
-        proxy_port: Option<u16>,
-    ) -> Result<(Self, bool), Box<dyn std::error::Error + Send + Sync>> {
-        let (mut ws_stream, _) = connect_async(uri).await?;
-
-        // ── Before split: do getVM + proxy handshake using the unsplit stream ──
-
-        // Step 1: getVM to get the real isolate ID
-        let get_vm = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "getVM",
-            "id": "get_vm"
-        });
-        ws_stream
-            .send(Message::Text(get_vm.to_string().into()))
-            .await
-            .ok();
-
-        // Read getVM response and extract isolate ID
-        let mut isolate_id: Option<String> = None;
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
-        while tokio::time::Instant::now() < deadline {
-            match tokio::time::timeout(std::time::Duration::from_millis(500), ws_stream.next())
-                .await
-            {
-                Ok(Some(Ok(Message::Text(text)))) => {
-                    if let Ok(json) = serde_json::from_str::<Value>(&text.to_string()) {
-                        // Check if this is the getVM response
-                        if json.get("id").and_then(|v| v.as_str()) == Some("get_vm") {
-                            // Extract first isolate ID from result.isolates[0].id
-                            if let Some(isolates) =
-                                json.get("result").and_then(|r| r.get("isolates"))
-                            {
-                                if let Some(first) = isolates.as_array().and_then(|a| a.first()) {
-                                    if let Some(id) = first.get("id").and_then(|v| v.as_str()) {
-                                        isolate_id = Some(id.to_string());
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
-                Ok(Some(Ok(_))) => continue,  // non-text message, skip
-                Ok(Some(Err(_))) => continue,  // error, skip
-                Ok(None) => break,             // stream closed
-                Err(_) => break,               // timeout
-            }
-        }
-
-        // Step 2: If we have an isolate ID and a proxy port, call setProxy
-        // VM Service protocol: extension RPCs are called directly as the method name,
-        // with isolateId + custom args in params.
-        let mut proxy_ok = false;
-        if let (Some(ref iso_id), Some(port)) = (&isolate_id, proxy_port) {
-            let call_ext = serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "ext.flog.setProxy",
-                "params": {
-                    "isolateId": iso_id,
-                    "port": port.to_string(),
-                },
-                "id": "proxy_notify"
-            });
-            if ws_stream
-                .send(Message::Text(call_ext.to_string().into()))
-                .await
-                .is_ok()
-            {
-                // Wait briefly for the response to confirm success
-                if let Ok(Some(Ok(Message::Text(resp)))) =
-                    tokio::time::timeout(std::time::Duration::from_millis(500), ws_stream.next()).await
-                {
-                    if let Ok(json) = serde_json::from_str::<Value>(&resp.to_string()) {
-                        if json.get("id").and_then(|v| v.as_str()) == Some("proxy_notify") {
-                            // Check if there's an error
-                            proxy_ok = json.get("error").is_none();
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Now split for normal operation ──
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let (ws_stream, _) = connect_async(uri).await?;
         let (mut sender, receiver) = ws_stream.split();
 
         // Subscribe to streams. Ignore "already subscribed" errors.
@@ -123,11 +40,11 @@ impl VmServiceSource {
             let _ = sender.send(Message::Text(msg.to_string().into())).await;
         }
 
-        Ok((Self {
+        Ok(Self {
             receiver,
             uri: uri.to_string(),
             pending_lines: Vec::new(),
-        }, proxy_ok))
+        })
     }
 
     pub async fn next_event(&mut self) -> Option<SourceEvent> {

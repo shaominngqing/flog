@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 
@@ -109,36 +109,55 @@ class FlogDio implements Dio {
         ),
       );
 
-      // Register VM Service extension so flog can configure the proxy remotely.
-      // Uses a request interceptor that rewrites URLs to go through the proxy,
-      // preserving the original URL in a custom header for proper forwarding.
-      try {
-        developer.registerExtension('ext.flog.setProxy',
-            (String method, Map<String, String> params) async {
-          final port = int.tryParse(params['port'] ?? '');
-          if (port != null) {
-            // Add an interceptor that rewrites requests to go through proxy
-            _inner.interceptors.insert(
-              0,
-              InterceptorsWrapper(
-                onRequest: (options, handler) {
-                  // Store original URL in custom header
-                  final originalUrl = options.uri.toString();
-                  options.headers['x-flog-target'] = originalUrl;
-                  // Rewrite to proxy: keep the path, change scheme+host
-                  final proxyBase = 'http://localhost:$port';
-                  options.baseUrl = proxyBase;
-                  handler.next(options);
-                },
-              ),
-            );
+      // Auto-detect flog proxy: background probe every 3 seconds.
+      // When proxy is found, requests are routed through it.
+      // When proxy disappears, requests go direct. Zero configuration needed.
+      _proxyInterceptor = InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (_activeProxyPort != null) {
+            final originalUrl = options.uri.toString();
+            options.headers['x-flog-target'] = originalUrl;
+            options.baseUrl = 'http://localhost:$_activeProxyPort';
           }
-          return developer.ServiceExtensionResponse.result('{"ok": true}');
-        });
+          handler.next(options);
+        },
+      );
+      _inner.interceptors.insert(0, _proxyInterceptor!);
+      _startProxyProbe();
+    }
+  }
+
+  /// Current detected proxy port, or null if no proxy found.
+  static int? _activeProxyPort;
+
+  /// Timer for background proxy probing.
+  static Timer? _probeTimer;
+
+  /// The interceptor instance that rewrites URLs to proxy.
+  InterceptorsWrapper? _proxyInterceptor;
+
+  /// Start background probing for flog proxy on ports 9999-10008.
+  void _startProxyProbe() {
+    // Probe immediately, then every 3 seconds
+    _probeProxy();
+    _probeTimer?.cancel();
+    _probeTimer = Timer.periodic(const Duration(seconds: 3), (_) => _probeProxy());
+  }
+
+  /// Try to connect to flog proxy on ports 9999-10008.
+  static Future<void> _probeProxy() async {
+    for (int port = 9999; port <= 10008; port++) {
+      try {
+        final socket = await Socket.connect('localhost', port,
+            timeout: const Duration(milliseconds: 100));
+        socket.destroy();
+        _activeProxyPort = port;
+        return;
       } catch (_) {
-        // Extension may already be registered
+        // Port not available, try next
       }
     }
+    _activeProxyPort = null; // No proxy found
   }
 
   /// Sends an HTTP request and returns a parsed SSE stream.

@@ -97,6 +97,7 @@ async fn handle_request(
 
     // Determine the target URL.
     // Priority: x-flog-target header (set by FlogDio interceptor) > absolute URI > Host header
+    let has_flog_target = req.headers().contains_key("x-flog-target");
     let target_url = if let Some(target) = req.headers().get("x-flog-target") {
         target.to_str().unwrap_or(&uri).to_string()
     } else if uri.starts_with("http://") || uri.starts_with("https://") {
@@ -107,6 +108,14 @@ async fn handle_request(
     } else {
         uri.clone()
     };
+
+    // Mark Dart as connected when we see x-flog-target header
+    if has_flog_target {
+        let mut a = app.lock().await;
+        if !a.proxy_dart_connected {
+            a.proxy_dart_connected = true;
+        }
+    }
 
     // Check mock rules
     let mock_match = {
