@@ -82,13 +82,13 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     let search_end = x;
 
     // Proxy status indicator (right-aligned on line 1)
-    let proxy_text = if app.proxy_running && app.is_vm_service_connected() {
+    let proxy_text = if app.proxy_running {
         let port = app.proxy_port.unwrap_or(0);
         let rule_count = app.mock_rules.enabled_count();
         if rule_count > 0 {
             format!("\u{25cf} Proxy :{} ({} rules) ", port, rule_count)
         } else {
-            format!("\u{25cf} Proxy :{} (no rules) ", port)
+            format!("\u{25cf} Proxy :{} ", port)
         }
     } else {
         String::new()

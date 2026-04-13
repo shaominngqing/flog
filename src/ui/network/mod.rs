@@ -144,8 +144,17 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
     filter::draw_network_toolbar(f, app, rows[0]);
     draw_table_header(f, app, rows[1]);
 
-    // Body: detail panel or table
-    if app.network.show_detail {
+    // Body: detail panel / mock rules panel / full table
+    if app.network.show_mock_rules_panel {
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(rows[2]);
+
+        app.layout.net_detail_x = cols[1].x;
+        draw_table_body(f, app, cols[0]);
+        mock_rules::draw_mock_rules_panel(f, app, cols[1]);
+    } else if app.network.show_detail {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])

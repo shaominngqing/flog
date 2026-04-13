@@ -631,3 +631,122 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
         cancel_x + cancel_text.len() as u16,
     ));
 }
+
+/// Draw mock rules as a side panel (replaces detail panel).
+pub fn draw_mock_rules_panel(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+    app.layout.mock_rule_regions.clear();
+
+    let block = Block::default()
+        .title(" Mock Rules ")
+        .title_style(Style::default().fg(MAUVE).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(SURFACE0))
+        .style(Style::default().bg(BASE));
+    f.render_widget(block, area);
+
+    let inner = ratatui::layout::Rect::new(
+        area.x + 1,
+        area.y + 1,
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(2),
+    );
+
+    if inner.height < 2 || inner.width < 20 {
+        return;
+    }
+
+    let rules = app.mock_rules.rules();
+    let w = inner.width as usize;
+
+    if rules.is_empty() {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                " No mock rules. Press M to create.",
+                Style::default().fg(OVERLAY0),
+            )))
+            .style(Style::default().bg(BASE)),
+            ratatui::layout::Rect::new(inner.x, inner.y, inner.width, 1),
+        );
+        return;
+    }
+
+    // Clamp selection
+    let selected = app.mock_rule_selected.min(rules.len().saturating_sub(1));
+    app.mock_rule_selected = selected;
+
+    let max_rows = inner.height as usize;
+
+    for (i, rule) in rules.iter().take(max_rows).enumerate() {
+        let y = inner.y + i as u16;
+        let is_selected = i == selected;
+        let row_bg = if is_selected { SURFACE1 } else { BASE };
+        let text_color = if rule.enabled { TEXT } else { OVERLAY0 };
+
+        let cursor = if is_selected { "\u{25b8} " } else { "  " };
+        let enabled_icon = if rule.enabled {
+            Span::styled("\u{2713}", Style::default().fg(GREEN).bg(row_bg))
+        } else {
+            Span::styled("\u{2717}", Style::default().fg(RED).bg(row_bg))
+        };
+
+        // URL pattern (truncated)
+        let method_str = rule.method.as_deref().unwrap_or("*");
+        let info = format!("{}{} {} {}", cursor, method_str, rule.status_code, rule.url_pattern);
+        let info_w = w.saturating_sub(20); // reserve space for buttons
+        let info_display = if info.len() > info_w {
+            format!("{}...", &info[..info_w.saturating_sub(3)])
+        } else {
+            format!("{:<width$}", info, width = info_w)
+        };
+
+        let buttons_x = inner.x + info_w as u16 + 1;
+
+        let mut spans = vec![
+            enabled_icon,
+            Span::styled(info_display, Style::default().fg(text_color).bg(row_bg)),
+        ];
+
+        // Inline buttons
+        spans.push(Span::styled(
+            "[Edit]",
+            Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(" ", Style::default().bg(row_bg)));
+
+        let toggle_text = if rule.enabled { "[Off]" } else { "[On] " };
+        spans.push(Span::styled(
+            toggle_text,
+            Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(" ", Style::default().bg(row_bg)));
+
+        spans.push(Span::styled(
+            "[Del]",
+            Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD),
+        ));
+
+        // Fill remaining
+        let used: usize = spans.iter().map(|s| s.content.width()).sum();
+        if used < w {
+            spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(row_bg)));
+        }
+
+        f.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::default().bg(row_bg)),
+            ratatui::layout::Rect::new(inner.x, y, inner.width, 1),
+        );
+
+        // Register click regions
+        app.layout.mock_rule_regions.push((i, "select".to_string(), y, inner.x, buttons_x));
+
+        let edit_x = buttons_x;
+        app.layout.mock_rule_regions.push((i, "edit".to_string(), y, edit_x, edit_x + 6));
+
+        let toggle_x = edit_x + 7;
+        app.layout.mock_rule_regions.push((i, "toggle".to_string(), y, toggle_x, toggle_x + 5));
+
+        let del_x = toggle_x + 6;
+        app.layout.mock_rule_regions.push((i, "delete".to_string(), y, del_x, del_x + 5));
+    }
+}

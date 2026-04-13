@@ -149,6 +149,7 @@ pub struct NetworkState {
     /// Auto-scroll to bottom when new requests arrive.
     pub auto_scroll: bool,
     pub show_detail: bool,
+    pub show_mock_rules_panel: bool,
     pub detail_scroll: usize,
     pub filter: crate::domain::NetworkFilter,
     /// Whether URL search input is active.
@@ -218,6 +219,7 @@ impl NetworkState {
             scroll_offset: 0,
             auto_scroll: true,
             show_detail: false,
+            show_mock_rules_panel: false,
             detail_scroll: 0,
             filter: crate::domain::NetworkFilter::new(),
             search_active: false,
@@ -838,8 +840,11 @@ impl App {
             self.show_status("Mock requires VM Service connection".to_string());
             return;
         }
-        self.mode = AppMode::MockRules;
-        self.layout.last_click = None;
+        // Toggle mock rules panel in the right side (like detail panel)
+        self.network.show_mock_rules_panel = !self.network.show_mock_rules_panel;
+        if self.network.show_mock_rules_panel {
+            self.network.show_detail = false; // hide detail when showing rules
+        }
     }
 
     pub fn enter_mock_edit(&mut self, rule_id: usize) {

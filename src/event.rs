@@ -118,6 +118,63 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             }
         }
 
+        // Mock rules panel click handling (when shown in right panel)
+        if app.network.show_mock_rules_panel
+            && mouse.column >= app.layout.net_detail_x
+            && mouse.row >= app.layout.list_y
+            && mouse.row < app.layout.bottom_y
+        {
+            if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+                let x = mouse.column;
+                let y = mouse.row;
+                for (row_idx, action, ry, x_start, x_end) in app.layout.mock_rule_regions.clone() {
+                    if y == ry && x >= x_start && x < x_end {
+                        match action.as_str() {
+                            "select" => {
+                                app.mock_rule_selected = row_idx;
+                                // Double-click to edit
+                                let now = Instant::now();
+                                let is_double = if let Some((pt, px, py)) = app.layout.last_click {
+                                    now.duration_since(pt).as_millis() < DOUBLE_CLICK_MS && px == x && py == y
+                                } else { false };
+                                app.layout.last_click = Some((now, x, y));
+                                if is_double {
+                                    if let Some(rule) = app.mock_rules.rules().get(row_idx) {
+                                        let id = rule.id;
+                                        app.enter_mock_edit(id);
+                                    }
+                                }
+                            }
+                            "edit" => {
+                                if let Some(rule) = app.mock_rules.rules().get(row_idx) {
+                                    let id = rule.id;
+                                    app.enter_mock_edit(id);
+                                }
+                            }
+                            "toggle" => {
+                                if let Some(rule) = app.mock_rules.rules().get(row_idx) {
+                                    let id = rule.id;
+                                    app.mock_rules.toggle(id);
+                                }
+                            }
+                            "delete" => {
+                                if let Some(rule) = app.mock_rules.rules().get(row_idx) {
+                                    let id = rule.id;
+                                    app.mock_rules.remove(id);
+                                    if app.mock_rule_selected >= app.mock_rules.len() && app.mock_rule_selected > 0 {
+                                        app.mock_rule_selected -= 1;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                        return;
+                    }
+                }
+            }
+            return; // consume all events in mock rules panel area
+        }
+
         // Network detail scroll handling (must be checked before list scroll)
         if app.network.show_detail
             && mouse.column >= app.layout.net_detail_x
