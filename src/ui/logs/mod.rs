@@ -363,68 +363,94 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
 
-    if let Some(msg) = app.active_status().map(|s| s.to_string()) {
-        let line = Line::from(vec![
-            Span::styled(
-                " OK ",
-                Style::default()
-                    .fg(MANTLE)
-                    .bg(GREEN)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!(" {} ", msg), Style::default().fg(TEXT).bg(bg)),
-        ]);
-        f.render_widget(Paragraph::new(line).style(Style::default().bg(bg)), area);
-        app.layout.bottom_buttons.clear();
-        return;
-    }
-
-    let (live_text, live_style) = if app.auto_scroll {
-        let dot = match (app.tick / 8) % 4 {
-            0 => "●",
-            1 => "◉",
-            2 => "●",
-            _ => "○",
-        };
-        (
-            format!(" {} LIVE ", dot),
-            Style::default()
-                .fg(MANTLE)
-                .bg(GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-    } else if app.new_logs_since_pause > 0 {
-        (
-            format!(" {} new ", app.new_logs_since_pause),
-            Style::default()
-                .fg(MANTLE)
-                .bg(YELLOW)
-                .add_modifier(Modifier::BOLD),
-        )
-    } else {
-        // Use visible_entry_count (set by renderer) for correct percentage
-        let total = app.filtered_count();
-        let vis = app.layout.visible_entry_count.max(1);
-        let max_off = total.saturating_sub(vis);
-        let pct = if max_off > 0 {
-            ((app.scroll_offset.min(max_off)) * 100) / max_off
+    // Left side: toast OR normal info
+    let (left_spans, left_width, source_x) =
+        if let Some(msg) = app.active_status().map(|s| s.to_string()) {
+            let ok_text = " OK ";
+            let msg_text = format!(" {} ", msg);
+            let w = ok_text.width() + msg_text.width();
+            (
+                vec![
+                    Span::styled(
+                        ok_text,
+                        Style::default()
+                            .fg(MANTLE)
+                            .bg(GREEN)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(msg_text, Style::default().fg(TEXT).bg(bg)),
+                ],
+                w as u16,
+                (0u16, 0u16), // no source info during toast
+            )
         } else {
-            100
-        };
-        (
-            format!(" {}% ", pct.min(100)),
-            Style::default().fg(TEXT).bg(SURFACE0),
-        )
-    };
+            let (live_text, live_style) = if app.auto_scroll {
+                let dot = match (app.tick / 8) % 4 {
+                    0 => "●",
+                    1 => "◉",
+                    2 => "●",
+                    _ => "○",
+                };
+                (
+                    format!(" {} LIVE ", dot),
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(GREEN)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else if app.new_logs_since_pause > 0 {
+                (
+                    format!(" {} new ", app.new_logs_since_pause),
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(YELLOW)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                let total = app.filtered_count();
+                let vis = app.layout.visible_entry_count.max(1);
+                let max_off = total.saturating_sub(vis);
+                let pct = if max_off > 0 {
+                    ((app.scroll_offset.min(max_off)) * 100) / max_off
+                } else {
+                    100
+                };
+                (
+                    format!(" {}% ", pct.min(100)),
+                    Style::default().fg(TEXT).bg(SURFACE0),
+                )
+            };
 
-    let total = app.store.len();
-    let filtered = app.filtered_count();
-    let device = if app.source_name.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", app.source_name)
-    };
-    let info = format!(" {}/{}{}", filtered, total, device);
+            let total = app.store.len();
+            let filtered = app.filtered_count();
+            let device = if app.source_name.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", app.source_name)
+            };
+            let info = format!(" {}/{}{}", filtered, total, device);
+
+            let lw = live_text.width() as u16;
+            let iw = info.width() as u16;
+            let sx = (lw, lw + iw);
+            let w = lw + iw;
+            (
+                vec![
+                    Span::styled(live_text, live_style),
+                    Span::styled(
+                        info,
+                        Style::default()
+                            .fg(SUBTEXT0)
+                            .bg(bg)
+                            .add_modifier(Modifier::UNDERLINED),
+                    ),
+                ],
+                w,
+                sx,
+            )
+        };
+
+    app.layout.source_info_x = source_x;
 
     let buttons: Vec<(&str, &str, Style)> = vec![
         (
@@ -477,29 +503,16 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         ),
     ];
 
-    let lw = live_text.width() as u16;
-    let iw = info.width() as u16;
     let bw: u16 = buttons.iter().map(|(_, l, _)| l.width() as u16 + 1).sum();
-    let spacer = area.width.saturating_sub(lw + iw + bw).max(1);
+    let spacer = area.width.saturating_sub(left_width + bw).max(1);
 
-    // Record source info x-range for click handling
-    let source_info_start = lw;
-    let source_info_end = lw + iw;
-    app.layout.source_info_x = (source_info_start, source_info_end);
+    let mut spans = left_spans;
+    spans.push(Span::styled(
+        " ".repeat(spacer as usize),
+        Style::default().bg(bg),
+    ));
 
-    let mut spans = vec![
-        Span::styled(&live_text, live_style),
-        Span::styled(
-            &info,
-            Style::default()
-                .fg(SUBTEXT0)
-                .bg(bg)
-                .add_modifier(Modifier::UNDERLINED),
-        ),
-        Span::styled(" ".repeat(spacer as usize), Style::default().bg(bg)),
-    ];
-
-    let mut xc = lw + iw + spacer;
+    let mut xc = left_width + spacer;
     app.layout.bottom_buttons.clear();
     for (i, (name, label, style)) in buttons.iter().enumerate() {
         let start = xc;

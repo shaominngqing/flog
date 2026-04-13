@@ -33,7 +33,7 @@ const SIZE_W: usize = 8;
 // Row background colors for error/warning states
 const ERROR_ROW_BG: Color = Color::Rgb(50, 30, 35);
 const WARNING_ROW_BG: Color = Color::Rgb(50, 45, 30);
-const REPLAY_ROW_BG: Color = SURFACE0;
+const REPLAY_ROW_BG: Color = Color::Rgb(35, 45, 65); // subtle blue tint
 const MOCKED_ROW_BG: Color = Color::Rgb(110, 75, 138);
 
 // ══════════════════════════════════════
@@ -283,12 +283,24 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             // Protocol pill
             let proto_span = protocol_pill(entry.protocol);
 
-            // Method
+            // Method (with replay/mock indicator)
             let method_c = method_color(&entry.method);
-            let method_text = if entry.method.is_empty() {
-                "-".to_string()
-            } else {
-                entry.method.clone()
+            let method_text = match entry.source {
+                EntrySource::Replay => if entry.method.is_empty() {
+                    "\u{21bb}-".to_string() // ↻
+                } else {
+                    format!("\u{21bb}{}", entry.method)
+                },
+                EntrySource::Mocked => if entry.method.is_empty() {
+                    "\u{25c6}-".to_string() // ◆
+                } else {
+                    format!("\u{25c6}{}", entry.method)
+                },
+                EntrySource::App => if entry.method.is_empty() {
+                    "-".to_string()
+                } else {
+                    entry.method.clone()
+                },
             };
             let method_span = Span::styled(
                 safe_pad(&method_text, METHOD_W),
@@ -463,66 +475,82 @@ mod tests {
 fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
 
-    // Show toast message if active
-    if let Some(msg) = app.active_status().map(|s| s.to_string()) {
-        let line = Line::from(vec![
-            Span::styled(
-                " OK ",
+    // Left side: toast OR normal info
+    let (left_spans, left_width) = if let Some(msg) = app.active_status().map(|s| s.to_string()) {
+        let ok_text = " OK ";
+        let msg_text = format!(" {} ", msg);
+        let w = ok_text.width() + msg_text.width();
+        (
+            vec![
+                Span::styled(
+                    ok_text,
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(GREEN)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(msg_text, Style::default().fg(TEXT).bg(bg)),
+            ],
+            w as u16,
+        )
+    } else {
+        // Count stats
+        let total = app.network_store.len();
+        let filtered = app.network.filtered_indices(&app.network_store).len();
+        let failed_count = app
+            .network_store
+            .iter()
+            .filter(|e| {
+                e.status == NetworkStatus::Failed
+                    || e.http_status.map(|c| c >= 400).unwrap_or(false)
+            })
+            .count();
+
+        let (live_text, live_style) = if app.network.auto_scroll {
+            let dot = match (app.tick / 8) % 4 {
+                0 => "\u{25cf}",
+                1 => "\u{25c9}",
+                2 => "\u{25cf}",
+                _ => "\u{25cb}",
+            };
+            (
+                format!(" {} LIVE ", dot),
                 Style::default()
                     .fg(MANTLE)
                     .bg(GREEN)
                     .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!(" {} ", msg), Style::default().fg(TEXT).bg(bg)),
-        ]);
-        f.render_widget(Paragraph::new(line).style(Style::default().bg(bg)), area);
-        app.layout.net_buttons.clear();
-        return;
-    }
-
-    // Count stats
-    let total = app.network_store.len();
-    let filtered = app.network.filtered_indices(&app.network_store).len();
-    let failed_count = app
-        .network_store
-        .iter()
-        .filter(|e| {
-            e.status == NetworkStatus::Failed || e.http_status.map(|c| c >= 400).unwrap_or(false)
-        })
-        .count();
-
-    // LIVE / scroll indicator (matching Logs view)
-    let (live_text, live_style) = if app.network.auto_scroll {
-        let dot = match (app.tick / 8) % 4 {
-            0 => "\u{25cf}",
-            1 => "\u{25c9}",
-            2 => "\u{25cf}",
-            _ => "\u{25cb}",
-        };
-        (
-            format!(" {} LIVE ", dot),
-            Style::default()
-                .fg(MANTLE)
-                .bg(GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-    } else {
-        let pct = if filtered > 0 {
-            ((app.network.selected + 1) * 100) / filtered
+            )
         } else {
-            100
+            let pct = if filtered > 0 {
+                ((app.network.selected + 1) * 100) / filtered
+            } else {
+                100
+            };
+            (
+                format!(" {}% ", pct.min(100)),
+                Style::default().fg(TEXT).bg(SURFACE0),
+            )
         };
-        (
-            format!(" {}% ", pct.min(100)),
-            Style::default().fg(TEXT).bg(SURFACE0),
-        )
-    };
 
-    let info = format!(" {}/{} requests", filtered, total);
-    let failed_info = if failed_count > 0 {
-        format!("  {} failed", failed_count)
-    } else {
-        String::new()
+        let info = format!(" {}/{} requests", filtered, total);
+        let failed_info = if failed_count > 0 {
+            format!("  {} failed", failed_count)
+        } else {
+            String::new()
+        };
+
+        let w = live_text.width() + info.width() + failed_info.width();
+        let mut spans = vec![
+            Span::styled(live_text, live_style),
+            Span::styled(info, Style::default().fg(SUBTEXT0).bg(bg)),
+        ];
+        if !failed_info.is_empty() {
+            spans.push(Span::styled(
+                failed_info,
+                Style::default().fg(RED).bg(bg),
+            ));
+        }
+        (spans, w as u16)
     };
 
     let mut buttons: Vec<(&str, &str, Style)> = vec![
@@ -596,31 +624,17 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
             .add_modifier(Modifier::BOLD),
     ));
 
-    let lw = live_text.width() as u16;
-    let info_w = info.width() as u16;
-    let failed_w = failed_info.width() as u16;
     let bw: u16 = buttons.iter().map(|(_, l, _)| l.width() as u16 + 1).sum();
-    let spacer = area
-        .width
-        .saturating_sub(lw + info_w + failed_w + bw)
-        .max(1);
+    let spacer = area.width.saturating_sub(left_width + bw).max(1);
 
-    let mut spans = vec![
-        Span::styled(&live_text, live_style),
-        Span::styled(&info, Style::default().fg(SUBTEXT0).bg(bg)),
-    ];
-
-    if !failed_info.is_empty() {
-        spans.push(Span::styled(&failed_info, Style::default().fg(RED).bg(bg)));
-    }
-
+    let mut spans = left_spans;
     spans.push(Span::styled(
         " ".repeat(spacer as usize),
         Style::default().bg(bg),
     ));
 
     // Store button click regions
-    let mut xc = lw + info_w + failed_w + spacer;
+    let mut xc = left_width + spacer;
     app.layout.net_buttons.clear();
     for (i, (name, label, style)) in buttons.iter().enumerate() {
         let start = xc;
