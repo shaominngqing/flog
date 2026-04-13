@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'flog_net.dart';
+import 'flog_net.dart' show flogEnabled, nextNetId, emitNet;
 
 /// Wraps an SSE (Server-Sent Events) byte stream and emits flog_net protocol
 /// messages for each event, while forwarding the parsed data downstream.
@@ -32,6 +32,10 @@ class FlogSseParser {
     required String url,
     String method = 'GET',
   }) {
+    if (!flogEnabled) {
+      return _passThroughSse(byteStream);
+    }
+
     final id = nextNetId();
     int seq = 0;
     int totalSize = 0;
@@ -126,6 +130,67 @@ class FlogSseParser {
           'chunks': seq,
           'size': totalSize,
         });
+        controller.close();
+      },
+      cancelOnError: false,
+    );
+
+    controller.onCancel = () {
+      subscription.cancel();
+    };
+
+    return controller.stream;
+  }
+
+  /// Pass-through SSE parser that does no flog_net emission.
+  ///
+  /// Used when [flogEnabled] is false so the stream is still parsed into
+  /// SSE data payloads but no protocol messages are emitted.
+  static Stream<String> _passThroughSse(Stream<List<int>> byteStream) {
+    final byteBuffer = <int>[];
+    String lineBuffer = '';
+    final controller = StreamController<String>();
+
+    final subscription = byteStream.listen(
+      (chunk) {
+        byteBuffer.addAll(chunk);
+        String decoded;
+        try {
+          decoded = utf8.decode(byteBuffer);
+          byteBuffer.clear();
+        } on FormatException {
+          for (int i = 1; i <= 4 && i <= byteBuffer.length; i++) {
+            try {
+              decoded = utf8.decode(byteBuffer.sublist(0, byteBuffer.length - i));
+              final remaining = byteBuffer.sublist(byteBuffer.length - i);
+              byteBuffer
+                ..clear()
+                ..addAll(remaining);
+              _processDecoded(decoded, lineBuffer, (newBuffer, data) {
+                lineBuffer = newBuffer;
+                if (data != null) {
+                  controller.add(data);
+                }
+              });
+              return;
+            } on FormatException {
+              continue;
+            }
+          }
+          return;
+        }
+
+        _processDecoded(decoded, lineBuffer, (newBuffer, data) {
+          lineBuffer = newBuffer;
+          if (data != null) {
+            controller.add(data);
+          }
+        });
+      },
+      onError: (Object error) {
+        controller.addError(error);
+      },
+      onDone: () {
         controller.close();
       },
       cancelOnError: false,

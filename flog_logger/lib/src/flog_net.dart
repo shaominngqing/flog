@@ -3,6 +3,13 @@ library;
 
 import 'dart:convert';
 
+/// Master kill-switch.  `dart.vm.product` is true in release builds,
+/// so flogEnabled becomes false and AOT tree-shaking removes all flog code.
+const flogEnabled = bool.fromEnvironment(
+  'FLOG_ENABLED',
+  defaultValue: !bool.fromEnvironment('dart.vm.product'),
+);
+
 const _tag = 'flog_net';
 
 int _nextId = 1;
@@ -11,8 +18,8 @@ int _nextId = 1;
 int nextNetId() => _nextId++;
 
 /// Emit a flog_net protocol message.
-/// Uses print() so it works with all flog data sources (VM Service, ADB, stdin).
 void emitNet(Map<String, dynamic> data) {
+  if (!flogEnabled) return;
   // ignore: avoid_print
   print('[INFO][$_tag] ${jsonEncode(data)}');
 }

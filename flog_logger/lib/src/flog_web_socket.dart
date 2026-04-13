@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-import 'flog_net.dart';
+import 'flog_net.dart' show flogEnabled, nextNetId, emitNet;
 
 /// A WebSocket wrapper that emits flog_net protocol messages for all
 /// WebSocket traffic (open, send, receive, close).
@@ -33,33 +33,39 @@ class FlogWebSocket {
       : _channel = WebSocketChannel.connect(uri, protocols: protocols),
         _id = nextNetId(),
         _start = DateTime.now() {
-    emitNet({
-      'id': _id,
-      't': 'open',
-      'p': 'ws',
-      'url': uri.toString(),
-    });
-
-    stream = _channel.stream.map((message) {
-      final display = _formatMessage(message);
-      final size = _messageSize(message);
-
+    if (flogEnabled) {
       emitNet({
         'id': _id,
-        't': 'recv',
+        't': 'open',
         'p': 'ws',
-        'data': display,
-        'size': size,
+        'url': uri.toString(),
       });
+    }
+
+    stream = _channel.stream.map((message) {
+      if (flogEnabled) {
+        final display = _formatMessage(message);
+        final size = _messageSize(message);
+
+        emitNet({
+          'id': _id,
+          't': 'recv',
+          'p': 'ws',
+          'data': display,
+          'size': size,
+        });
+      }
 
       return message;
     }).handleError((Object error) {
-      emitNet({
-        'id': _id,
-        't': 'err',
-        'p': 'ws',
-        'error': error.toString(),
-      });
+      if (flogEnabled) {
+        emitNet({
+          'id': _id,
+          't': 'err',
+          'p': 'ws',
+          'error': error.toString(),
+        });
+      }
       // Re-throw so downstream listeners see the error
       throw error;
     });
@@ -72,49 +78,57 @@ class FlogWebSocket {
   FlogWebSocket.fromChannel(this._channel, {required String url})
       : _id = nextNetId(),
         _start = DateTime.now() {
-    emitNet({
-      'id': _id,
-      't': 'open',
-      'p': 'ws',
-      'url': url,
-    });
-
-    stream = _channel.stream.map((message) {
-      final display = _formatMessage(message);
-      final size = _messageSize(message);
-
+    if (flogEnabled) {
       emitNet({
         'id': _id,
-        't': 'recv',
+        't': 'open',
         'p': 'ws',
-        'data': display,
-        'size': size,
+        'url': url,
       });
+    }
+
+    stream = _channel.stream.map((message) {
+      if (flogEnabled) {
+        final display = _formatMessage(message);
+        final size = _messageSize(message);
+
+        emitNet({
+          'id': _id,
+          't': 'recv',
+          'p': 'ws',
+          'data': display,
+          'size': size,
+        });
+      }
 
       return message;
     }).handleError((Object error) {
-      emitNet({
-        'id': _id,
-        't': 'err',
-        'p': 'ws',
-        'error': error.toString(),
-      });
+      if (flogEnabled) {
+        emitNet({
+          'id': _id,
+          't': 'err',
+          'p': 'ws',
+          'error': error.toString(),
+        });
+      }
       throw error;
     });
   }
 
   /// Send a message through the WebSocket.
   void send(dynamic message) {
-    final display = _formatMessage(message);
-    final size = _messageSize(message);
+    if (flogEnabled) {
+      final display = _formatMessage(message);
+      final size = _messageSize(message);
 
-    emitNet({
-      'id': _id,
-      't': 'send',
-      'p': 'ws',
-      'data': display,
-      'size': size,
-    });
+      emitNet({
+        'id': _id,
+        't': 'send',
+        'p': 'ws',
+        'data': display,
+        'size': size,
+      });
+    }
 
     _channel.sink.add(message);
   }
@@ -124,24 +138,26 @@ class FlogWebSocket {
   /// Optional [closeCode] and [closeReason] are forwarded to the underlying
   /// channel.
   Future<void> close([int? closeCode, String? closeReason]) async {
-    final duration = DateTime.now().difference(_start).inMilliseconds;
+    if (flogEnabled) {
+      final duration = DateTime.now().difference(_start).inMilliseconds;
 
-    final data = <String, dynamic>{
-      'id': _id,
-      't': 'close',
-      'p': 'ws',
-      'duration': duration,
-    };
+      final data = <String, dynamic>{
+        'id': _id,
+        't': 'close',
+        'p': 'ws',
+        'duration': duration,
+      };
 
-    if (closeCode != null) {
-      data['code'] = closeCode;
+      if (closeCode != null) {
+        data['code'] = closeCode;
+      }
+
+      if (closeReason != null) {
+        data['reason'] = closeReason;
+      }
+
+      emitNet(data);
     }
-
-    if (closeReason != null) {
-      data['reason'] = closeReason;
-    }
-
-    emitNet(data);
 
     await _channel.sink.close(closeCode, closeReason);
   }

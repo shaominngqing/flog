@@ -10,7 +10,9 @@
 /// ```
 library flog_dart;
 
-export 'src/flog_net.dart' show nextNetId, emitNet;
+import 'src/flog_net.dart' show flogEnabled;
+
+export 'src/flog_net.dart' show nextNetId, emitNet, flogEnabled;
 export 'src/flog_http_interceptor.dart';
 export 'src/flog_sse_parser.dart';
 export 'src/flog_web_socket.dart';
@@ -66,6 +68,7 @@ class FlogLogger {
   // ---------------------------------------------------------------------------
 
   void _log(String level, String msg, {Object? error, StackTrace? stackTrace}) {
+    if (!flogEnabled) return;
     // ignore: avoid_print
     print('[$level][$tag] $msg');
     if (error != null) {

@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 
-import 'flog_net.dart';
+import 'flog_net.dart' show flogEnabled, nextNetId, emitNet;
 
 /// Predicate to decide whether a request should be logged.
 typedef FlogHttpFilter = bool Function(RequestOptions options);
@@ -62,6 +62,11 @@ class FlogHttpInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (!flogEnabled) {
+      handler.next(options);
+      return;
+    }
+
     if (filter != null && !filter!(options)) {
       handler.next(options);
       return;
@@ -94,6 +99,11 @@ class FlogHttpInterceptor extends Interceptor {
 
   @override
   void onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) {
+    if (!flogEnabled) {
+      handler.next(response);
+      return;
+    }
+
     final key = response.requestOptions.hashCode;
     final id = _idMap.remove(key);
     final start = _startMap.remove(key);
@@ -132,6 +142,11 @@ class FlogHttpInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (!flogEnabled) {
+      handler.next(err);
+      return;
+    }
+
     final key = err.requestOptions.hashCode;
     final id = _idMap.remove(key);
     final start = _startMap.remove(key);
