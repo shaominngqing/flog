@@ -53,6 +53,12 @@ impl NetworkStore {
         self.entries.clear();
     }
 
+    /// Add a pre-built entry directly (used by Replay and Mock).
+    pub fn push_entry(&mut self, entry: NetworkEntry) {
+        self.ensure_capacity();
+        self.entries.push(entry);
+    }
+
     fn ensure_capacity(&mut self) {
         if self.entries.len() >= MAX_ENTRIES {
             self.entries.drain(..DRAIN_COUNT);

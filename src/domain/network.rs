@@ -33,6 +33,13 @@ pub enum WsDirection {
     Recv,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntrySource {
+    App,
+    Replay,
+    Mocked,
+}
+
 #[derive(Debug, Clone)]
 pub struct SseChunk {
     pub seq: u32,
@@ -71,6 +78,7 @@ pub struct NetworkEntry {
     pub ws_messages: Vec<WsMessage>,
     pub ws_close_code: Option<u16>,
     pub ws_close_reason: Option<String>,
+    pub source: EntrySource,
 }
 
 impl NetworkEntry {
@@ -84,6 +92,7 @@ impl NetworkEntry {
             request_body: None, response_body: None, error: None,
             sse_chunks: Vec::new(), sse_total_size: 0,
             ws_messages: Vec::new(), ws_close_code: None, ws_close_reason: None,
+            source: EntrySource::App,
         }
     }
 
@@ -97,6 +106,7 @@ impl NetworkEntry {
             request_body: None, response_body: None, error: None,
             sse_chunks: Vec::new(), sse_total_size: 0,
             ws_messages: Vec::new(), ws_close_code: None, ws_close_reason: None,
+            source: EntrySource::App,
         }
     }
 
@@ -110,6 +120,7 @@ impl NetworkEntry {
             request_body: None, response_body: None, error: None,
             sse_chunks: Vec::new(), sse_total_size: 0,
             ws_messages: Vec::new(), ws_close_code: None, ws_close_reason: None,
+            source: EntrySource::App,
         }
     }
 
