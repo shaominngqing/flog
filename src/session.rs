@@ -63,7 +63,11 @@ pub fn load_session(app: &mut App) {
 
 pub fn save_session(app: &App) {
     // 重建 tag filter 输入字符串
-    let tag_filter_input: String = app.filter.tag_include.iter().cloned()
+    let tag_filter_input: String = app
+        .filter
+        .tag_include
+        .iter()
+        .cloned()
         .chain(app.filter.tag_exclude.iter().map(|t| format!("-{}", t)))
         .collect::<Vec<_>>()
         .join(",");

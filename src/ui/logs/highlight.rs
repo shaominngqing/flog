@@ -14,12 +14,16 @@ static RULES: LazyLock<Vec<HighlightRule>> = LazyLock::new(|| {
         // HTTP 状态码 2xx (绿)
         HighlightRule {
             regex: Regex::new(r"\b[2]\d{2}\b").unwrap(),
-            style: Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            style: Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
         },
         // HTTP 状态码 4xx (黄)
         HighlightRule {
             regex: Regex::new(r"\b[4]\d{2}\b").unwrap(),
-            style: Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            style: Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         },
         // HTTP 状态码 5xx (红)
         HighlightRule {
@@ -29,7 +33,9 @@ static RULES: LazyLock<Vec<HighlightRule>> = LazyLock::new(|| {
         // 耗时超过 1000ms（红色加粗）
         HighlightRule {
             regex: Regex::new(r"\((\d{4,})ms\)").unwrap(),
-            style: Style::default().fg(Color::Red).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            style: Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         },
         // 耗时 (xxxms) 正常
         HighlightRule {
@@ -59,15 +65,14 @@ static RULES: LazyLock<Vec<HighlightRule>> = LazyLock::new(|| {
         HighlightRule {
             regex: Regex::new(r"\b(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b").unwrap(),
             style: Style::default()
-                .fg(Color::Rgb(30, 32, 48))     // MANTLE
-                .bg(Color::Rgb(198, 160, 246))   // MAUVE
+                .fg(Color::Rgb(30, 32, 48)) // MANTLE
+                .bg(Color::Rgb(198, 160, 246)) // MAUVE
                 .add_modifier(Modifier::BOLD),
         },
         // API 路径
         HighlightRule {
             regex: Regex::new(r"/[\w\-]+(?:/[\w\-.]+)+").unwrap(),
-            style: Style::default()
-                .fg(Color::Rgb(165, 173, 206)), // Subtext0
+            style: Style::default().fg(Color::Rgb(165, 173, 206)), // Subtext0
         },
     ]
 });

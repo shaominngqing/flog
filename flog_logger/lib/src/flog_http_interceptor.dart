@@ -98,7 +98,8 @@ class FlogHttpInterceptor extends Interceptor {
   }
 
   @override
-  void onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) {
+  void onResponse(
+      Response<dynamic> response, ResponseInterceptorHandler handler) {
     if (!flogEnabled) {
       handler.next(response);
       return;
@@ -113,9 +114,8 @@ class FlogHttpInterceptor extends Interceptor {
       return;
     }
 
-    final duration = start != null
-        ? DateTime.now().difference(start).inMilliseconds
-        : null;
+    final duration =
+        start != null ? DateTime.now().difference(start).inMilliseconds : null;
 
     final data = <String, dynamic>{
       'id': id,
@@ -156,9 +156,8 @@ class FlogHttpInterceptor extends Interceptor {
       return;
     }
 
-    final duration = start != null
-        ? DateTime.now().difference(start).inMilliseconds
-        : null;
+    final duration =
+        start != null ? DateTime.now().difference(start).inMilliseconds : null;
 
     final data = <String, dynamic>{
       'id': id,

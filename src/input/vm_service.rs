@@ -49,7 +49,11 @@ impl VmServiceSource {
         //   2. Extract the main isolate ID
         //   3. Send callServiceExtension with ext.flog.setProxy + port
 
-        Ok(Self { receiver, uri: uri.to_string(), pending_lines: Vec::new() })
+        Ok(Self {
+            receiver,
+            uri: uri.to_string(),
+            pending_lines: Vec::new(),
+        })
     }
 
     pub async fn next_event(&mut self) -> Option<SourceEvent> {
@@ -61,8 +65,8 @@ impl VmServiceSource {
         loop {
             let msg = match self.receiver.next().await {
                 Some(Ok(msg)) => msg,
-                Some(Err(_)) => continue,     // transient error, keep going
-                None => return None,           // stream closed
+                Some(Err(_)) => continue, // transient error, keep going
+                None => return None,      // stream closed
             };
 
             let text = match msg {
@@ -86,7 +90,10 @@ impl VmServiceSource {
                     lines.reverse();
                     if let Some(first) = lines.pop() {
                         self.pending_lines = lines;
-                        return Some(SourceEvent::RawLineWithTimestamp(first.text, first.timestamp));
+                        return Some(SourceEvent::RawLineWithTimestamp(
+                            first.text,
+                            first.timestamp,
+                        ));
                     }
                 }
                 None => {} // Not a log event — skip
@@ -126,37 +133,60 @@ fn parse_vm_event(json: &Value) -> Option<VmEventResult> {
 fn parse_logging_event(event: &Value) -> Option<LogEntry> {
     let rec = event.get("logRecord")?;
 
-    let message = rec.get("message")
+    let message = rec
+        .get("message")
         .and_then(|m| m.get("valueAsString"))
         .and_then(|v| v.as_str())
-        .unwrap_or("").to_string();
+        .unwrap_or("")
+        .to_string();
 
-    let tag = rec.get("loggerName")
-        .and_then(|v| v.get("valueAsString").and_then(|s| s.as_str()).or_else(|| v.as_str()))
-        .unwrap_or("App").to_string();
+    let tag = rec
+        .get("loggerName")
+        .and_then(|v| {
+            v.get("valueAsString")
+                .and_then(|s| s.as_str())
+                .or_else(|| v.as_str())
+        })
+        .unwrap_or("App")
+        .to_string();
 
-    let level = rec.get("level")
-        .and_then(|v| v.as_i64().or_else(|| v.get("valueAsString").and_then(|s| s.as_str()).and_then(|s| s.parse::<i64>().ok())))
+    let level = rec
+        .get("level")
+        .and_then(|v| {
+            v.as_i64().or_else(|| {
+                v.get("valueAsString")
+                    .and_then(|s| s.as_str())
+                    .and_then(|s| s.parse::<i64>().ok())
+            })
+        })
         .map(LogLevel::from_vm_service_level)
         .unwrap_or(LogLevel::Info);
 
     let time_ms = rec.get("time").and_then(|v| v.as_i64()).unwrap_or(0);
     let timestamp = format_epoch_ms(time_ms);
 
-    let error = rec.get("error")
+    let error = rec
+        .get("error")
         .and_then(|v| v.get("valueAsString"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let stacktrace = rec.get("stackTrace")
+    let stacktrace = rec
+        .get("stackTrace")
         .and_then(|v| v.get("valueAsString"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
     Some(LogEntry {
-        timestamp, level, tag, message,
-        extra_lines: Vec::new(), repeat_count: 1,
-        source: InputSource::VmService, error, stacktrace,
+        timestamp,
+        level,
+        tag,
+        message,
+        extra_lines: Vec::new(),
+        repeat_count: 1,
+        source: InputSource::VmService,
+        error,
+        stacktrace,
     })
 }
 
@@ -171,24 +201,37 @@ fn parse_stdout_event(event: &Value) -> Option<Vec<StdoutLine>> {
     let decoded = base64_decode(bytes)?;
     let text = String::from_utf8_lossy(&decoded).to_string();
 
-    let timestamp = event.get("timestamp")
+    let timestamp = event
+        .get("timestamp")
         .and_then(|v| v.as_i64())
         .map(format_epoch_ms)
         .unwrap_or_default();
 
-    let lines: Vec<StdoutLine> = text.lines()
+    let lines: Vec<StdoutLine> = text
+        .lines()
         .map(|l| l.to_string())
         .filter(|l| !l.trim().is_empty())
-        .map(|l| StdoutLine { timestamp: timestamp.clone(), text: l })
+        .map(|l| StdoutLine {
+            timestamp: timestamp.clone(),
+            text: l,
+        })
         .collect();
-    if lines.is_empty() { return None; }
+    if lines.is_empty() {
+        return None;
+    }
     Some(lines)
 }
 
 fn format_epoch_ms(ms: i64) -> String {
     let secs = ms / 1000;
     let millis = (ms % 1000).unsigned_abs();
-    format!("{:02}:{:02}:{:02}.{:03}", (secs % 86400) / 3600, (secs % 3600) / 60, secs % 60, millis)
+    format!(
+        "{:02}:{:02}:{:02}.{:03}",
+        (secs % 86400) / 3600,
+        (secs % 3600) / 60,
+        secs % 60,
+        millis
+    )
 }
 
 fn base64_decode(input: &str) -> Option<Vec<u8>> {
@@ -197,7 +240,9 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
     let mut bits: u32 = 0;
     let mut bit_count: u32 = 0;
     for &b in input.as_bytes() {
-        if b == b'=' || b == b'\n' || b == b'\r' { continue; }
+        if b == b'=' || b == b'\n' || b == b'\r' {
+            continue;
+        }
         let val = table.iter().position(|&c| c == b)? as u32;
         bits = (bits << 6) | val;
         bit_count += 6;

@@ -19,9 +19,9 @@ use clap::Parser;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, Event},
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::Mutex;
 
 use app::{App, AppMode, LastSourceType, SourceCommand, SourceSelectPhase};
@@ -62,7 +62,8 @@ async fn main() -> io::Result<()> {
     }
 
     // Set up replay channel
-    let (replay_tx, mut replay_rx) = tokio::sync::mpsc::unbounded_channel::<crate::domain::network::NetworkEntry>();
+    let (replay_tx, mut replay_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::domain::network::NetworkEntry>();
     {
         let mut a = app.lock().await;
         a.replay_tx = Some(replay_tx);
@@ -127,10 +128,17 @@ async fn main() -> io::Result<()> {
     let result = run_loop(&mut terminal, &app).await;
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
-    { let a = app.lock().await; session::save_session(&a); }
+    {
+        let a = app.lock().await;
+        session::save_session(&a);
+    }
 
     result
 }
@@ -202,7 +210,13 @@ async fn run_source_selection(app: Arc<Mutex<App>>) {
                 let services = input::discover::find_all_vm_services().await;
                 let a_guard = app.lock().await;
                 // Check if user cancelled while we were scanning
-                if a_guard.source_select.phase.as_ref().map(|p| !matches!(p, SourceSelectPhase::ScanningVm)).unwrap_or(true) {
+                if a_guard
+                    .source_select
+                    .phase
+                    .as_ref()
+                    .map(|p| !matches!(p, SourceSelectPhase::ScanningVm))
+                    .unwrap_or(true)
+                {
                     continue; // Phase changed — user pressed Esc or picked something else
                 }
                 drop(a_guard);
@@ -214,7 +228,9 @@ async fn run_source_selection(app: Arc<Mutex<App>>) {
                     }
                     1 => {
                         let ws_url = services[0].ws_url.clone();
-                        { app.lock().await.exit_source_select(); }
+                        {
+                            app.lock().await.exit_source_select();
+                        }
                         start_vm_service_with_reconnect(app, ws_url).await;
                         return;
                     }
@@ -229,7 +245,13 @@ async fn run_source_selection(app: Arc<Mutex<App>>) {
             Some(SourceSelectPhase::ScanningAdb) => {
                 let devices = input::adb::list_adb_devices().await;
                 let a_guard = app.lock().await;
-                if a_guard.source_select.phase.as_ref().map(|p| !matches!(p, SourceSelectPhase::ScanningAdb)).unwrap_or(true) {
+                if a_guard
+                    .source_select
+                    .phase
+                    .as_ref()
+                    .map(|p| !matches!(p, SourceSelectPhase::ScanningAdb))
+                    .unwrap_or(true)
+                {
                     continue;
                 }
                 drop(a_guard);
@@ -241,7 +263,9 @@ async fn run_source_selection(app: Arc<Mutex<App>>) {
                     }
                     1 => {
                         let serial = devices[0].serial.clone();
-                        { app.lock().await.exit_source_select(); }
+                        {
+                            app.lock().await.exit_source_select();
+                        }
                         start_adb(app, Some(serial)).await;
                         return;
                     }
@@ -254,7 +278,7 @@ async fn run_source_selection(app: Arc<Mutex<App>>) {
                 }
             }
             None => return, // User exited
-            _ => {} // ChooseType, PickVmService, PickAdbDevice — wait for user input
+            _ => {}         // ChooseType, PickVmService, PickAdbDevice — wait for user input
         }
     }
 }
@@ -420,7 +444,9 @@ async fn dropdown_scan_loop(app: Arc<Mutex<App>>) {
     loop {
         {
             let a = app.lock().await;
-            if !a.show_source_dropdown { return; }
+            if !a.show_source_dropdown {
+                return;
+            }
         }
 
         // Scan VM services
@@ -429,7 +455,9 @@ async fn dropdown_scan_loop(app: Arc<Mutex<App>>) {
 
         {
             let mut a = app.lock().await;
-            if !a.show_source_dropdown { return; }
+            if !a.show_source_dropdown {
+                return;
+            }
             a.dropdown.discovered_vm = vm_services;
             a.dropdown.discovered_adb = adb_devices;
             a.dropdown.scanning = true; // keep scanning indicator
@@ -462,32 +490,42 @@ async fn run_loop(
             // Check if dropdown scan was requested
             if app_guard.dropdown_scan_requested {
                 app_guard.dropdown_scan_requested = false;
-                if let Some(h) = dropdown_task.take() { h.abort(); }
+                if let Some(h) = dropdown_task.take() {
+                    h.abort();
+                }
                 dropdown_task = Some(tokio::spawn(dropdown_scan_loop(Arc::clone(app))));
             }
             if !app_guard.show_source_dropdown {
-                if let Some(h) = dropdown_task.take() { h.abort(); }
+                if let Some(h) = dropdown_task.take() {
+                    h.abort();
+                }
             }
 
-            terminal.draw(|f| {
-                match app_guard.mode {
-                    AppMode::Help => ui::help::draw_help(f),
-                    AppMode::Stats => {
-                        match app_guard.active_stats_tab {
-                            crate::app::ViewTab::Logs => ui::logs::stats::draw_stats(f, &mut app_guard),
-                            crate::app::ViewTab::Network => ui::network::stats::draw_network_stats(f, &mut app_guard),
-                        }
+            terminal.draw(|f| match app_guard.mode {
+                AppMode::Help => ui::help::draw_help(f),
+                AppMode::Stats => match app_guard.active_stats_tab {
+                    crate::app::ViewTab::Logs => ui::logs::stats::draw_stats(f, &mut app_guard),
+                    crate::app::ViewTab::Network => {
+                        ui::network::stats::draw_network_stats(f, &mut app_guard)
                     }
-                    _ => ui::draw(f, &mut app_guard),
-                }
+                },
+                _ => ui::draw(f, &mut app_guard),
             })?;
-            if app_guard.should_quit { return Ok(()); }
+            if app_guard.should_quit {
+                return Ok(());
+            }
         }
 
         if crossterm::event::poll(Duration::from_millis(33))? {
             match crossterm::event::read()? {
-                Event::Key(key) => { let mut app = app.lock().await; event::handle_key(&mut app, key); }
-                Event::Mouse(mouse) => { let mut app = app.lock().await; event::handle_mouse(&mut app, mouse); }
+                Event::Key(key) => {
+                    let mut app = app.lock().await;
+                    event::handle_key(&mut app, key);
+                }
+                Event::Mouse(mouse) => {
+                    let mut app = app.lock().await;
+                    event::handle_mouse(&mut app, mouse);
+                }
                 _ => {}
             }
         }

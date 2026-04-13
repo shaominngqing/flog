@@ -4,11 +4,11 @@
 use std::collections::HashMap;
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table},
+    Frame,
 };
 
 use crate::app::App;
@@ -63,14 +63,12 @@ fn truncate_url(url: &str, max_w: usize) -> String {
         return "...".to_string();
     }
     let mut result = String::new();
-    let mut width = 0;
     let target = max_w - 3;
-    for ch in url.chars() {
+    for (width, ch) in url.chars().enumerate() {
         if width >= target {
             break;
         }
         result.push(ch);
-        width += 1;
     }
     result.push_str("...");
     result
@@ -204,9 +202,9 @@ pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // title bar
-            Constraint::Length(7),  // summary + latency side-by-side
-            Constraint::Length(9),  // slowest top 5
+            Constraint::Length(1), // title bar
+            Constraint::Length(7), // summary + latency side-by-side
+            Constraint::Length(9), // slowest top 5
             Constraint::Min(5),    // status dist + per-domain side-by-side
         ])
         .split(f.area());
@@ -220,7 +218,10 @@ pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
                 .bg(BLUE)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("  Network Statistics  ", Style::default().fg(Color::White).bg(MANTLE)),
+        Span::styled(
+            "  Network Statistics  ",
+            Style::default().fg(Color::White).bg(MANTLE),
+        ),
         Span::styled(
             format!("  Total: {}  ", total),
             Style::default().fg(TEXT).bg(MANTLE),
@@ -236,24 +237,31 @@ pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
         .split(chunks[1]);
 
     // Summary table
-    let summary_rows = vec![
-        Row::new(vec![
-            Cell::from("Total Requests").style(Style::default().fg(SUBTEXT0)),
-            Cell::from(total.to_string()).style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
-        ]),
-        Row::new(vec![
-            Cell::from("Success").style(Style::default().fg(SUBTEXT0)),
-            Cell::from(success.to_string()).style(Style::default().fg(GREEN)),
-        ]),
-        Row::new(vec![
-            Cell::from("Failed").style(Style::default().fg(SUBTEXT0)),
-            Cell::from(failed.to_string()).style(Style::default().fg(if failed > 0 { RED } else { TEXT })),
-        ]),
-        Row::new(vec![
-            Cell::from("In-Progress").style(Style::default().fg(SUBTEXT0)),
-            Cell::from(in_progress.to_string()).style(Style::default().fg(if in_progress > 0 { YELLOW } else { TEXT })),
-        ]),
-    ];
+    let summary_rows =
+        vec![
+            Row::new(vec![
+                Cell::from("Total Requests").style(Style::default().fg(SUBTEXT0)),
+                Cell::from(total.to_string())
+                    .style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
+            ]),
+            Row::new(vec![
+                Cell::from("Success").style(Style::default().fg(SUBTEXT0)),
+                Cell::from(success.to_string()).style(Style::default().fg(GREEN)),
+            ]),
+            Row::new(vec![
+                Cell::from("Failed").style(Style::default().fg(SUBTEXT0)),
+                Cell::from(failed.to_string()).style(Style::default().fg(if failed > 0 {
+                    RED
+                } else {
+                    TEXT
+                })),
+            ]),
+            Row::new(vec![
+                Cell::from("In-Progress").style(Style::default().fg(SUBTEXT0)),
+                Cell::from(in_progress.to_string())
+                    .style(Style::default().fg(if in_progress > 0 { YELLOW } else { TEXT })),
+            ]),
+        ];
     let summary_table = Table::new(
         summary_rows,
         [Constraint::Percentage(60), Constraint::Percentage(40)],

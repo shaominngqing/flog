@@ -1,11 +1,11 @@
 //! Network toolbar renderer — 2-line toolbar with URL search and inline filter pills.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -14,8 +14,7 @@ use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 use crate::ui::safe_pad;
 
 use super::super::{
-    MANTLE, SURFACE0, SURFACE1, OVERLAY0, TEXT,
-    BLUE, GREEN, YELLOW, PEACH, RED, SAPPHIRE, MAUVE,
+    BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, RED, SAPPHIRE, SURFACE0, SURFACE1, TEXT, YELLOW,
 };
 
 const PROXY_GREEN: ratatui::style::Color = ratatui::style::Color::Rgb(166, 218, 149);
@@ -25,7 +24,10 @@ fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'
     if selected {
         Span::styled(
             format!(" {} ", label),
-            Style::default().fg(MANTLE).bg(color).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(MANTLE)
+                .bg(color)
+                .add_modifier(Modifier::BOLD),
         )
     } else {
         Span::styled(
@@ -36,7 +38,9 @@ fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'
 }
 
 pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
-    if area.height < 2 { return; }
+    if area.height < 2 {
+        return;
+    }
 
     let bg = MANTLE;
     let w = area.width as usize;
@@ -46,7 +50,13 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     let mut spans1: Vec<Span> = Vec::new();
     let mut x: u16 = 0;
 
-    spans1.push(Span::styled(" NET ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)));
+    spans1.push(Span::styled(
+        " NET ",
+        Style::default()
+            .fg(MANTLE)
+            .bg(SAPPHIRE)
+            .add_modifier(Modifier::BOLD),
+    ));
     x += 5;
     spans1.push(Span::styled(" ", Style::default().bg(bg)));
     x += 1;
@@ -89,8 +99,15 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     if !proxy_text.is_empty() && rem1 > proxy_w {
         let gap = rem1.saturating_sub(proxy_w);
         spans1.push(Span::styled(" ".repeat(gap), Style::default().bg(bg)));
-        let proxy_color = if app.mock_rules.enabled_count() > 0 { PROXY_GREEN } else { OVERLAY0 };
-        spans1.push(Span::styled(proxy_text, Style::default().fg(proxy_color).bg(bg)));
+        let proxy_color = if app.mock_rules.enabled_count() > 0 {
+            PROXY_GREEN
+        } else {
+            OVERLAY0
+        };
+        spans1.push(Span::styled(
+            proxy_text,
+            Style::default().fg(proxy_color).bg(bg),
+        ));
     } else if rem1 > 0 {
         spans1.push(Span::styled(" ".repeat(rem1), Style::default().bg(bg)));
     }
@@ -188,10 +205,7 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     app.layout.net_filter_pills = click_regions;
     app.layout.net_filter_pills_y = area.y + 1; // line 2
 
-    let lines = vec![
-        Line::from(spans1),
-        Line::from(spans2),
-    ];
+    let lines = vec![Line::from(spans1), Line::from(spans2)];
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(bg)), area);
 }

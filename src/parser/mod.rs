@@ -3,10 +3,10 @@
 //! Uses the Strategy pattern: a chain of parsers is tried in priority order.
 //! The first parser that recognizes the line wins.
 
-pub mod structured;
 pub mod generic;
 pub mod keyword;
 pub mod network;
+pub mod structured;
 
 use crate::domain::{LogEntry, ParseResult};
 

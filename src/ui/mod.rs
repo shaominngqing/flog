@@ -1,10 +1,10 @@
 //! TUI rendering — top-level dispatcher.
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     widgets::Block,
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -21,24 +21,24 @@ use crate::app::{App, AppMode, ViewTab};
 //  Shared Catppuccin Macchiato Palette
 // ══════════════════════════════════════
 
-pub const BASE: Color      = Color::Rgb(36, 39, 58);    // #24273a — main bg
-pub const MANTLE: Color    = Color::Rgb(30, 32, 48);    // #1e2030 — panels/alt bg
-pub const SURFACE0: Color  = Color::Rgb(54, 58, 79);    // #363a4f — subtle borders
-pub const SURFACE1: Color  = Color::Rgb(73, 77, 100);   // #494d64 — active borders
-pub const OVERLAY0: Color  = Color::Rgb(110, 115, 141);  // #6e738d — muted text
-pub const TEXT: Color       = Color::Rgb(202, 211, 245);  // #cad3f5 — main text
-pub const SUBTEXT0: Color  = Color::Rgb(165, 173, 206);  // #a5adce — secondary text
+pub const BASE: Color = Color::Rgb(36, 39, 58); // #24273a — main bg
+pub const MANTLE: Color = Color::Rgb(30, 32, 48); // #1e2030 — panels/alt bg
+pub const SURFACE0: Color = Color::Rgb(54, 58, 79); // #363a4f — subtle borders
+pub const SURFACE1: Color = Color::Rgb(73, 77, 100); // #494d64 — active borders
+pub const OVERLAY0: Color = Color::Rgb(110, 115, 141); // #6e738d — muted text
+pub const TEXT: Color = Color::Rgb(202, 211, 245); // #cad3f5 — main text
+pub const SUBTEXT0: Color = Color::Rgb(165, 173, 206); // #a5adce — secondary text
 
-pub const BLUE: Color      = Color::Rgb(138, 173, 244);  // #8aadf4 — accent
-pub const SAPPHIRE: Color  = Color::Rgb(125, 196, 228);  // #7dc4e4 — links
-pub const TEAL: Color      = Color::Rgb(139, 213, 202);  // #8bd5ca — values
-pub const GREEN: Color     = Color::Rgb(166, 218, 149);  // #a6da95 — success
-pub const YELLOW: Color    = Color::Rgb(238, 212, 159);  // #eed49f — warning
-pub const PEACH: Color     = Color::Rgb(245, 169, 127);  // #f5a97f — info emphasis
-pub const RED: Color       = Color::Rgb(237, 135, 150);  // #ed8796 — error
-pub const MAUVE: Color     = Color::Rgb(198, 160, 246);  // #c6a0f6 — key/label
-pub const PINK: Color      = Color::Rgb(245, 189, 230);  // #f5bde6 — special
-pub const LAVENDER: Color  = Color::Rgb(183, 189, 248);  // #b7bdf8 — subtle hl
+pub const BLUE: Color = Color::Rgb(138, 173, 244); // #8aadf4 — accent
+pub const SAPPHIRE: Color = Color::Rgb(125, 196, 228); // #7dc4e4 — links
+pub const TEAL: Color = Color::Rgb(139, 213, 202); // #8bd5ca — values
+pub const GREEN: Color = Color::Rgb(166, 218, 149); // #a6da95 — success
+pub const YELLOW: Color = Color::Rgb(238, 212, 159); // #eed49f — warning
+pub const PEACH: Color = Color::Rgb(245, 169, 127); // #f5a97f — info emphasis
+pub const RED: Color = Color::Rgb(237, 135, 150); // #ed8796 — error
+pub const MAUVE: Color = Color::Rgb(198, 160, 246); // #c6a0f6 — key/label
+pub const PINK: Color = Color::Rgb(245, 189, 230); // #f5bde6 — special
+pub const LAVENDER: Color = Color::Rgb(183, 189, 248); // #b7bdf8 — subtle hl
 
 // ══════════════════════════════════════
 //  Shared Utility Functions
@@ -48,7 +48,9 @@ pub const LAVENDER: Color  = Color::Rgb(183, 189, 248);  // #b7bdf8 — subtle h
 /// Returns at most `max_lines` lines. The last line is truncated with "..." if needed.
 pub fn wrap_text(s: &str, max_w: usize, max_lines: usize) -> Vec<String> {
     use unicode_width::UnicodeWidthChar;
-    if max_w == 0 || max_lines == 0 { return vec![String::new()]; }
+    if max_w == 0 || max_lines == 0 {
+        return vec![String::new()];
+    }
 
     let mut result: Vec<String> = Vec::new();
     let mut current = String::new();
@@ -69,7 +71,9 @@ pub fn wrap_text(s: &str, max_w: usize, max_lines: usize) -> Vec<String> {
                     let mut tw = 0;
                     for tc in last.chars() {
                         let tcw = UnicodeWidthChar::width(tc).unwrap_or(0);
-                        if tw + tcw > trunc_w { break; }
+                        if tw + tcw > trunc_w {
+                            break;
+                        }
                         trimmed.push(tc);
                         tw += tcw;
                     }
@@ -89,15 +93,22 @@ pub fn wrap_text(s: &str, max_w: usize, max_lines: usize) -> Vec<String> {
 }
 
 pub fn safe_truncate(s: &str, max_w: usize) -> String {
-    if max_w == 0 { return String::new(); }
-    if s.width() <= max_w { return s.to_string(); }
+    if max_w == 0 {
+        return String::new();
+    }
+    if s.width() <= max_w {
+        return s.to_string();
+    }
     let t = max_w.saturating_sub(3);
     let mut r = String::new();
     let mut w = 0;
     for c in s.chars() {
         let cw = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
-        if w + cw > t { break; }
-        r.push(c); w += cw;
+        if w + cw > t {
+            break;
+        }
+        r.push(c);
+        w += cw;
     }
     r.push_str("...");
     r
@@ -110,14 +121,22 @@ pub fn safe_pad(s: &str, width: usize) -> String {
         let mut cw = 0;
         for c in s.chars() {
             let ch_w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
-            if cw + ch_w > width { break; }
-            r.push(c); cw += ch_w;
+            if cw + ch_w > width {
+                break;
+            }
+            r.push(c);
+            cw += ch_w;
         }
-        while cw < width { r.push(' '); cw += 1; }
+        while cw < width {
+            r.push(' ');
+            cw += 1;
+        }
         r
     } else {
         let mut r = s.to_string();
-        for _ in 0..(width - w) { r.push(' '); }
+        for _ in 0..(width - w) {
+            r.push(' ');
+        }
         r
     }
 }
@@ -147,7 +166,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),  // tab bar (icon + label + underline)
+            Constraint::Length(2), // tab bar (icon + label + underline)
             Constraint::Min(3),    // view content
         ])
         .split(full);

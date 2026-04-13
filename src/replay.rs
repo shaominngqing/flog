@@ -48,12 +48,11 @@ pub async fn replay_request(app: Arc<Mutex<App>>, entry: NetworkEntry) {
             for (key, val) in &map {
                 let val_str = match val {
                     serde_json::Value::String(s) => s.clone(),
-                    serde_json::Value::Array(arr) => {
-                        arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    }
+                    serde_json::Value::Array(arr) => arr
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     other => other.to_string(),
                 };
                 if let Ok(header_name) = reqwest::header::HeaderName::from_bytes(key.as_bytes()) {

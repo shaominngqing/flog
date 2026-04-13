@@ -13,9 +13,8 @@ static ERROR_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(error|exception|fatal|crash|panic|fail(ed|ure)?)\b").unwrap()
 });
 
-static WARNING_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(warn(ing)?|deprecated|caution)\b").unwrap()
-});
+static WARNING_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(warn(ing)?|deprecated|caution)\b").unwrap());
 
 static DEBUG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(debug|trace|verbose)\b").unwrap());

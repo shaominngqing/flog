@@ -9,11 +9,11 @@
 //! Also handles the dropdown source picker while connected.
 
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 use unicode_width::UnicodeWidthStr;
@@ -22,27 +22,23 @@ use crate::app::{App, SourceSelectPhase};
 
 // ── Catppuccin Macchiato palette ──
 
-const BASE: Color      = Color::Rgb(36, 39, 58);
-const MANTLE: Color    = Color::Rgb(30, 32, 48);
-const SURFACE0: Color  = Color::Rgb(54, 58, 79);
-const SURFACE1: Color  = Color::Rgb(73, 77, 100);
-const OVERLAY0: Color  = Color::Rgb(110, 115, 141);
-const TEXT: Color       = Color::Rgb(202, 211, 245);
-const BLUE: Color      = Color::Rgb(138, 173, 244);
-const SAPPHIRE: Color  = Color::Rgb(125, 196, 228);
-const TEAL: Color      = Color::Rgb(139, 213, 202);
-const GREEN: Color     = Color::Rgb(166, 218, 149);
-const YELLOW: Color    = Color::Rgb(238, 212, 159);
-const PEACH: Color     = Color::Rgb(245, 169, 127);
-const MAUVE: Color     = Color::Rgb(198, 160, 246);
+const BASE: Color = Color::Rgb(36, 39, 58);
+const MANTLE: Color = Color::Rgb(30, 32, 48);
+const SURFACE0: Color = Color::Rgb(54, 58, 79);
+const SURFACE1: Color = Color::Rgb(73, 77, 100);
+const OVERLAY0: Color = Color::Rgb(110, 115, 141);
+const TEXT: Color = Color::Rgb(202, 211, 245);
+const BLUE: Color = Color::Rgb(138, 173, 244);
+const SAPPHIRE: Color = Color::Rgb(125, 196, 228);
+const TEAL: Color = Color::Rgb(139, 213, 202);
+const GREEN: Color = Color::Rgb(166, 218, 149);
+const YELLOW: Color = Color::Rgb(238, 212, 159);
+const PEACH: Color = Color::Rgb(245, 169, 127);
+const MAUVE: Color = Color::Rgb(198, 160, 246);
 
 // ── Banner ASCII art ──
 
-const BANNER: &[&str] = &[
-    " ╔═╗╦  ╔═╗╔═╗ ",
-    " ╠╣ ║  ║ ║║ ╦ ",
-    " ╚  ╩═╝╚═╝╚═╝ ",
-];
+const BANNER: &[&str] = &[" ╔═╗╦  ╔═╗╔═╗ ", " ╠╣ ║  ║ ║║ ╦ ", " ╚  ╩═╝╚═╝╚═╝ "];
 
 const BANNER_COLORS: &[Color] = &[BLUE, SAPPHIRE, TEAL, BLUE, MAUVE, SAPPHIRE];
 
@@ -59,13 +55,15 @@ pub fn draw_source_select(f: &mut Frame, app: &mut App, area: Rect) {
         Some(SourceSelectPhase::ScanningVm) => draw_vm_scanning(f, app, area),
         Some(SourceSelectPhase::ScanningAdb) => draw_adb_scanning(f, app, area),
         Some(SourceSelectPhase::PickVmService(services)) => {
-            let items: Vec<String> = services.iter()
+            let items: Vec<String> = services
+                .iter()
                 .map(|s| format!("{} ({})", s.name, extract_port(&s.ws_url)))
                 .collect();
             draw_pick_list(f, app, area, "Select VM Service", &items);
         }
         Some(SourceSelectPhase::PickAdbDevice(devices)) => {
-            let items: Vec<String> = devices.iter()
+            let items: Vec<String> = devices
+                .iter()
                 .map(|d| format!("{} ({})", d.model, d.serial))
                 .collect();
             draw_pick_list(f, app, area, "Select Device", &items);
@@ -148,13 +146,16 @@ fn draw_banner_with_menu(f: &mut Frame, app: &mut App, area: Rect) {
         let marker = if is_sel { "\u{25b8} " } else { "  " };
 
         // Top border of card
-        let corner_l = if is_sel { "┌" } else { "┌" };
-        let corner_r = if is_sel { "┐" } else { "┐" };
+        let corner_l = "┌";
+        let corner_r = "┐";
         {
             let border_inner = "─".repeat(menu_w.saturating_sub(2));
             let mut spans = vec![
                 Span::styled(" ".repeat(menu_pad), Style::default().bg(BASE)),
-                Span::styled(format!("{}{}{}", corner_l, border_inner, corner_r), Style::default().fg(border_color).bg(BASE)),
+                Span::styled(
+                    format!("{}{}{}", corner_l, border_inner, corner_r),
+                    Style::default().fg(border_color).bg(BASE),
+                ),
             ];
             pad_line(&mut spans, w);
             lines.push(Line::from(spans));
@@ -168,16 +169,36 @@ fn draw_banner_with_menu(f: &mut Frame, app: &mut App, area: Rect) {
 
             let item_y = area.y + lines.len() as u16;
             let menu_x = menu_pad as u16 + area.x;
-            app.layout.source_select_items.push((item_y, menu_x, menu_x + menu_w as u16, i));
+            app.layout
+                .source_select_items
+                .push((item_y, menu_x, menu_x + menu_w as u16, i));
 
             let mut spans = vec![
                 Span::styled(" ".repeat(menu_pad), Style::default().bg(BASE)),
                 Span::styled("│", Style::default().fg(border_color).bg(card_bg)),
-                Span::styled(format!(" {}", marker), Style::default().fg(title_color).bg(card_bg)),
-                Span::styled(format!("{} ", icon), Style::default().fg(icon_color).bg(card_bg).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{}", title), Style::default().fg(title_color).bg(card_bg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(" {}", marker),
+                    Style::default().fg(title_color).bg(card_bg),
+                ),
+                Span::styled(
+                    format!("{} ", icon),
+                    Style::default()
+                        .fg(icon_color)
+                        .bg(card_bg)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    title.to_string(),
+                    Style::default()
+                        .fg(title_color)
+                        .bg(card_bg)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled("  ", Style::default().bg(card_bg)),
-                Span::styled(short_desc.to_string(), Style::default().fg(desc_color).bg(card_bg)),
+                Span::styled(
+                    short_desc.to_string(),
+                    Style::default().fg(desc_color).bg(card_bg),
+                ),
                 Span::styled(" ".repeat(text_pad), Style::default().bg(card_bg)),
                 Span::styled("│", Style::default().fg(border_color).bg(card_bg)),
             ];
@@ -190,7 +211,10 @@ fn draw_banner_with_menu(f: &mut Frame, app: &mut App, area: Rect) {
             let border_inner = "─".repeat(menu_w.saturating_sub(2));
             let mut spans = vec![
                 Span::styled(" ".repeat(menu_pad), Style::default().bg(BASE)),
-                Span::styled(format!("└{}┘", border_inner), Style::default().fg(border_color).bg(BASE)),
+                Span::styled(
+                    format!("└{}┘", border_inner),
+                    Style::default().fg(border_color).bg(BASE),
+                ),
             ];
             pad_line(&mut spans, w);
             lines.push(Line::from(spans));
@@ -222,8 +246,12 @@ fn draw_banner_with_menu(f: &mut Frame, app: &mut App, area: Rect) {
     // Detail lines of currently selected card
     if let Some(&(_icon, _title, _short, detail)) = cards.get(sel) {
         for (di, &detail_line) in detail.iter().enumerate() {
-            let fg = if di == detail.len() - 1 { TEAL } else { OVERLAY0 };
-            let prefix = if di == 0 { "  " } else { "  " };
+            let fg = if di == detail.len() - 1 {
+                TEAL
+            } else {
+                OVERLAY0
+            };
+            let prefix = "  ";
             let full = format!("{}{}", prefix, detail_line);
             let pad = menu_pad + 2;
             let mut spans = vec![
@@ -283,7 +311,10 @@ fn draw_vm_scanning(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Top padding
     for _ in 0..top_pad {
-        lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+        lines.push(Line::from(Span::styled(
+            " ".repeat(w),
+            Style::default().bg(BASE),
+        )));
     }
 
     // Draw radar rows
@@ -297,7 +328,7 @@ fn draw_vm_scanning(f: &mut Frame, app: &mut App, area: Rect) {
 
         for col in 0..=(radar_w * 2) {
             let rx = col as f64 - cx; // -cx..cx
-            // Normalize to circle space (compensate for char aspect ratio ~2:1)
+                                      // Normalize to circle space (compensate for char aspect ratio ~2:1)
             let nx = rx / cx;
             let ny = ry / cy;
             let dist = (nx * nx + ny * ny).sqrt();
@@ -312,9 +343,10 @@ fn draw_vm_scanning(f: &mut Frame, app: &mut App, area: Rect) {
         let radar_total_w = radar_w * 2 + 1;
         let pad_left = w.saturating_sub(radar_total_w) / 2;
 
-        let mut spans: Vec<Span> = vec![
-            Span::styled(" ".repeat(pad_left), Style::default().bg(BASE)),
-        ];
+        let mut spans: Vec<Span> = vec![Span::styled(
+            " ".repeat(pad_left),
+            Style::default().bg(BASE),
+        )];
 
         // Group consecutive same-color chars into spans
         let mut current_str = String::new();
@@ -332,18 +364,27 @@ fn draw_vm_scanning(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
         if !current_str.is_empty() {
-            spans.push(Span::styled(current_str, Style::default().fg(current_color).bg(BASE)));
+            spans.push(Span::styled(
+                current_str,
+                Style::default().fg(current_color).bg(BASE),
+            ));
         }
 
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
         if used < w {
-            spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE)));
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(BASE),
+            ));
         }
         lines.push(Line::from(spans));
     }
 
     // Blank line
-    lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+    lines.push(Line::from(Span::styled(
+        " ".repeat(w),
+        Style::default().bg(BASE),
+    )));
 
     // Spinner + label (centered)
     let spinner = braille_spinner(tick);
@@ -354,7 +395,11 @@ fn draw_vm_scanning(f: &mut Frame, app: &mut App, area: Rect) {
     lines.push(render_progress_line(tick, w, BLUE));
 
     // Hint
-    lines.push(centered_text_line("Run 'flutter run' in another terminal", w, OVERLAY0));
+    lines.push(centered_text_line(
+        "Run 'flutter run' in another terminal",
+        w,
+        OVERLAY0,
+    ));
 
     // Esc hint
     {
@@ -362,17 +407,26 @@ fn draw_vm_scanning(f: &mut Frame, app: &mut App, area: Rect) {
         let pad = w.saturating_sub(esc_text.len()) / 2;
         let mut spans = vec![Span::styled(" ".repeat(pad), Style::default().bg(BASE))];
         spans.push(Span::styled("Esc", Style::default().fg(BLUE).bg(BASE)));
-        spans.push(Span::styled(" back", Style::default().fg(OVERLAY0).bg(BASE)));
+        spans.push(Span::styled(
+            " back",
+            Style::default().fg(OVERLAY0).bg(BASE),
+        ));
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
         if used < w {
-            spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE)));
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(BASE),
+            ));
         }
         lines.push(Line::from(spans));
     }
 
     // Fill remaining
     while lines.len() < h {
-        lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+        lines.push(Line::from(Span::styled(
+            " ".repeat(w),
+            Style::default().bg(BASE),
+        )));
     }
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
@@ -408,7 +462,11 @@ fn radar_char(dist: f64, char_angle: f64, sweep_angle: f64, tick: u64) -> (char,
     // Sweep trail (wider = more visible)
     let trail_width = 0.4;
     let in_trail = angle_diff < trail_width;
-    let trail_intensity = if in_trail { 1.0 - (angle_diff / trail_width) } else { 0.0 };
+    let trail_intensity = if in_trail {
+        1.0 - (angle_diff / trail_width)
+    } else {
+        0.0
+    };
 
     // Pulse ring
     let pulse_r = ((tick as f64 * 0.06) % 1.2).min(1.0);
@@ -416,11 +474,15 @@ fn radar_char(dist: f64, char_angle: f64, sweep_angle: f64, tick: u64) -> (char,
 
     if trail_intensity > 0.7 && dist > 0.1 {
         // Bright sweep
-        if on_ring { return ('◆', BLUE); }
+        if on_ring {
+            return ('◆', BLUE);
+        }
         return ('░', BLUE);
     } else if trail_intensity > 0.4 && dist > 0.1 {
         // Medium trail
-        if on_ring { return ('◇', SAPPHIRE); }
+        if on_ring {
+            return ('◇', SAPPHIRE);
+        }
         return ('░', SAPPHIRE);
     } else if trail_intensity > 0.1 && dist > 0.1 {
         // Fading trail
@@ -431,9 +493,12 @@ fn radar_char(dist: f64, char_angle: f64, sweep_angle: f64, tick: u64) -> (char,
         return ('·', SURFACE0);
     } else if dist < 1.0 {
         // Cross hairs at center
-        if (dist > 0.1) && ((char_angle.abs() < 0.03) || ((char_angle - std::f64::consts::PI).abs() < 0.03)
-            || ((char_angle - std::f64::consts::FRAC_PI_2).abs() < 0.03)
-            || ((char_angle + std::f64::consts::FRAC_PI_2).abs() < 0.03)) {
+        if (dist > 0.1)
+            && ((char_angle.abs() < 0.03)
+                || ((char_angle - std::f64::consts::PI).abs() < 0.03)
+                || ((char_angle - std::f64::consts::FRAC_PI_2).abs() < 0.03)
+                || ((char_angle + std::f64::consts::FRAC_PI_2).abs() < 0.03))
+        {
             return ('·', SURFACE0);
         }
         return (' ', BASE);
@@ -460,7 +525,10 @@ fn draw_adb_scanning(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Top padding
     for _ in 0..top_pad {
-        lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+        lines.push(Line::from(Span::styled(
+            " ".repeat(w),
+            Style::default().bg(BASE),
+        )));
     }
 
     // Device + waves animation
@@ -490,15 +558,19 @@ fn draw_adb_scanning(f: &mut Frame, app: &mut App, area: Rect) {
         let dev_w = device_line.width();
         let pad_left = w.saturating_sub(dev_w + 20) / 2; // extra space for waves
 
-        let mut spans: Vec<Span> = vec![
-            Span::styled(" ".repeat(pad_left), Style::default().bg(BASE)),
-        ];
+        let mut spans: Vec<Span> = vec![Span::styled(
+            " ".repeat(pad_left),
+            Style::default().bg(BASE),
+        )];
 
         // Left waves (only for rows 1-6, the "screen" area)
-        if row_idx >= 1 && row_idx <= 6 {
+        if (1..=6).contains(&row_idx) {
             let wave_str = wave_chars_at(row_idx as f64 - 3.5, phase, phase2, phase3, true);
             for (ch, color) in wave_str {
-                spans.push(Span::styled(ch.to_string(), Style::default().fg(color).bg(BASE)));
+                spans.push(Span::styled(
+                    ch.to_string(),
+                    Style::default().fg(color).bg(BASE),
+                ));
             }
         } else {
             spans.push(Span::styled("          ", Style::default().bg(BASE)));
@@ -507,41 +579,73 @@ fn draw_adb_scanning(f: &mut Frame, app: &mut App, area: Rect) {
         // Device line
         if row_idx == 3 {
             // The play button row
-            let play_color = if (tick / 15) % 2 == 0 { GREEN } else { TEAL };
+            let play_color = if (tick / 15).is_multiple_of(2) {
+                GREEN
+            } else {
+                TEAL
+            };
             // Split at the ▶ character
             let parts: Vec<&str> = device_line.splitn(3, '▶').collect();
             if parts.len() == 3 {
-                spans.push(Span::styled(parts[0], Style::default().fg(SAPPHIRE).bg(BASE)));
+                spans.push(Span::styled(
+                    parts[0],
+                    Style::default().fg(SAPPHIRE).bg(BASE),
+                ));
                 spans.push(Span::styled("▶", Style::default().fg(play_color).bg(BASE)));
-                spans.push(Span::styled(parts[2], Style::default().fg(SAPPHIRE).bg(BASE)));
+                spans.push(Span::styled(
+                    parts[2],
+                    Style::default().fg(SAPPHIRE).bg(BASE),
+                ));
             } else {
-                spans.push(Span::styled(*device_line, Style::default().fg(SAPPHIRE).bg(BASE)));
+                spans.push(Span::styled(
+                    *device_line,
+                    Style::default().fg(SAPPHIRE).bg(BASE),
+                ));
             }
         } else if row_idx >= 8 {
             // USB cable area
-            let cable_color = if (tick / 10) % 3 == 0 { PEACH } else { YELLOW };
-            spans.push(Span::styled(*device_line, Style::default().fg(cable_color).bg(BASE)));
+            let cable_color = if (tick / 10).is_multiple_of(3) {
+                PEACH
+            } else {
+                YELLOW
+            };
+            spans.push(Span::styled(
+                *device_line,
+                Style::default().fg(cable_color).bg(BASE),
+            ));
         } else {
-            spans.push(Span::styled(*device_line, Style::default().fg(SAPPHIRE).bg(BASE)));
+            spans.push(Span::styled(
+                *device_line,
+                Style::default().fg(SAPPHIRE).bg(BASE),
+            ));
         }
 
         // Right waves
-        if row_idx >= 1 && row_idx <= 6 {
+        if (1..=6).contains(&row_idx) {
             let wave_str = wave_chars_at(row_idx as f64 - 3.5, phase, phase2, phase3, false);
             for (ch, color) in wave_str {
-                spans.push(Span::styled(ch.to_string(), Style::default().fg(color).bg(BASE)));
+                spans.push(Span::styled(
+                    ch.to_string(),
+                    Style::default().fg(color).bg(BASE),
+                ));
             }
         }
 
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
         if used < w {
-            spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE)));
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(BASE),
+            ));
         }
         lines.push(Line::from(spans));
     }
 
     // Blank line
-    lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+    lines.push(Line::from(Span::styled(
+        " ".repeat(w),
+        Style::default().bg(BASE),
+    )));
 
     // Spinner + label
     let spinner = braille_spinner(tick);
@@ -552,7 +656,11 @@ fn draw_adb_scanning(f: &mut Frame, app: &mut App, area: Rect) {
     lines.push(render_progress_line(tick, w, PEACH));
 
     // Hint
-    lines.push(centered_text_line("Plug in your device or start an emulator", w, OVERLAY0));
+    lines.push(centered_text_line(
+        "Plug in your device or start an emulator",
+        w,
+        OVERLAY0,
+    ));
 
     // Esc hint
     {
@@ -560,24 +668,39 @@ fn draw_adb_scanning(f: &mut Frame, app: &mut App, area: Rect) {
         let pad = w.saturating_sub(esc_text.len()) / 2;
         let mut spans = vec![Span::styled(" ".repeat(pad), Style::default().bg(BASE))];
         spans.push(Span::styled("Esc", Style::default().fg(PEACH).bg(BASE)));
-        spans.push(Span::styled(" back", Style::default().fg(OVERLAY0).bg(BASE)));
+        spans.push(Span::styled(
+            " back",
+            Style::default().fg(OVERLAY0).bg(BASE),
+        ));
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
         if used < w {
-            spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE)));
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(BASE),
+            ));
         }
         lines.push(Line::from(spans));
     }
 
     // Fill remaining
     while lines.len() < h {
-        lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+        lines.push(Line::from(Span::styled(
+            " ".repeat(w),
+            Style::default().bg(BASE),
+        )));
     }
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }
 
 /// Generate wave characters for a given vertical offset from center.
-fn wave_chars_at(vert_offset: f64, phase: f64, phase2: f64, phase3: f64, is_left: bool) -> Vec<(char, Color)> {
+fn wave_chars_at(
+    vert_offset: f64,
+    phase: f64,
+    phase2: f64,
+    phase3: f64,
+    is_left: bool,
+) -> Vec<(char, Color)> {
     let mut result = Vec::new();
     let waves_w = 10;
 
@@ -606,7 +729,9 @@ fn wave_chars_at(vert_offset: f64, phase: f64, phase2: f64, phase3: f64, is_left
         let mut color = BASE;
 
         for (wi, &p) in phases.iter().enumerate() {
-            if p > 5.0 { continue; } // faded out
+            if p > 5.0 {
+                continue;
+            } // faded out
             let wave_pos = p * 1.8; // wave speed
             let wave_dist = (dist - wave_pos).abs();
 
@@ -651,15 +776,24 @@ fn draw_pick_list(f: &mut Frame, app: &mut App, area: Rect, title: &str, items: 
     let top_pad = h.saturating_sub(total) / 3;
 
     for _ in 0..top_pad {
-        lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+        lines.push(Line::from(Span::styled(
+            " ".repeat(w),
+            Style::default().bg(BASE),
+        )));
     }
 
     for (row, text) in BANNER.iter().enumerate() {
         lines.push(render_banner_line(text, row, tick, w));
     }
 
-    lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
-    lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+    lines.push(Line::from(Span::styled(
+        " ".repeat(w),
+        Style::default().bg(BASE),
+    )));
+    lines.push(Line::from(Span::styled(
+        " ".repeat(w),
+        Style::default().bg(BASE),
+    )));
 
     // Panel
     let panel_w = 50usize.min(w.saturating_sub(4));
@@ -677,14 +811,31 @@ fn draw_pick_list(f: &mut Frame, app: &mut App, area: Rect, title: &str, items: 
     );
     // Build properly
     {
-        let mut spans = vec![Span::styled(" ".repeat(panel_pad), Style::default().bg(BASE))];
+        let mut spans = vec![Span::styled(
+            " ".repeat(panel_pad),
+            Style::default().bg(BASE),
+        )];
         spans.push(Span::styled("┌", Style::default().fg(SURFACE0).bg(BASE)));
-        spans.push(Span::styled(&title_str, Style::default().fg(BLUE).bg(BASE).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(
+            &title_str,
+            Style::default()
+                .fg(BLUE)
+                .bg(BASE)
+                .add_modifier(Modifier::BOLD),
+        ));
         let remaining = panel_w.saturating_sub(2 + title_str.width());
-        spans.push(Span::styled("─".repeat(remaining), Style::default().fg(SURFACE0).bg(BASE)));
+        spans.push(Span::styled(
+            "─".repeat(remaining),
+            Style::default().fg(SURFACE0).bg(BASE),
+        ));
         spans.push(Span::styled("┐", Style::default().fg(SURFACE0).bg(BASE)));
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
-        if used < w { spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE))); }
+        if used < w {
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(BASE),
+            ));
+        }
         lines.push(Line::from(spans));
     }
     let _ = border_top; // suppress unused
@@ -695,7 +846,10 @@ fn draw_pick_list(f: &mut Frame, app: &mut App, area: Rect, title: &str, items: 
         let row_bg = if is_sel { SURFACE0 } else { MANTLE };
         let marker = if is_sel { " \u{25b8} " } else { "   " };
         let style = if is_sel {
-            Style::default().fg(BLUE).bg(row_bg).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(BLUE)
+                .bg(row_bg)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(TEXT).bg(row_bg)
         };
@@ -709,7 +863,9 @@ fn draw_pick_list(f: &mut Frame, app: &mut App, area: Rect, title: &str, items: 
 
         // Only register if visible
         if (lines.len()) < h.saturating_sub(2) {
-            app.layout.source_select_items.push((item_y, panel_x, panel_x + panel_w as u16, i));
+            app.layout
+                .source_select_items
+                .push((item_y, panel_x, panel_x + panel_w as u16, i));
         }
 
         let mut spans = vec![
@@ -720,7 +876,12 @@ fn draw_pick_list(f: &mut Frame, app: &mut App, area: Rect, title: &str, items: 
             Span::styled("│", Style::default().fg(SURFACE0).bg(MANTLE)),
         ];
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
-        if used < w { spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE))); }
+        if used < w {
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(BASE),
+            ));
+        }
         lines.push(Line::from(spans));
     }
 
@@ -739,28 +900,47 @@ fn draw_pick_list(f: &mut Frame, app: &mut App, area: Rect, title: &str, items: 
         ];
         let content_used: usize = spans.iter().skip(2).map(|s| s.content.width()).sum();
         let hint_pad = inner_w.saturating_sub(content_used);
-        spans.push(Span::styled(" ".repeat(hint_pad), Style::default().bg(MANTLE)));
+        spans.push(Span::styled(
+            " ".repeat(hint_pad),
+            Style::default().bg(MANTLE),
+        ));
         spans.push(Span::styled("│", Style::default().fg(SURFACE0).bg(MANTLE)));
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
-        if used < w { spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE))); }
+        if used < w {
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(BASE),
+            ));
+        }
         lines.push(Line::from(spans));
     }
 
     // Bottom border
     {
-        let mut spans = vec![Span::styled(" ".repeat(panel_pad), Style::default().bg(BASE))];
+        let mut spans = vec![Span::styled(
+            " ".repeat(panel_pad),
+            Style::default().bg(BASE),
+        )];
         spans.push(Span::styled(
             format!("└{}┘", "─".repeat(panel_w.saturating_sub(2))),
             Style::default().fg(SURFACE0).bg(BASE),
         ));
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
-        if used < w { spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE))); }
+        if used < w {
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(BASE),
+            ));
+        }
         lines.push(Line::from(spans));
     }
 
     // Fill remaining
     while lines.len() < h {
-        lines.push(Line::from(Span::styled(" ".repeat(w), Style::default().bg(BASE))));
+        lines.push(Line::from(Span::styled(
+            " ".repeat(w),
+            Style::default().bg(BASE),
+        )));
     }
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
@@ -780,22 +960,36 @@ pub fn draw_source_dropdown(f: &mut Frame, app: &mut App, status_bar_y: u16) {
 
     // Build list of items (excluding the currently connected one)
     let discovered: Vec<(String, String, bool)> = if tab == 0 {
-        app.dropdown.discovered_vm.iter()
+        app.dropdown
+            .discovered_vm
+            .iter()
             .map(|s| {
-                let is_current = app.connected && app.source_name.contains(&extract_port(&s.ws_url));
-                (format!("{} :{}", s.name, extract_port(&s.ws_url)), s.ws_url.clone(), is_current)
+                let is_current =
+                    app.connected && app.source_name.contains(&extract_port(&s.ws_url));
+                (
+                    format!("{} :{}", s.name, extract_port(&s.ws_url)),
+                    s.ws_url.clone(),
+                    is_current,
+                )
             })
             .collect()
     } else {
-        app.dropdown.discovered_adb.iter()
+        app.dropdown
+            .discovered_adb
+            .iter()
             .map(|d| {
                 let is_current = app.connected && app.source_name.contains(&d.model);
-                (format!("{} ({})", d.model, d.serial), d.serial.clone(), is_current)
+                (
+                    format!("{} ({})", d.model, d.serial),
+                    d.serial.clone(),
+                    is_current,
+                )
             })
             .collect()
     };
 
-    let selectable: Vec<(&str, &str)> = discovered.iter()
+    let selectable: Vec<(&str, &str)> = discovered
+        .iter()
         .filter(|(_, _, is_current)| !is_current)
         .map(|(label, id, _)| (label.as_str(), id.as_str()))
         .collect();
@@ -816,7 +1010,11 @@ pub fn draw_source_dropdown(f: &mut Frame, app: &mut App, status_bar_y: u16) {
     //   + 5 item slots + scanning(1) + border(1) = 12
     let panel_h = 12u16.min(status_bar_y);
     let panel_w = 56u16.min(f.area().width.saturating_sub(4));
-    let panel_x = app.layout.source_info_x.0.min(f.area().width.saturating_sub(panel_w));
+    let panel_x = app
+        .layout
+        .source_info_x
+        .0
+        .min(f.area().width.saturating_sub(panel_w));
     let panel_y = status_bar_y.saturating_sub(panel_h);
 
     let panel = Rect::new(panel_x, panel_y, panel_w, panel_h);
@@ -837,12 +1035,18 @@ pub fn draw_source_dropdown(f: &mut Frame, app: &mut App, status_bar_y: u16) {
 
     // ── Tab row ──
     let vm_tab_style = if tab == 0 {
-        Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(MANTLE)
+            .bg(BLUE)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(OVERLAY0).bg(MANTLE)
     };
     let adb_tab_style = if tab == 1 {
-        Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(MANTLE)
+            .bg(BLUE)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(OVERLAY0).bg(MANTLE)
     };
@@ -866,7 +1070,10 @@ pub fn draw_source_dropdown(f: &mut Frame, app: &mut App, status_bar_y: u16) {
             Span::styled(&app.source_name, Style::default().fg(GREEN).bg(MANTLE)),
         ]));
     } else {
-        lines.push(Line::from(Span::styled(" Not connected", Style::default().fg(OVERLAY0).bg(MANTLE))));
+        lines.push(Line::from(Span::styled(
+            " Not connected",
+            Style::default().fg(OVERLAY0).bg(MANTLE),
+        )));
     }
 
     // ── Separator ──
@@ -882,26 +1089,36 @@ pub fn draw_source_dropdown(f: &mut Frame, app: &mut App, status_bar_y: u16) {
     let has_below = visible_end < selectable_count;
     let mut rendered_items = 0usize;
 
-    for si in scroll..visible_end {
-        let (label, _) = selectable[si];
+    for (si, &(label, _)) in selectable.iter().enumerate().take(visible_end).skip(scroll) {
         let is_sel = si == sel;
         let marker = if is_sel { " \u{25b8} " } else { "   " };
         let style = if is_sel {
-            Style::default().fg(BLUE).bg(SURFACE0).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(BLUE)
+                .bg(SURFACE0)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(TEXT).bg(MANTLE)
         };
 
         let item_y = inner.y + lines.len() as u16;
-        app.layout.dropdown_items.push((item_y, inner.x, inner.x + inner.width, si));
-        lines.push(Line::from(Span::styled(format!("{}{}", marker, label), style)));
+        app.layout
+            .dropdown_items
+            .push((item_y, inner.x, inner.x + inner.width, si));
+        lines.push(Line::from(Span::styled(
+            format!("{}{}", marker, label),
+            style,
+        )));
         rendered_items += 1;
     }
 
     // Fill remaining item slots with empty lines
     for slot in rendered_items..DROPDOWN_VISIBLE_ITEMS {
         if selectable_count == 0 && slot == 0 {
-            lines.push(Line::from(Span::styled(" No devices found", Style::default().fg(OVERLAY0).bg(MANTLE))));
+            lines.push(Line::from(Span::styled(
+                " No devices found",
+                Style::default().fg(OVERLAY0).bg(MANTLE),
+            )));
         } else {
             lines.push(Line::from(Span::styled("", Style::default().bg(MANTLE))));
         }
@@ -910,18 +1127,31 @@ pub fn draw_source_dropdown(f: &mut Frame, app: &mut App, status_bar_y: u16) {
     // ── Scanning indicator + scroll hints ──
     let spinner = braille_spinner(tick);
     let mut scan_spans = vec![
-        Span::styled(format!(" {} ", spinner), Style::default().fg(BLUE).bg(MANTLE)),
+        Span::styled(
+            format!(" {} ", spinner),
+            Style::default().fg(BLUE).bg(MANTLE),
+        ),
         Span::styled("Scanning...", Style::default().fg(OVERLAY0).bg(MANTLE)),
     ];
     if has_above || has_below {
-        let arrow = if has_above && has_below { " \u{2191}\u{2193}" }
-            else if has_above { " \u{2191}" }
-            else { " \u{2193}" };
-        scan_spans.push(Span::styled(arrow, Style::default().fg(SURFACE1).bg(MANTLE)));
+        let arrow = if has_above && has_below {
+            " \u{2191}\u{2193}"
+        } else if has_above {
+            " \u{2191}"
+        } else {
+            " \u{2193}"
+        };
+        scan_spans.push(Span::styled(
+            arrow,
+            Style::default().fg(SURFACE1).bg(MANTLE),
+        ));
     }
     lines.push(Line::from(scan_spans));
 
-    f.render_widget(Paragraph::new(lines).style(Style::default().bg(MANTLE)), inner);
+    f.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(MANTLE)),
+        inner,
+    );
 }
 
 // ══════════════════════════════════════
@@ -937,14 +1167,23 @@ fn fill_line(w: usize) -> Line<'static> {
 fn pad_line(spans: &mut Vec<Span<'static>>, w: usize) {
     let used: usize = spans.iter().map(|s| s.content.width()).sum();
     if used < w {
-        spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(BASE)));
+        spans.push(Span::styled(
+            " ".repeat(w - used),
+            Style::default().bg(BASE),
+        ));
     }
 }
 
 fn braille_spinner(tick: u64) -> &'static str {
     match (tick / 4) % 8 {
-        0 => "\u{28fe}", 1 => "\u{28fd}", 2 => "\u{28fb}", 3 => "\u{28bf}",
-        4 => "\u{287f}", 5 => "\u{28df}", 6 => "\u{28ef}", _ => "\u{28f7}",
+        0 => "\u{28fe}",
+        1 => "\u{28fd}",
+        2 => "\u{28fb}",
+        3 => "\u{28bf}",
+        4 => "\u{287f}",
+        5 => "\u{28df}",
+        6 => "\u{28ef}",
+        _ => "\u{28f7}",
     }
 }
 
@@ -953,9 +1192,10 @@ fn render_banner_line(text: &str, row: usize, tick: u64, total_w: usize) -> Line
     let banner_w = text.width();
     let pad_left = total_w.saturating_sub(banner_w) / 2;
 
-    let mut spans: Vec<Span> = vec![
-        Span::styled(" ".repeat(pad_left), Style::default().bg(BASE)),
-    ];
+    let mut spans: Vec<Span> = vec![Span::styled(
+        " ".repeat(pad_left),
+        Style::default().bg(BASE),
+    )];
 
     for (ci, ch) in text.chars().enumerate() {
         if ch == ' ' {
@@ -964,14 +1204,20 @@ fn render_banner_line(text: &str, row: usize, tick: u64, total_w: usize) -> Line
             let color_idx = (ci + row + tick as usize / 3) % BANNER_COLORS.len();
             spans.push(Span::styled(
                 ch.to_string(),
-                Style::default().fg(BANNER_COLORS[color_idx]).bg(BASE).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(BANNER_COLORS[color_idx])
+                    .bg(BASE)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
     }
 
     let used: usize = spans.iter().map(|s| s.content.width()).sum();
     if used < total_w {
-        spans.push(Span::styled(" ".repeat(total_w - used), Style::default().bg(BASE)));
+        spans.push(Span::styled(
+            " ".repeat(total_w - used),
+            Style::default().bg(BASE),
+        ));
     }
 
     Line::from(spans)
@@ -986,7 +1232,10 @@ fn centered_text_line(text: &str, total_w: usize, fg: Color) -> Line<'static> {
     ];
     let used = pad + text.len();
     if used < total_w {
-        spans.push(Span::styled(" ".repeat(total_w - used), Style::default().bg(BASE)));
+        spans.push(Span::styled(
+            " ".repeat(total_w - used),
+            Style::default().bg(BASE),
+        ));
     }
     Line::from(spans)
 }
@@ -1000,12 +1249,10 @@ fn render_progress_line(tick: u64, total_w: usize, accent: Color) -> Line<'stati
     let phase = ((tick as f64 * 0.05) % 1.0 * bar_w as f64) as usize;
     let glow_w = (bar_w / 5).max(3);
 
-    let mut spans: Vec<Span> = vec![
-        Span::styled(" ".repeat(pad), Style::default().bg(BASE)),
-    ];
+    let mut spans: Vec<Span> = vec![Span::styled(" ".repeat(pad), Style::default().bg(BASE))];
 
     for i in 0..bar_w {
-        let dist = if i >= phase { i - phase } else { phase - i };
+        let dist = i.abs_diff(phase);
         let (ch, color) = if dist < glow_w / 3 {
             ('━', accent)
         } else if dist < glow_w {
@@ -1013,18 +1260,26 @@ fn render_progress_line(tick: u64, total_w: usize, accent: Color) -> Line<'stati
         } else {
             ('┈', SURFACE0)
         };
-        spans.push(Span::styled(ch.to_string(), Style::default().fg(color).bg(BASE)));
+        spans.push(Span::styled(
+            ch.to_string(),
+            Style::default().fg(color).bg(BASE),
+        ));
     }
 
     let used: usize = spans.iter().map(|s| s.content.width()).sum();
     if used < total_w {
-        spans.push(Span::styled(" ".repeat(total_w - used), Style::default().bg(BASE)));
+        spans.push(Span::styled(
+            " ".repeat(total_w - used),
+            Style::default().bg(BASE),
+        ));
     }
     Line::from(spans)
 }
 
 fn extract_port(ws_url: &str) -> String {
-    ws_url.split(':').nth(2)
+    ws_url
+        .split(':')
+        .nth(2)
         .and_then(|s| s.split('/').next())
         .unwrap_or("?")
         .to_string()

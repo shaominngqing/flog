@@ -124,12 +124,8 @@ async fn handle_request(
             MOCK_ID_OFFSET + a.network_store.len() as u64
         };
 
-        let mut entry = NetworkEntry::new_http(
-            mock_id,
-            method.clone(),
-            target_url.clone(),
-            String::new(),
-        );
+        let mut entry =
+            NetworkEntry::new_http(mock_id, method.clone(), target_url.clone(), String::new());
         entry.source = EntrySource::Mocked;
         entry.status = NetworkStatus::Completed;
         entry.http_status = Some(rule.status_code);
@@ -149,9 +145,7 @@ async fn handle_request(
             .header("content-type", "application/json")
             .header("x-flog-mock", "true")
             .body(Full::new(Bytes::from(rule.response_body)))
-            .unwrap_or_else(|_| {
-                Response::new(Full::new(Bytes::from("mock error")))
-            });
+            .unwrap_or_else(|_| Response::new(Full::new(Bytes::from("mock error"))));
 
         return Ok(response);
     }

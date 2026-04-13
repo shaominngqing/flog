@@ -5,14 +5,11 @@ pub mod filter;
 pub mod stats;
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, Borders, Paragraph,
-        Scrollbar, ScrollbarOrientation, ScrollbarState,
-    },
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -21,9 +18,8 @@ use crate::domain::network::{EntrySource, NetworkStatus, Protocol};
 
 // Import shared palette from parent
 use super::{
-    BASE, MANTLE, SURFACE0, SURFACE1, OVERLAY0, TEXT, SUBTEXT0,
-    BLUE, SAPPHIRE, TEAL, GREEN, YELLOW, PEACH, RED, MAUVE, PINK, LAVENDER,
-    safe_pad, safe_truncate,
+    safe_pad, safe_truncate, BASE, BLUE, GREEN, LAVENDER, MANTLE, MAUVE, OVERLAY0, PEACH, PINK,
+    RED, SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1, TEAL, TEXT, YELLOW,
 };
 
 // Column widths
@@ -117,7 +113,10 @@ fn protocol_pill(protocol: Protocol) -> Span<'static> {
         Protocol::Ws => ("WS", MANTLE, PINK),
     };
     let text = format!(" {} ", label);
-    Span::styled(text, Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD))
+    Span::styled(
+        text,
+        Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
+    )
 }
 
 // ══════════════════════════════════════
@@ -129,10 +128,10 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),  // toolbar (search + filters)
-            Constraint::Length(1),  // header
-            Constraint::Min(3),     // body (table + optional detail)
-            Constraint::Length(1),  // status bar
+            Constraint::Length(2), // toolbar (search + filters)
+            Constraint::Length(1), // header
+            Constraint::Min(3),    // body (table + optional detail)
+            Constraint::Length(1), // status bar
         ])
         .split(area);
 
@@ -148,10 +147,7 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
     if app.network.show_detail {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(60),
-                Constraint::Percentage(40),
-            ])
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
             .split(rows[2]);
 
         app.layout.net_detail_x = cols[1].x;
@@ -171,10 +167,13 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_table_header(f: &mut Frame, _app: &mut App, area: Rect) {
     let bg = SURFACE0;
-    let style = Style::default().fg(TEXT).bg(bg).add_modifier(Modifier::BOLD);
+    let style = Style::default()
+        .fg(TEXT)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
 
     let mut spans: Vec<Span> = vec![
-        Span::styled(" ", Style::default().bg(bg)),  // cursor space
+        Span::styled(" ", Style::default().bg(bg)), // cursor space
         Span::styled(safe_pad("PROTO", PROTO_W), style),
         Span::styled(" ", Style::default().bg(bg)),
         Span::styled(safe_pad("METHOD", METHOD_W), style),
@@ -197,7 +196,10 @@ fn draw_table_header(f: &mut Frame, _app: &mut App, area: Rect) {
     // Fill remaining
     let used: usize = spans.iter().map(|s| s.content.width()).sum();
     if used < area.width as usize {
-        spans.push(Span::styled(" ".repeat(area.width as usize - used), Style::default().bg(bg)));
+        spans.push(Span::styled(
+            " ".repeat(area.width as usize - used),
+            Style::default().bg(bg),
+        ));
     }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -272,7 +274,7 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             };
 
             let cursor = if is_selected {
-                Span::styled("\u{258e}", Style::default().fg(BLUE).bg(row_bg))  // ▎
+                Span::styled("\u{258e}", Style::default().fg(BLUE).bg(row_bg)) // ▎
             } else {
                 Span::styled(" ", Style::default().bg(row_bg))
             };
@@ -293,7 +295,8 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             );
 
             // URL (takes remaining space) — show path only (strip query) for compact display
-            let fixed_width = 1 + PROTO_W + 1 + METHOD_W + 1 + STATUS_W + 1 + TIME_W + 1 + SIZE_W + 1;
+            let fixed_width =
+                1 + PROTO_W + 1 + METHOD_W + 1 + STATUS_W + 1 + TIME_W + 1 + SIZE_W + 1;
             let url_width = total_width.saturating_sub(fixed_width);
             let path_only = entry.path.split('?').next().unwrap_or(&entry.path);
             let url_display = safe_truncate(path_only, url_width);
@@ -307,9 +310,10 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
                 NetworkStatus::Pending => "...".to_string(),
                 NetworkStatus::Active => "active".to_string(),
                 NetworkStatus::Failed => "failed".to_string(),
-                NetworkStatus::Completed => {
-                    entry.http_status.map(|c| c.to_string()).unwrap_or_else(|| "done".to_string())
-                }
+                NetworkStatus::Completed => entry
+                    .http_status
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "done".to_string()),
             };
             let status_c = status_color(entry.status, entry.http_status);
             let status_span = Span::styled(
@@ -318,7 +322,10 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             );
 
             // Duration
-            let time_text = entry.duration.map(format_duration).unwrap_or_else(|| "-".to_string());
+            let time_text = entry
+                .duration
+                .map(format_duration)
+                .unwrap_or_else(|| "-".to_string());
             let time_c = entry.duration.map(duration_color).unwrap_or(OVERLAY0);
             let time_span = Span::styled(
                 safe_pad(&time_text, TIME_W),
@@ -327,7 +334,11 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
 
             // Size
             let size = entry.display_size();
-            let size_text = if size > 0 { format_size(size) } else { "-".to_string() };
+            let size_text = if size > 0 {
+                format_size(size)
+            } else {
+                "-".to_string()
+            };
             let size_span = Span::styled(
                 safe_pad(&size_text, SIZE_W),
                 Style::default().fg(SUBTEXT0).bg(row_bg),
@@ -352,7 +363,10 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             // Fill remaining width
             let used: usize = spans.iter().map(|s| s.content.width()).sum();
             if used < total_width {
-                spans.push(Span::styled(" ".repeat(total_width - used), Style::default().bg(row_bg)));
+                spans.push(Span::styled(
+                    " ".repeat(total_width - used),
+                    Style::default().bg(row_bg),
+                ));
             }
 
             lines.push(Line::from(spans));
@@ -369,15 +383,14 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
     // Scrollbar
     if filtered_count > height {
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_symbol("\u{2503}")  // ┃
+            .thumb_symbol("\u{2503}") // ┃
             .track_symbol(Some(" "))
             .thumb_style(Style::default().fg(SAPPHIRE))
             .track_style(Style::default().fg(SURFACE0).bg(BASE))
             .begin_symbol(None)
             .end_symbol(None);
         let max_offset = filtered_count.saturating_sub(height);
-        let mut state = ScrollbarState::new(max_offset)
-            .position(start.min(max_offset));
+        let mut state = ScrollbarState::new(max_offset).position(start.min(max_offset));
         f.render_stateful_widget(scrollbar, area, &mut state);
     }
 }
@@ -410,7 +423,7 @@ fn draw_empty_network(f: &mut Frame, app: &mut App, area: Rect) {
         )));
     } else {
         lines.push(Line::from(Span::styled(
-            "          \u{2205}",  // empty set symbol
+            "          \u{2205}", // empty set symbol
             Style::default().fg(SURFACE1),
         )));
         lines.push(Line::raw(""));
@@ -437,7 +450,13 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     // Show toast message if active
     if let Some(msg) = app.active_status().map(|s| s.to_string()) {
         let line = Line::from(vec![
-            Span::styled(" OK ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " OK ",
+                Style::default()
+                    .fg(MANTLE)
+                    .bg(GREEN)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!(" {} ", msg), Style::default().fg(TEXT).bg(bg)),
         ]);
         f.render_widget(Paragraph::new(line).style(Style::default().bg(bg)), area);
@@ -448,21 +467,39 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     // Count stats
     let total = app.network_store.len();
     let filtered = app.network.filtered_indices(&app.network_store).len();
-    let failed_count = app.network_store.iter()
-        .filter(|e| e.status == NetworkStatus::Failed || e.http_status.map(|c| c >= 400).unwrap_or(false))
+    let failed_count = app
+        .network_store
+        .iter()
+        .filter(|e| {
+            e.status == NetworkStatus::Failed || e.http_status.map(|c| c >= 400).unwrap_or(false)
+        })
         .count();
 
     // LIVE / scroll indicator (matching Logs view)
     let (live_text, live_style) = if app.network.auto_scroll {
-        let dot = match (app.tick / 8) % 4 { 0 => "\u{25cf}", 1 => "\u{25c9}", 2 => "\u{25cf}", _ => "\u{25cb}" };
-        (format!(" {} LIVE ", dot), Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD))
+        let dot = match (app.tick / 8) % 4 {
+            0 => "\u{25cf}",
+            1 => "\u{25c9}",
+            2 => "\u{25cf}",
+            _ => "\u{25cb}",
+        };
+        (
+            format!(" {} LIVE ", dot),
+            Style::default()
+                .fg(MANTLE)
+                .bg(GREEN)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         let pct = if filtered > 0 {
             ((app.network.selected + 1) * 100) / filtered
         } else {
             100
         };
-        (format!(" {}% ", pct.min(100)), Style::default().fg(TEXT).bg(SURFACE0))
+        (
+            format!(" {}% ", pct.min(100)),
+            Style::default().fg(TEXT).bg(SURFACE0),
+        )
     };
 
     let info = format!(" {}/{} requests", filtered, total);
@@ -473,23 +510,68 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let mut buttons: Vec<(&str, &str, Style)> = vec![
-        ("replay", " Replay ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)),
-        ("curl", " Copy as cURL ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
-        ("response", " Copy Response ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        (
+            "replay",
+            " Replay ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(BLUE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        (
+            "curl",
+            " Copy as cURL ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        (
+            "response",
+            " Copy Response ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(SAPPHIRE)
+                .add_modifier(Modifier::BOLD),
+        ),
     ];
 
     if app.is_vm_service_connected() {
-        buttons.push(("mock", " Mock ", Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD)));
+        buttons.push((
+            "mock",
+            " Mock ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(MAUVE)
+                .add_modifier(Modifier::BOLD),
+        ));
     }
 
-    buttons.push(("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)));
-    buttons.push(("help", " ? ", Style::default().fg(MANTLE).bg(OVERLAY0).add_modifier(Modifier::BOLD)));
+    buttons.push((
+        "clear",
+        " Clear ",
+        Style::default()
+            .fg(MANTLE)
+            .bg(PEACH)
+            .add_modifier(Modifier::BOLD),
+    ));
+    buttons.push((
+        "help",
+        " ? ",
+        Style::default()
+            .fg(MANTLE)
+            .bg(OVERLAY0)
+            .add_modifier(Modifier::BOLD),
+    ));
 
     let lw = live_text.width() as u16;
     let info_w = info.width() as u16;
     let failed_w = failed_info.width() as u16;
     let bw: u16 = buttons.iter().map(|(_, l, _)| l.width() as u16 + 1).sum();
-    let spacer = area.width.saturating_sub(lw + info_w + failed_w + bw).max(1);
+    let spacer = area
+        .width
+        .saturating_sub(lw + info_w + failed_w + bw)
+        .max(1);
 
     let mut spans = vec![
         Span::styled(&live_text, live_style),
@@ -500,10 +582,13 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         spans.push(Span::styled(&failed_info, Style::default().fg(RED).bg(bg)));
     }
 
-    spans.push(Span::styled(" ".repeat(spacer as usize), Style::default().bg(bg)));
+    spans.push(Span::styled(
+        " ".repeat(spacer as usize),
+        Style::default().bg(bg),
+    ));
 
     // Store button click regions
-    let mut xc = info_w + failed_w + spacer as u16;
+    let mut xc = info_w + failed_w + spacer;
     app.layout.net_buttons.clear();
     for (i, (name, label, style)) in buttons.iter().enumerate() {
         let start = xc;
@@ -516,5 +601,8 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)), area);
+    f.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
+        area,
+    );
 }

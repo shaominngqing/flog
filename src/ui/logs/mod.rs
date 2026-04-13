@@ -6,14 +6,11 @@ pub mod stats;
 pub mod timeline;
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, Borders, Paragraph,
-        Scrollbar, ScrollbarOrientation, ScrollbarState,
-    },
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -23,19 +20,20 @@ use highlight::auto_highlight;
 
 // Import shared palette from parent
 use super::{
-    BASE, MANTLE, SURFACE0, SURFACE1, OVERLAY0, TEXT, SUBTEXT0,
-    BLUE, SAPPHIRE, TEAL, GREEN, YELLOW, PEACH, RED, MAUVE, PINK, LAVENDER,
-    wrap_text, safe_pad, safe_truncate,
+    safe_pad, wrap_text, BASE, BLUE, GREEN, LAVENDER, MANTLE, MAUVE, OVERLAY0, PEACH, PINK, RED,
+    SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
 };
 
 // Logs-specific colors
-const ERROR_ROW_BG: Color   = Color::Rgb(50, 30, 35);   // subtle dark red
-const WARNING_ROW_BG: Color = Color::Rgb(50, 45, 30);   // subtle dark yellow
+const ERROR_ROW_BG: Color = Color::Rgb(50, 30, 35); // subtle dark red
+const WARNING_ROW_BG: Color = Color::Rgb(50, 45, 30); // subtle dark yellow
 
 const TAG_COLORS: [Color; 5] = [BLUE, GREEN, PEACH, MAUVE, SAPPHIRE];
 
 fn tag_color(tag: &str) -> Color {
-    let hash: usize = tag.bytes().fold(0usize, |acc, b| acc.wrapping_mul(31).wrapping_add(b as usize));
+    let hash: usize = tag.bytes().fold(0usize, |acc, b| {
+        acc.wrapping_mul(31).wrapping_add(b as usize)
+    });
     TAG_COLORS[hash % TAG_COLORS.len()]
 }
 
@@ -89,20 +87,35 @@ fn level_pill(level: LogLevel, _row_bg: Color) -> Span<'static> {
     let right_pad = total_pad - left_pad;
     let text = format!("{}{}{}", " ".repeat(left_pad), label, " ".repeat(right_pad));
     let mut style = Style::default().fg(fg).bg(bg);
-    if bold { style = style.add_modifier(Modifier::BOLD); }
+    if bold {
+        style = style.add_modifier(Modifier::BOLD);
+    }
     Span::styled(text, style)
 }
 
 // ── Search sparkline ──
 
 fn search_sparkline(matches: &[usize], total: usize, width: usize) -> String {
-    if total == 0 || width == 0 || matches.is_empty() { return String::new(); }
+    if total == 0 || width == 0 || matches.is_empty() {
+        return String::new();
+    }
     let bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     let bs = (total as f64 / width as f64).ceil().max(1.0) as usize;
     let mut buckets = vec![0u32; width];
-    for &m in matches { buckets[(m / bs).min(width - 1)] += 1; }
+    for &m in matches {
+        buckets[(m / bs).min(width - 1)] += 1;
+    }
     let mx = *buckets.iter().max().unwrap_or(&1).max(&1);
-    buckets.iter().map(|&c| if c == 0 { ' ' } else { bars[((c as f64 / mx as f64) * 7.0) as usize] }).collect()
+    buckets
+        .iter()
+        .map(|&c| {
+            if c == 0 {
+                ' '
+            } else {
+                bars[((c as f64 / mx as f64) * 7.0) as usize]
+            }
+        })
+        .collect()
 }
 
 fn repeat_bar(count: usize, max_w: usize) -> String {
@@ -113,14 +126,18 @@ fn repeat_bar(count: usize, max_w: usize) -> String {
 fn tag_pill_spans(filter: &crate::domain::FilterState) -> Vec<Span<'static>> {
     let colors = [BLUE, GREEN, PEACH, MAUVE, SAPPHIRE];
     let mut spans = Vec::new();
-    let mut ci = 0;
-    for tag in &filter.tag_include {
-        spans.push(Span::styled(format!(" +{} ", tag), Style::default().fg(MANTLE).bg(colors[ci % colors.len()])));
+    for (ci, tag) in filter.tag_include.iter().enumerate() {
+        spans.push(Span::styled(
+            format!(" +{} ", tag),
+            Style::default().fg(MANTLE).bg(colors[ci % colors.len()]),
+        ));
         spans.push(Span::styled(" ", Style::default().bg(MANTLE)));
-        ci += 1;
     }
     for tag in &filter.tag_exclude {
-        spans.push(Span::styled(format!(" -{} ", tag), Style::default().fg(TEXT).bg(RED)));
+        spans.push(Span::styled(
+            format!(" -{} ", tag),
+            Style::default().fg(TEXT).bg(RED),
+        ));
         spans.push(Span::styled(" ", Style::default().bg(MANTLE)));
     }
     spans
@@ -135,7 +152,7 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // toolbar
+            Constraint::Length(1), // toolbar
             Constraint::Min(3),    // main area (list + optional detail)
             Constraint::Length(3), // timeline
             Constraint::Length(1), // status bar
@@ -195,22 +212,40 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     let filter_active = app.mode == AppMode::TagFilter;
 
     // Logo
-    spans.push(Span::styled(" flog ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)));
+    spans.push(Span::styled(
+        " flog ",
+        Style::default()
+            .fg(MANTLE)
+            .bg(BLUE)
+            .add_modifier(Modifier::BOLD),
+    ));
     x += 6;
     spans.push(Span::styled(" ", Style::default().bg(bg)));
     x += 1;
 
     // Search
-    let si = if search_active { Style::default().fg(MANTLE).bg(YELLOW) } else { Style::default().fg(OVERLAY0).bg(bg) };
+    let si = if search_active {
+        Style::default().fg(MANTLE).bg(YELLOW)
+    } else {
+        Style::default().fg(OVERLAY0).bg(bg)
+    };
     spans.push(Span::styled("/", si));
     x += 1;
     let sw: usize = 20;
-    let st = if search_active { format!("{}_", app.search.input) }
-        else if app.filter.search_query.is_empty() { "search...".into() }
-        else { app.filter.search_query.clone() };
-    let ss = if search_active { Style::default().fg(TEXT).bg(SURFACE0) }
-        else if !app.filter.search_query.is_empty() { Style::default().fg(YELLOW).bg(bg) }
-        else { Style::default().fg(OVERLAY0).bg(bg) };
+    let st = if search_active {
+        format!("{}_", app.search.input)
+    } else if app.filter.search_query.is_empty() {
+        "search...".into()
+    } else {
+        app.filter.search_query.clone()
+    };
+    let ss = if search_active {
+        Style::default().fg(TEXT).bg(SURFACE0)
+    } else if !app.filter.search_query.is_empty() {
+        Style::default().fg(YELLOW).bg(bg)
+    } else {
+        Style::default().fg(OVERLAY0).bg(bg)
+    };
     app.layout.search_x = (7, 7 + 1 + sw as u16);
     spans.push(Span::styled(safe_pad(&st, sw), ss));
     x += sw as u16;
@@ -219,10 +254,16 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     if !app.search.matches.is_empty() {
         let fc = app.filtered_count();
         let spark = search_sparkline(&app.search.matches, fc, 12);
-        spans.push(Span::styled(format!(" {}", spark), Style::default().fg(LAVENDER).bg(bg)));
+        spans.push(Span::styled(
+            format!(" {}", spark),
+            Style::default().fg(LAVENDER).bg(bg),
+        ));
         x += 1 + spark.width() as u16;
         let info = format!("{}/{}", app.search.match_idx + 1, app.search.matches.len());
-        spans.push(Span::styled(format!(" {} ", info), Style::default().fg(YELLOW).bg(bg)));
+        spans.push(Span::styled(
+            format!(" {} ", info),
+            Style::default().fg(YELLOW).bg(bg),
+        ));
         x += 2 + info.width() as u16;
         spans.push(Span::styled("<", Style::default().fg(BLUE).bg(bg)));
         spans.push(Span::styled("> ", Style::default().fg(BLUE).bg(bg)));
@@ -238,16 +279,24 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
         spans.push(Span::styled("T", Style::default().fg(MANTLE).bg(GREEN)));
         x += 1;
         let fw: usize = 14;
-        spans.push(Span::styled(safe_pad(&format!("{}_", app.tag_filter.input), fw), Style::default().fg(TEXT).bg(SURFACE0)));
+        spans.push(Span::styled(
+            safe_pad(&format!("{}_", app.tag_filter.input), fw),
+            Style::default().fg(TEXT).bg(SURFACE0),
+        ));
         x += fw as u16;
     } else if !app.filter.tag_include.is_empty() || !app.filter.tag_exclude.is_empty() {
         let pills = tag_pill_spans(&app.filter);
-        for p in &pills { x += p.content.width() as u16; }
+        for p in &pills {
+            x += p.content.width() as u16;
+        }
         spans.extend(pills);
     } else {
         spans.push(Span::styled("T", Style::default().fg(OVERLAY0).bg(bg)));
         x += 1;
-        spans.push(Span::styled(safe_pad("tag...", 6), Style::default().fg(OVERLAY0).bg(bg)));
+        spans.push(Span::styled(
+            safe_pad("tag...", 6),
+            Style::default().fg(OVERLAY0).bg(bg),
+        ));
         x += 6;
     }
     app.layout.filter_x = (filter_start_x, x);
@@ -257,16 +306,31 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Level buttons — pill style
     app.layout.levels_x = x;
-    for (label, level) in &[("S", LogLevel::System), ("V", LogLevel::Verbose), ("D", LogLevel::Debug), ("I", LogLevel::Info), ("W", LogLevel::Warning), ("E", LogLevel::Error)] {
+    for (label, level) in &[
+        ("S", LogLevel::System),
+        ("V", LogLevel::Verbose),
+        ("D", LogLevel::Debug),
+        ("I", LogLevel::Info),
+        ("W", LogLevel::Warning),
+        ("E", LogLevel::Error),
+    ] {
         let (fg, bg_c, bold) = level_badge(*level);
         let style = if app.filter.min_level == *level {
             // Active: full pill
-            let mut s = Style::default().fg(fg).bg(if bg_c == Color::Reset { SURFACE1 } else { bg_c });
-            if bold { s = s.add_modifier(Modifier::BOLD); }
+            let mut s =
+                Style::default()
+                    .fg(fg)
+                    .bg(if bg_c == Color::Reset { SURFACE1 } else { bg_c });
+            if bold {
+                s = s.add_modifier(Modifier::BOLD);
+            }
             s
         } else if app.filter.min_level > *level {
             // Filtered out: very dim
-            Style::default().fg(SURFACE0).bg(bg).add_modifier(Modifier::DIM)
+            Style::default()
+                .fg(SURFACE0)
+                .bg(bg)
+                .add_modifier(Modifier::DIM)
         } else {
             // Available
             Style::default().fg(level_color(*level)).bg(bg)
@@ -282,7 +346,12 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     let rem = area.width.saturating_sub(x);
-    if rem > 0 { spans.push(Span::styled(" ".repeat(rem as usize), Style::default().bg(bg))); }
+    if rem > 0 {
+        spans.push(Span::styled(
+            " ".repeat(rem as usize),
+            Style::default().bg(bg),
+        ));
+    }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
@@ -296,7 +365,13 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
     if let Some(msg) = app.active_status().map(|s| s.to_string()) {
         let line = Line::from(vec![
-            Span::styled(" OK ", Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " OK ",
+                Style::default()
+                    .fg(MANTLE)
+                    .bg(GREEN)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!(" {} ", msg), Style::default().fg(TEXT).bg(bg)),
         ]);
         f.render_widget(Paragraph::new(line).style(Style::default().bg(bg)), area);
@@ -305,10 +380,27 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     let (live_text, live_style) = if app.auto_scroll {
-        let dot = match (app.tick / 8) % 4 { 0 => "●", 1 => "◉", 2 => "●", _ => "○" };
-        (format!(" {} LIVE ", dot), Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD))
+        let dot = match (app.tick / 8) % 4 {
+            0 => "●",
+            1 => "◉",
+            2 => "●",
+            _ => "○",
+        };
+        (
+            format!(" {} LIVE ", dot),
+            Style::default()
+                .fg(MANTLE)
+                .bg(GREEN)
+                .add_modifier(Modifier::BOLD),
+        )
     } else if app.new_logs_since_pause > 0 {
-        (format!(" {} new ", app.new_logs_since_pause), Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD))
+        (
+            format!(" {} new ", app.new_logs_since_pause),
+            Style::default()
+                .fg(MANTLE)
+                .bg(YELLOW)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         // Use visible_entry_count (set by renderer) for correct percentage
         let total = app.filtered_count();
@@ -319,21 +411,70 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         } else {
             100
         };
-        (format!(" {}% ", pct.min(100)), Style::default().fg(TEXT).bg(SURFACE0))
+        (
+            format!(" {}% ", pct.min(100)),
+            Style::default().fg(TEXT).bg(SURFACE0),
+        )
     };
 
     let total = app.store.len();
     let filtered = app.filtered_count();
-    let device = if app.source_name.is_empty() { String::new() } else { format!(" {}", app.source_name) };
+    let device = if app.source_name.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", app.source_name)
+    };
     let info = format!(" {}/{}{}", filtered, total, device);
 
     let buttons: Vec<(&str, &str, Style)> = vec![
-        ("separator", " ── ", Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD)),
-        ("clear", " Clear ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
-        ("export", " Export ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
-        ("stats", " Stats ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
-        ("help", " ? ", Style::default().fg(MANTLE).bg(OVERLAY0).add_modifier(Modifier::BOLD)),
-        ("quit", " x ", Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD)),
+        (
+            "separator",
+            " ── ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(YELLOW)
+                .add_modifier(Modifier::BOLD),
+        ),
+        (
+            "clear",
+            " Clear ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(PEACH)
+                .add_modifier(Modifier::BOLD),
+        ),
+        (
+            "export",
+            " Export ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(SAPPHIRE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        (
+            "stats",
+            " Stats ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(SAPPHIRE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        (
+            "help",
+            " ? ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(OVERLAY0)
+                .add_modifier(Modifier::BOLD),
+        ),
+        (
+            "quit",
+            " x ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(RED)
+                .add_modifier(Modifier::BOLD),
+        ),
     ];
 
     let lw = live_text.width() as u16;
@@ -348,7 +489,13 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
     let mut spans = vec![
         Span::styled(&live_text, live_style),
-        Span::styled(&info, Style::default().fg(SUBTEXT0).bg(bg).add_modifier(Modifier::UNDERLINED)),
+        Span::styled(
+            &info,
+            Style::default()
+                .fg(SUBTEXT0)
+                .bg(bg)
+                .add_modifier(Modifier::UNDERLINED),
+        ),
         Span::styled(" ".repeat(spacer as usize), Style::default().bg(bg)),
     ];
 
@@ -365,18 +512,15 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)), area);
+    f.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
+        area,
+    );
 }
 
 // ══════════════════════════════════════
 //  Log List
 // ══════════════════════════════════════
-
-fn apply_row_underline(line: &mut Line<'static>, _row_bg: Color) {
-    for span in line.spans.iter_mut() {
-        span.style = span.style.add_modifier(Modifier::UNDERLINED);
-    }
-}
 
 fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
     let height = area.height as usize;
@@ -416,10 +560,14 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
         while idx > 0 {
             idx -= 1;
             let rows = entry_row_count_from_store(&app.store, fi_vec[idx], full_width);
-            if rows_used + rows > height && rows_used > 0 { break; }
+            if rows_used + rows > height && rows_used > 0 {
+                break;
+            }
             rows_used += rows;
             start_fi = idx;
-            if rows_used >= height { break; }
+            if rows_used >= height {
+                break;
+            }
         }
         app.scroll_offset = start_fi;
         // Keep selected within visible range but don't force it to the last entry,
@@ -443,7 +591,9 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
         let mut fi = app.scroll_offset;
         while fi < filtered_count && rows_used < height {
             let rows = entry_row_count_from_store(&app.store, fi_vec[fi], full_width);
-            if rows_used + rows > height && rows_used > 0 { break; }
+            if rows_used + rows > height && rows_used > 0 {
+                break;
+            }
             rows_used += rows;
             last_visible_fi = fi;
             fi += 1;
@@ -456,10 +606,14 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             let mut si = app.selected;
             loop {
                 let rows = entry_row_count_from_store(&app.store, fi_vec[si], full_width);
-                if rows_back + rows > height && rows_back > 0 { break; }
+                if rows_back + rows > height && rows_back > 0 {
+                    break;
+                }
                 rows_back += rows;
                 new_start = si;
-                if si == 0 || rows_back >= height { break; }
+                if si == 0 || rows_back >= height {
+                    break;
+                }
                 si -= 1;
             }
             app.scroll_offset = new_start;
@@ -510,15 +664,28 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("  ", Style::default().bg(row_bg))
             };
 
-            let time = safe_pad(if entry.timestamp.is_empty() { "" } else { &entry.timestamp }, TIME_WIDTH);
-            let time_style = Style::default().fg(OVERLAY0).bg(row_bg).add_modifier(Modifier::DIM);
+            let time = safe_pad(
+                if entry.timestamp.is_empty() {
+                    ""
+                } else {
+                    &entry.timestamp
+                },
+                TIME_WIDTH,
+            );
+            let time_style = Style::default()
+                .fg(OVERLAY0)
+                .bg(row_bg)
+                .add_modifier(Modifier::DIM);
 
             let level_span = level_pill(entry.level, row_bg);
 
             // Separator: 3 rows (blank + divider + blank)
             if entry.tag == "────" {
                 if lines.len() < height {
-                    lines.push(Line::from(Span::styled(" ".repeat(total_width), Style::default().bg(BASE))));
+                    lines.push(Line::from(Span::styled(
+                        " ".repeat(total_width),
+                        Style::default().bg(BASE),
+                    )));
                     row_map.push(fi);
                 }
                 if lines.len() < height {
@@ -530,15 +697,21 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                     row_map.push(fi);
                 }
                 if lines.len() < height {
-                    lines.push(Line::from(Span::styled(" ".repeat(total_width), Style::default().bg(BASE))));
+                    lines.push(Line::from(Span::styled(
+                        " ".repeat(total_width),
+                        Style::default().bg(BASE),
+                    )));
                     row_map.push(fi);
                 }
-                if lines.len() >= height { break; }
+                if lines.len() >= height {
+                    break;
+                }
                 continue;
             }
 
             let header_spans: Vec<Span> = vec![
-                cursor, bm,
+                cursor,
+                bm,
                 Span::styled(time, time_style),
                 Span::styled(" ", dim_s),
                 level_span,
@@ -566,8 +739,14 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             let mut spans = header_spans;
             if entry.repeat_count > 1 && !first_text.is_empty() {
                 let bar_end = full_msg.find(&entry.message).unwrap_or(0);
-                let bar_part: String = first_text.chars().take(bar_end.min(first_text.len())).collect();
-                let msg_part: String = first_text.chars().skip(bar_end.min(first_text.len())).collect();
+                let bar_part: String = first_text
+                    .chars()
+                    .take(bar_end.min(first_text.len()))
+                    .collect();
+                let msg_part: String = first_text
+                    .chars()
+                    .skip(bar_end.min(first_text.len()))
+                    .collect();
                 if !bar_part.is_empty() {
                     spans.push(Span::styled(bar_part, Style::default().fg(PINK).bg(row_bg)));
                 }
@@ -583,7 +762,10 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             }
             let used: usize = spans.iter().map(|s| s.content.width()).sum();
             if used < total_width {
-                spans.push(Span::styled(" ".repeat(total_width - used), Style::default().bg(row_bg)));
+                spans.push(Span::styled(
+                    " ".repeat(total_width - used),
+                    Style::default().bg(row_bg),
+                ));
             }
             lines.push(Line::from(spans));
             row_map.push(fi);
@@ -599,19 +781,21 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 let blank = Style::default().bg(bg);
                 vec![
                     cursor_s,
-                    Span::styled("  ", blank),                          // bookmark
-                    Span::styled(" ".repeat(TIME_WIDTH), blank),        // time
-                    Span::styled(" ", blank),                           // sep
-                    Span::styled(" ".repeat(LEVEL_WIDTH), blank),       // level
-                    Span::styled(" ", blank),                           // sep
-                    Span::styled(" ".repeat(TAG_WIDTH), blank),         // tag
-                    Span::styled(" ", blank),                           // sep
+                    Span::styled("  ", blank),                   // bookmark
+                    Span::styled(" ".repeat(TIME_WIDTH), blank), // time
+                    Span::styled(" ", blank),                    // sep
+                    Span::styled(" ".repeat(LEVEL_WIDTH), blank), // level
+                    Span::styled(" ", blank),                    // sep
+                    Span::styled(" ".repeat(TAG_WIDTH), blank),  // tag
+                    Span::styled(" ", blank),                    // sep
                 ]
             };
 
             // Wrapped continuation lines
             for wrap_line in wrapped.iter().skip(1) {
-                if lines.len() >= height { break; }
+                if lines.len() >= height {
+                    break;
+                }
                 let mut ws = empty_prefix(is_selected, row_bg);
                 if !app.filter.search_query.is_empty() {
                     ws.extend(highlight_with_filter(wrap_line, &app.filter, base));
@@ -620,7 +804,10 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 let used: usize = ws.iter().map(|s| s.content.width()).sum();
                 if used < total_width {
-                    ws.push(Span::styled(" ".repeat(total_width - used), Style::default().bg(row_bg)));
+                    ws.push(Span::styled(
+                        " ".repeat(total_width - used),
+                        Style::default().bg(row_bg),
+                    ));
                 }
                 lines.push(Line::from(ws));
                 row_map.push(fi);
@@ -629,12 +816,16 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             // Extra lines (continuation / stacktrace)
             let cont = Style::default().fg(lc).bg(row_bg);
             for extra in &entry.extra_lines {
-                if lines.len() >= height { break; }
+                if lines.len() >= height {
+                    break;
+                }
                 let extra_wrap_width = full_width.saturating_sub(header_width + 1);
                 let extra_wrapped = wrap_text(extra, extra_wrap_width, MAX_WRAP_LINES);
 
                 for extra_line in &extra_wrapped {
-                    if lines.len() >= height { break; }
+                    if lines.len() >= height {
+                        break;
+                    }
                     let mut cs = empty_prefix(is_selected, row_bg);
                     if !app.filter.search_query.is_empty() {
                         cs.extend(highlight_with_filter(extra_line, &app.filter, cont));
@@ -643,7 +834,10 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                     }
                     let used: usize = cs.iter().map(|s| s.content.width()).sum();
                     if used < total_width {
-                        cs.push(Span::styled(" ".repeat(total_width - used), Style::default().bg(row_bg)));
+                        cs.push(Span::styled(
+                            " ".repeat(total_width - used),
+                            Style::default().bg(row_bg),
+                        ));
                     }
                     lines.push(Line::from(cs));
                     row_map.push(fi);
@@ -653,7 +847,9 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             // Row separator: removed underline (too noisy), relying on
             // level-based background colors for visual grouping instead.
 
-            if lines.len() >= height { break; }
+            if lines.len() >= height {
+                break;
+            }
         }
     }
 
@@ -667,7 +863,10 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
     let mut unique_entries = 0usize;
     let mut prev_fi: Option<usize> = None;
     for &fi in &row_map {
-        if prev_fi != Some(fi) { unique_entries += 1; prev_fi = Some(fi); }
+        if prev_fi != Some(fi) {
+            unique_entries += 1;
+            prev_fi = Some(fi);
+        }
     }
     app.layout.visible_entry_count = unique_entries;
     app.layout.row_to_filtered_idx = row_map;
@@ -678,7 +877,12 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
         app.new_logs_since_pause = 0;
     }
 
-    f.render_widget(Paragraph::new(lines).block(Block::default().borders(Borders::NONE)).style(Style::default().bg(BASE)), area);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(Block::default().borders(Borders::NONE))
+            .style(Style::default().bg(BASE)),
+        area,
+    );
 
     // Scrollbar
     if filtered_count > unique_entries {
@@ -690,15 +894,18 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             .begin_symbol(None)
             .end_symbol(None);
         let max_offset = filtered_count.saturating_sub(unique_entries);
-        let mut state = ScrollbarState::new(max_offset)
-            .position(start.min(max_offset));
+        let mut state = ScrollbarState::new(max_offset).position(start.min(max_offset));
         f.render_stateful_widget(scrollbar, area, &mut state);
     }
 }
 
 /// Calculate how many terminal rows a single entry occupies.
 /// Must match the rendering logic exactly.
-fn entry_row_count_from_store(store: &crate::domain::LogStore, store_idx: usize, full_width: usize) -> usize {
+fn entry_row_count_from_store(
+    store: &crate::domain::LogStore,
+    store_idx: usize,
+    full_width: usize,
+) -> usize {
     let entry = match store.get(store_idx) {
         Some(e) => e,
         None => return 1,
@@ -777,7 +984,9 @@ fn draw_not_connected(f: &mut Frame, _app: &mut App, area: Rect) {
     let start_y = area.height.saturating_sub(logo_h) / 2;
 
     let mut lines: Vec<Line> = Vec::new();
-    for _ in 0..start_y { lines.push(Line::raw("")); }
+    for _ in 0..start_y {
+        lines.push(Line::raw(""));
+    }
 
     for logo_line in logo_lines() {
         lines.push(logo_line);
@@ -802,13 +1011,22 @@ fn draw_waiting_for_logs(f: &mut Frame, app: &mut App, area: Rect) {
     let start_y = area.height.saturating_sub(logo_h) / 2;
 
     let spinner = match (tick / 5) % 8 {
-        0 => "⣾", 1 => "⣽", 2 => "⣻", 3 => "⢿", 4 => "⡿", 5 => "⣟", 6 => "⣯", _ => "⣷",
+        0 => "⣾",
+        1 => "⣽",
+        2 => "⣻",
+        3 => "⢿",
+        4 => "⡿",
+        5 => "⣟",
+        6 => "⣯",
+        _ => "⣷",
     };
 
     let dots = ".".repeat(((tick / 10) % 4) as usize);
 
     let mut lines: Vec<Line> = Vec::new();
-    for _ in 0..start_y { lines.push(Line::raw("")); }
+    for _ in 0..start_y {
+        lines.push(Line::raw(""));
+    }
 
     for logo_line in logo_lines() {
         lines.push(logo_line);
@@ -821,7 +1039,10 @@ fn draw_waiting_for_logs(f: &mut Frame, app: &mut App, area: Rect) {
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
         Span::styled(format!("   {} ", spinner), Style::default().fg(BLUE)),
-        Span::styled(format!("Waiting for logs{:<3}", dots), Style::default().fg(SUBTEXT0)),
+        Span::styled(
+            format!("Waiting for logs{:<3}", dots),
+            Style::default().fg(SUBTEXT0),
+        ),
     ]));
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
@@ -830,11 +1051,13 @@ fn draw_waiting_for_logs(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_no_matching_logs(f: &mut Frame, area: Rect) {
     let mid = area.height / 2;
     let mut lines: Vec<Line> = Vec::new();
-    for _ in 0..mid.saturating_sub(3) { lines.push(Line::raw("")); }
+    for _ in 0..mid.saturating_sub(3) {
+        lines.push(Line::raw(""));
+    }
 
     // Empty state icon
     lines.push(Line::from(Span::styled(
-        "          \u{2205}",  // ∅ symbol
+        "          \u{2205}", // ∅ symbol
         Style::default().fg(SURFACE1),
     )));
     lines.push(Line::raw(""));
@@ -854,21 +1077,38 @@ fn draw_no_matching_logs(f: &mut Frame, area: Rect) {
 //  Search Highlight
 // ══════════════════════════════════════
 
-fn highlight_with_filter(text: &str, filter: &crate::domain::FilterState, base: Style) -> Vec<Span<'static>> {
+fn highlight_with_filter(
+    text: &str,
+    filter: &crate::domain::FilterState,
+    base: Style,
+) -> Vec<Span<'static>> {
     let positions = filter.search_positions(text);
-    if positions.is_empty() { return vec![Span::styled(text.to_string(), base)]; }
+    if positions.is_empty() {
+        return vec![Span::styled(text.to_string(), base)];
+    }
 
-    let hl = Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD);
+    let hl = Style::default()
+        .fg(MANTLE)
+        .bg(YELLOW)
+        .add_modifier(Modifier::BOLD);
     let mut spans = Vec::new();
     let mut last = 0;
     for r in &positions {
         let s = r.start.min(text.len());
         let e = r.end.min(text.len());
-        if s > last { spans.push(Span::styled(text[last..s].to_string(), base)); }
-        if s < e { spans.push(Span::styled(text[s..e].to_string(), hl)); }
+        if s > last {
+            spans.push(Span::styled(text[last..s].to_string(), base));
+        }
+        if s < e {
+            spans.push(Span::styled(text[s..e].to_string(), hl));
+        }
         last = e;
     }
-    if last < text.len() { spans.push(Span::styled(text[last..].to_string(), base)); }
-    if spans.is_empty() { spans.push(Span::styled(text.to_string(), base)); }
+    if last < text.len() {
+        spans.push(Span::styled(text[last..].to_string(), base));
+    }
+    if spans.is_empty() {
+        spans.push(Span::styled(text.to_string(), base));
+    }
     spans
 }

@@ -68,8 +68,7 @@ async fn resolve_dds_url(underlying_http_url: &str) -> Option<String> {
         .strip_prefix("http://")?
         .split('/')
         .next()?;
-    let path = underlying_http_url
-        .strip_prefix(&format!("http://{}", host_port))?;
+    let path = underlying_http_url.strip_prefix(&format!("http://{}", host_port))?;
     // Keep trailing slash — the VM Service only 302s on the exact path with `/`
     let root_path = if path.ends_with('/') {
         path.to_string()
@@ -77,13 +76,10 @@ async fn resolve_dds_url(underlying_http_url: &str) -> Option<String> {
         format!("{}/", path)
     };
 
-    let mut stream = timeout(
-        Duration::from_millis(300),
-        TcpStream::connect(host_port),
-    )
-    .await
-    .ok()?
-    .ok()?;
+    let mut stream = timeout(Duration::from_millis(300), TcpStream::connect(host_port))
+        .await
+        .ok()?
+        .ok()?;
 
     let req = format!(
         "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
@@ -115,9 +111,12 @@ async fn resolve_dds_url(underlying_http_url: &str) -> Option<String> {
             let ws_url = ws_part.split('&').next().unwrap_or(ws_part);
             // URL-decode: %3A -> :, %2F -> /
             let decoded = ws_url
-                .replace("%3A", ":").replace("%3a", ":")
-                .replace("%2F", "/").replace("%2f", "/")
-                .replace("%3D", "=").replace("%3d", "=");
+                .replace("%3A", ":")
+                .replace("%3a", ":")
+                .replace("%2F", "/")
+                .replace("%2f", "/")
+                .replace("%3D", "=")
+                .replace("%3d", "=");
             if decoded.starts_with("ws://") {
                 // Return the base URL (strip /ws suffix, we add it later)
                 let base = decoded.trim_end_matches("/ws").trim_end_matches('/');
@@ -148,8 +147,13 @@ async fn query_vm_name(http_url: &str) -> String {
         .unwrap_or("/");
     let get_vm_path = format!("{}getVM", path);
 
-    if let Ok(Ok(mut stream)) = timeout(Duration::from_millis(500), TcpStream::connect(host_port)).await {
-        let req = format!("GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", get_vm_path, host_port);
+    if let Ok(Ok(mut stream)) =
+        timeout(Duration::from_millis(500), TcpStream::connect(host_port)).await
+    {
+        let req = format!(
+            "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            get_vm_path, host_port
+        );
         let _ = stream.write_all(req.as_bytes()).await;
 
         let mut buf = vec![0u8; 4096];

@@ -95,7 +95,9 @@ impl FilterState {
                 self.compiled_tag_include.iter().any(|re| re.is_match(tag))
             } else {
                 let tag_lower = tag.to_lowercase();
-                self.tag_include.iter().any(|inc| tag_lower == inc.to_lowercase())
+                self.tag_include
+                    .iter()
+                    .any(|inc| tag_lower == inc.to_lowercase())
             };
             if !matched {
                 return false;

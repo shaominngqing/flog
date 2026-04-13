@@ -232,7 +232,8 @@ class FlogDio implements Dio {
     Options? options,
     CancelToken? cancelToken,
   }) =>
-      _inner.headUri<T>(uri, data: data, options: options, cancelToken: cancelToken);
+      _inner.headUri<T>(uri,
+          data: data, options: options, cancelToken: cancelToken);
 
   @override
   Future<Response<T>> get<T>(
@@ -405,7 +406,8 @@ class FlogDio implements Dio {
     Options? options,
     CancelToken? cancelToken,
   }) =>
-      _inner.deleteUri<T>(uri, data: data, options: options, cancelToken: cancelToken);
+      _inner.deleteUri<T>(uri,
+          data: data, options: options, cancelToken: cancelToken);
 
   @override
   Future<Response> download(

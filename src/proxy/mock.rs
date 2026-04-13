@@ -26,12 +26,18 @@ pub struct MockRuleStore {
     next_id: usize,
 }
 
-impl MockRuleStore {
-    pub fn new() -> Self {
+impl Default for MockRuleStore {
+    fn default() -> Self {
         Self {
             rules: Vec::new(),
             next_id: 1,
         }
+    }
+}
+
+impl MockRuleStore {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Add a new mock rule and return its ID.
@@ -99,6 +105,11 @@ impl MockRuleStore {
     /// Total number of rules.
     pub fn len(&self) -> usize {
         self.rules.len()
+    }
+
+    /// Whether the store has no rules.
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty()
     }
 
     /// Number of enabled rules.

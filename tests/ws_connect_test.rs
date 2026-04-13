@@ -71,10 +71,16 @@ async fn test_discover_from_ps() {
 async fn test_connect_underlying_vm_service() {
     let uri = match discover_underlying_uri().await {
         Some(u) => u,
-        None => { println!("No Flutter process found, skipping"); return; }
+        None => {
+            println!("No Flutter process found, skipping");
+            return;
+        }
     };
 
-    let ws_url = format!("{}/ws", uri.replace("http://", "ws://").trim_end_matches('/'));
+    let ws_url = format!(
+        "{}/ws",
+        uri.replace("http://", "ws://").trim_end_matches('/')
+    );
     println!("Attempting to connect to UNDERLYING VM Service: {}", ws_url);
 
     match tokio::time::timeout(Duration::from_secs(3), connect_async(&ws_url)).await {
@@ -89,7 +95,9 @@ async fn test_connect_underlying_vm_service() {
                 "params": { "streamId": "Logging" },
                 "id": "1"
             });
-            tx.send(Message::Text(sub.to_string().into())).await.unwrap();
+            tx.send(Message::Text(sub.to_string().into()))
+                .await
+                .unwrap();
 
             // Read responses for 5 seconds
             let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
@@ -99,7 +107,10 @@ async fn test_connect_underlying_vm_service() {
                     Ok(Some(Ok(Message::Text(t)))) => {
                         msg_count += 1;
                         let json: Value = serde_json::from_str(&t).unwrap_or(Value::Null);
-                        let method = json.get("method").and_then(|m| m.as_str()).unwrap_or("(response)");
+                        let method = json
+                            .get("method")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("(response)");
                         println!("[msg {}] method={}, size={}", msg_count, method, t.len());
                         if msg_count <= 3 {
                             println!("  content: {}", &t[..t.len().min(200)]);
@@ -171,7 +182,10 @@ async fn test_find_and_connect_dds() {
 
     let dds_pid = match dds_pid {
         Some(p) => p,
-        None => { println!("No DDS process found, skipping"); return; }
+        None => {
+            println!("No DDS process found, skipping");
+            return;
+        }
     };
 
     println!("DDS PID: {}", dds_pid);
@@ -216,14 +230,21 @@ async fn test_find_and_connect_dds() {
                 // DDS serves a redirect or a page with the ws URL
                 if let Ok(Ok(mut stream)) = tokio::time::timeout(
                     Duration::from_secs(2),
-                    tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
-                ).await {
+                    tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)),
+                )
+                .await
+                {
                     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-                    let req = format!("GET / HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n", port);
+                    let req = format!(
+                        "GET / HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+                        port
+                    );
                     let _ = stream.write_all(req.as_bytes()).await;
 
                     let mut buf = vec![0u8; 4096];
-                    if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await {
+                    if let Ok(Ok(n)) =
+                        tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await
+                    {
                         let resp = String::from_utf8_lossy(&buf[..n]);
                         println!("HTTP response from DDS:\n{}", resp);
                     }
@@ -232,7 +253,9 @@ async fn test_find_and_connect_dds() {
                 // Try connecting WebSocket WITHOUT auth token (will likely fail)
                 let ws_url_no_auth = format!("ws://127.0.0.1:{}/ws", port);
                 println!("\nTrying WS connect without auth token: {}", ws_url_no_auth);
-                match tokio::time::timeout(Duration::from_secs(2), connect_async(&ws_url_no_auth)).await {
+                match tokio::time::timeout(Duration::from_secs(2), connect_async(&ws_url_no_auth))
+                    .await
+                {
                     Ok(Ok(_)) => println!("Connected without auth! (unexpected)"),
                     Ok(Err(e)) => println!("Failed (expected): {}", e),
                     Err(_) => println!("Timed out"),
@@ -282,7 +305,10 @@ async fn test_find_dds_url_from_flutter_logs() {
 
     let dds_pid = match dds_pid {
         Some(p) => p,
-        None => { println!("No DDS process found"); return; }
+        None => {
+            println!("No DDS process found");
+            return;
+        }
     };
 
     // Get DDS listening port via lsof
@@ -314,21 +340,34 @@ async fn test_find_dds_url_from_flutter_logs() {
         println!("\n--- Trying port {} ---", port);
         if let Ok(Ok(mut stream)) = tokio::time::timeout(
             Duration::from_secs(2),
-            tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
-        ).await {
+            tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)),
+        )
+        .await
+        {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
-            let req = format!("GET / HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n", port);
+            let req = format!(
+                "GET / HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+                port
+            );
             let _ = stream.write_all(req.as_bytes()).await;
 
             let mut buf = vec![0u8; 8192];
-            if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await {
+            if let Ok(Ok(n)) =
+                tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await
+            {
                 let resp = String::from_utf8_lossy(&buf[..n]);
-                println!("HTTP response ({} bytes):\n{}", n, &resp[..resp.len().min(500)]);
+                println!(
+                    "HTTP response ({} bytes):\n{}",
+                    n,
+                    &resp[..resp.len().min(500)]
+                );
 
                 // Look for auth token pattern in response
                 if let Some(idx) = resp.find("ws://") {
                     let ws_part = &resp[idx..];
-                    let end = ws_part.find(|c: char| c.is_whitespace() || c == '"' || c == '\'').unwrap_or(ws_part.len());
+                    let end = ws_part
+                        .find(|c: char| c.is_whitespace() || c == '"' || c == '\'')
+                        .unwrap_or(ws_part.len());
                     println!("\nFound WS URL in response: {}", &ws_part[..end]);
                 }
             }
@@ -347,10 +386,16 @@ async fn test_find_dds_url_from_flutter_logs() {
 async fn test_connect_underlying_directly() {
     let uri = match discover_underlying_uri().await {
         Some(u) => u,
-        None => { println!("No Flutter process found"); return; }
+        None => {
+            println!("No Flutter process found");
+            return;
+        }
     };
 
-    let ws_url = format!("{}/ws", uri.replace("http://", "ws://").trim_end_matches('/'));
+    let ws_url = format!(
+        "{}/ws",
+        uri.replace("http://", "ws://").trim_end_matches('/')
+    );
     println!("Connecting to underlying VM Service: {}", ws_url);
     println!("(This is the --vm-service-uri that DDS also connects to)");
 
@@ -369,7 +414,9 @@ async fn test_connect_underlying_directly() {
                 "id": "vm1"
             });
             println!("\nSending getVM...");
-            tx.send(Message::Text(get_vm.to_string().into())).await.unwrap();
+            tx.send(Message::Text(get_vm.to_string().into()))
+                .await
+                .unwrap();
 
             // 2. Subscribe to Logging
             let sub_logging = serde_json::json!({
@@ -379,7 +426,9 @@ async fn test_connect_underlying_directly() {
                 "id": "sub1"
             });
             println!("Sending streamListen(Logging)...");
-            tx.send(Message::Text(sub_logging.to_string().into())).await.unwrap();
+            tx.send(Message::Text(sub_logging.to_string().into()))
+                .await
+                .unwrap();
 
             // 3. Subscribe to Stdout
             let sub_stdout = serde_json::json!({
@@ -389,7 +438,9 @@ async fn test_connect_underlying_directly() {
                 "id": "sub2"
             });
             println!("Sending streamListen(Stdout)...");
-            tx.send(Message::Text(sub_stdout.to_string().into())).await.unwrap();
+            tx.send(Message::Text(sub_stdout.to_string().into()))
+                .await
+                .unwrap();
 
             // Read all responses
             let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
@@ -407,23 +458,36 @@ async fn test_connect_underlying_directly() {
                             if let Some(err) = error {
                                 println!("[resp #{}] id={}, ERROR: {}", msg_count, id, err);
                             } else {
-                                let result_preview = json.get("result")
+                                let result_preview = json
+                                    .get("result")
                                     .map(|r| {
                                         let s = r.to_string();
-                                        if s.len() > 150 { format!("{}...", &s[..150]) } else { s }
+                                        if s.len() > 150 {
+                                            format!("{}...", &s[..150])
+                                        } else {
+                                            s
+                                        }
                                     })
                                     .unwrap_or_default();
-                                println!("[resp #{}] id={}, result: {}", msg_count, id, result_preview);
+                                println!(
+                                    "[resp #{}] id={}, result: {}",
+                                    msg_count, id, result_preview
+                                );
                             }
                         } else if let Some(method) = json.get("method").and_then(|m| m.as_str()) {
                             // Notification
-                            let stream_id = json.pointer("/params/streamId")
+                            let stream_id = json
+                                .pointer("/params/streamId")
                                 .and_then(|s| s.as_str())
                                 .unwrap_or("?");
-                            let event_kind = json.pointer("/params/event/kind")
+                            let event_kind = json
+                                .pointer("/params/event/kind")
                                 .and_then(|s| s.as_str())
                                 .unwrap_or("?");
-                            println!("[event #{}] method={}, stream={}, kind={}", msg_count, method, stream_id, event_kind);
+                            println!(
+                                "[event #{}] method={}, stream={}, kind={}",
+                                msg_count, method, stream_id, event_kind
+                            );
                         }
                     }
                     Ok(Some(Ok(Message::Close(frame)))) => {

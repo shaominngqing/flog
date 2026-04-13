@@ -14,8 +14,7 @@ use std::sync::LazyLock;
 use super::LogLineParser;
 use crate::domain::{InputSource, LogEntry, LogLevel};
 
-static ANSI_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
+static ANSI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
 
 /// Matches ADB logcat format: `I/flutter (PID): content`
 /// and VM Service stdout format: `flutter: content`
@@ -23,9 +22,8 @@ static FLUTTER_PREFIX_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:I/flutter\s*\(\s*\d+\)|flutter):\s?(.*)$").unwrap());
 
 /// Bracket format: `[LEVEL][Tag] message`
-static BRACKET_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\[(\w+)\]\[([^\]]+)\]\s?(.*)$").unwrap()
-});
+static BRACKET_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\[(\w+)\]\[([^\]]+)\]\s?(.*)$").unwrap());
 
 /// Pipe format: `HH:MM:SS.mmm │ LEVEL │ Tag │ message`
 static PIPE_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -133,7 +131,8 @@ mod tests {
     #[test]
     fn parse_pipe_format() {
         let p = StructuredParser;
-        let line = "I/flutter (14114): 18:05:26.675 │ INFO    │ Network        │ → GET /api/scene-types";
+        let line =
+            "I/flutter (14114): 18:05:26.675 │ INFO    │ Network        │ → GET /api/scene-types";
         let entry = p.try_parse(line).unwrap();
         assert_eq!(entry.timestamp, "18:05:26.675");
         assert_eq!(entry.level, LogLevel::Info);

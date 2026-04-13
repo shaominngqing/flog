@@ -13,19 +13,15 @@ use super::LogLineParser;
 use crate::domain::{InputSource, LogEntry, LogLevel};
 
 /// `[LEVEL] [Tag] message` or `[LEVEL] message`
-static BRACKET_LEVEL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\[(\w+)\]\s*(?:\[(\w+)\]\s*)?(.+)$").unwrap()
-});
+static BRACKET_LEVEL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\[(\w+)\]\s*(?:\[(\w+)\]\s*)?(.+)$").unwrap());
 
 /// Flutter framework exception header
-static EXCEPTION_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"══+╡\s*EXCEPTION\s*╞══+").unwrap()
-});
+static EXCEPTION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"══+╡\s*EXCEPTION\s*╞══+").unwrap());
 
 /// Dart stacktrace frame: `#N  ClassName.method (package:...)`
-static STACKTRACE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^#\d+\s+").unwrap()
-});
+static STACKTRACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#\d+\s+").unwrap());
 
 /// `I/flutter (PID): content` or `flutter: content` — main Flutter output
 static FLUTTER_PLAIN_RE: LazyLock<Regex> =
@@ -36,8 +32,7 @@ static FLUTTER_PLAIN_RE: LazyLock<Regex> =
 static LOGCAT_LINE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([VDIWEF])/(\S+)\s*\(\s*\d+\):\s?(.*)$").unwrap());
 
-static ANSI_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
+static ANSI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
 
 pub struct GenericParser;
 
@@ -99,12 +94,21 @@ impl LogLineParser for GenericParser {
             if let Some(bcaps) = BRACKET_LEVEL_RE.captures(&content) {
                 let level_str = bcaps.get(1)?.as_str();
                 if let Some(level) = LogLevel::from_str(level_str) {
-                    let tag = bcaps.get(2).map(|m| m.as_str().to_string()).unwrap_or("App".into());
+                    let tag = bcaps
+                        .get(2)
+                        .map(|m| m.as_str().to_string())
+                        .unwrap_or("App".into());
                     let message = bcaps.get(3)?.as_str().to_string();
                     return Some(LogEntry {
-                        timestamp: String::new(), level, tag, message,
-                        extra_lines: Vec::new(), repeat_count: 1,
-                        source: InputSource::Adb, error: None, stacktrace: None,
+                        timestamp: String::new(),
+                        level,
+                        tag,
+                        message,
+                        extra_lines: Vec::new(),
+                        repeat_count: 1,
+                        source: InputSource::Adb,
+                        error: None,
+                        stacktrace: None,
                     });
                 }
             }
@@ -141,9 +145,15 @@ impl LogLineParser for GenericParser {
 
             if !content.trim().is_empty() || level >= LogLevel::Warning {
                 return Some(LogEntry {
-                    timestamp: String::new(), level, tag, message: content,
-                    extra_lines: Vec::new(), repeat_count: 1,
-                    source: InputSource::Adb, error: None, stacktrace: None,
+                    timestamp: String::new(),
+                    level,
+                    tag,
+                    message: content,
+                    extra_lines: Vec::new(),
+                    repeat_count: 1,
+                    source: InputSource::Adb,
+                    error: None,
+                    stacktrace: None,
                 });
             }
         }

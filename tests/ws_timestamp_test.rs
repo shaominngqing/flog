@@ -11,7 +11,10 @@ use tokio_tungstenite::tungstenite::Message;
 
 async fn discover_dds_url() -> Option<String> {
     let output = tokio::process::Command::new("ps")
-        .args(["aux"]).output().await.ok()?;
+        .args(["aux"])
+        .output()
+        .await
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines() {
         if line.contains("development-service") {
@@ -26,11 +29,20 @@ async fn discover_dds_url() -> Option<String> {
                     let mut stream = tokio::time::timeout(
                         Duration::from_secs(2),
                         tokio::net::TcpStream::connect(host_port),
-                    ).await.ok()?.ok()?;
-                    let req = format!("GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", ws_path, host_port);
+                    )
+                    .await
+                    .ok()?
+                    .ok()?;
+                    let req = format!(
+                        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+                        ws_path, host_port
+                    );
                     stream.write_all(req.as_bytes()).await.ok()?;
                     let mut buf = vec![0u8; 4096];
-                    let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await.ok()?.ok()?;
+                    let n = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
+                        .await
+                        .ok()?
+                        .ok()?;
                     let resp = String::from_utf8_lossy(&buf[..n]);
                     if resp.starts_with("HTTP/1.1 302") {
                         for line in resp.lines() {
@@ -53,7 +65,10 @@ async fn discover_dds_url() -> Option<String> {
 async fn test_inspect_stdout_and_logging_events() {
     let ws_url = match discover_dds_url().await {
         Some(u) => u,
-        None => { println!("No DDS found"); return; }
+        None => {
+            println!("No DDS found");
+            return;
+        }
     };
 
     println!("Connecting to: {}", ws_url);
@@ -68,7 +83,9 @@ async fn test_inspect_stdout_and_logging_events() {
             "params": { "streamId": stream_id },
             "id": id,
         });
-        tx.send(Message::Text(sub.to_string().into())).await.unwrap();
+        tx.send(Message::Text(sub.to_string().into()))
+            .await
+            .unwrap();
     }
 
     // Collect events for 10 seconds, print FULL JSON of first few Stdout and Logging events
@@ -85,21 +102,34 @@ async fn test_inspect_stdout_and_logging_events() {
                 };
 
                 // Skip responses
-                if json.get("id").is_some() { continue; }
+                if json.get("id").is_some() {
+                    continue;
+                }
 
                 let method = json.get("method").and_then(|m| m.as_str()).unwrap_or("");
-                if method != "streamNotify" { continue; }
+                if method != "streamNotify" {
+                    continue;
+                }
 
-                let stream_id = json.pointer("/params/streamId").and_then(|s| s.as_str()).unwrap_or("?");
+                let stream_id = json
+                    .pointer("/params/streamId")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("?");
                 let event = json.pointer("/params/event");
 
                 match stream_id {
                     "Stdout" | "Stderr" => {
                         stdout_count += 1;
                         if stdout_count <= 3 {
-                            println!("\n=== {} event #{} (FULL JSON) ===", stream_id, stdout_count);
+                            println!(
+                                "\n=== {} event #{} (FULL JSON) ===",
+                                stream_id, stdout_count
+                            );
                             if let Some(evt) = event {
-                                println!("{}", serde_json::to_string_pretty(evt).unwrap_or_default());
+                                println!(
+                                    "{}",
+                                    serde_json::to_string_pretty(evt).unwrap_or_default()
+                                );
 
                                 // Also decode the bytes to show the text
                                 if let Some(bytes) = evt.get("bytes").and_then(|b| b.as_str()) {
@@ -125,7 +155,10 @@ async fn test_inspect_stdout_and_logging_events() {
                         if logging_count <= 3 {
                             println!("\n=== Logging event #{} (FULL JSON) ===", logging_count);
                             if let Some(evt) = event {
-                                println!("{}", serde_json::to_string_pretty(evt).unwrap_or_default());
+                                println!(
+                                    "{}",
+                                    serde_json::to_string_pretty(evt).unwrap_or_default()
+                                );
 
                                 // Print ALL top-level keys
                                 println!("--- top-level keys ---");
@@ -142,10 +175,19 @@ async fn test_inspect_stdout_and_logging_events() {
                 }
             }
             Ok(Some(Ok(_))) => continue,
-            Ok(Some(Err(e))) => { println!("Error: {}", e); continue; }
-            Ok(None) => { println!("Stream ended"); break; }
+            Ok(Some(Err(e))) => {
+                println!("Error: {}", e);
+                continue;
+            }
+            Ok(None) => {
+                println!("Stream ended");
+                break;
+            }
             Err(_) => {
-                println!("\nTimeout. Stdout events: {}, Logging events: {}", stdout_count, logging_count);
+                println!(
+                    "\nTimeout. Stdout events: {}, Logging events: {}",
+                    stdout_count, logging_count
+                );
                 break;
             }
         }
@@ -158,7 +200,9 @@ fn base64_decode_simple(input: &str) -> Result<Vec<u8>, ()> {
     let mut bits: u32 = 0;
     let mut bit_count: u32 = 0;
     for &b in input.as_bytes() {
-        if b == b'=' || b == b'\n' || b == b'\r' { continue; }
+        if b == b'=' || b == b'\n' || b == b'\r' {
+            continue;
+        }
         let val = table.iter().position(|&c| c == b).ok_or(())? as u32;
         bits = (bits << 6) | val;
         bit_count += 6;

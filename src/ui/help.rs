@@ -1,29 +1,35 @@
 //! Help overlay — comprehensive, visual guide to all flog features.
 
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
 };
 
 // Catppuccin Macchiato palette
-const BASE: Color    = Color::Rgb(36, 39, 58);
-const MANTLE: Color  = Color::Rgb(30, 32, 48);
+const BASE: Color = Color::Rgb(36, 39, 58);
+const MANTLE: Color = Color::Rgb(30, 32, 48);
 const SURFACE0: Color = Color::Rgb(54, 58, 79);
 const OVERLAY0: Color = Color::Rgb(110, 115, 141);
-const TEXT: Color     = Color::Rgb(202, 211, 245);
-const BLUE: Color    = Color::Rgb(138, 173, 244);
-const GREEN: Color   = Color::Rgb(166, 218, 149);
-const YELLOW: Color  = Color::Rgb(238, 212, 159);
-const PEACH: Color   = Color::Rgb(245, 169, 127);
-const RED: Color     = Color::Rgb(237, 135, 150);
-const MAUVE: Color   = Color::Rgb(198, 160, 246);
+const TEXT: Color = Color::Rgb(202, 211, 245);
+const BLUE: Color = Color::Rgb(138, 173, 244);
+const GREEN: Color = Color::Rgb(166, 218, 149);
+const YELLOW: Color = Color::Rgb(238, 212, 159);
+const PEACH: Color = Color::Rgb(245, 169, 127);
+const RED: Color = Color::Rgb(237, 135, 150);
+const MAUVE: Color = Color::Rgb(198, 160, 246);
 const SAPPHIRE: Color = Color::Rgb(125, 196, 228);
 
 fn key(s: &str) -> Span<'static> {
-    Span::styled(format!(" {} ", s), Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD))
+    Span::styled(
+        format!(" {} ", s),
+        Style::default()
+            .fg(MANTLE)
+            .bg(YELLOW)
+            .add_modifier(Modifier::BOLD),
+    )
 }
 
 fn label(s: &str) -> Span<'static> {
@@ -35,13 +41,17 @@ fn dim(s: &str) -> Span<'static> {
 }
 
 fn heading(s: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(format!("  \u{25c6} {}", s), Style::default().fg(BLUE).add_modifier(Modifier::BOLD)),
-    ])
+    Line::from(vec![Span::styled(
+        format!("  \u{25c6} {}", s),
+        Style::default().fg(BLUE).add_modifier(Modifier::BOLD),
+    )])
 }
 
 fn subheading(s: &str) -> Line<'static> {
-    Line::from(Span::styled(format!("    {}", s), Style::default().fg(SAPPHIRE)))
+    Line::from(Span::styled(
+        format!("    {}", s),
+        Style::default().fg(SAPPHIRE),
+    ))
 }
 
 fn blank() -> Line<'static> {
@@ -49,12 +59,7 @@ fn blank() -> Line<'static> {
 }
 
 fn kv(k: &str, v: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::raw("    "),
-        key(k),
-        Span::raw("  "),
-        label(v),
-    ])
+    Line::from(vec![Span::raw("    "), key(k), Span::raw("  "), label(v)])
 }
 
 fn mouse_action(action: &str, result: &str) -> Line<'static> {
@@ -65,6 +70,7 @@ fn mouse_action(action: &str, result: &str) -> Line<'static> {
     ])
 }
 
+#[allow(clippy::vec_init_then_push)]
 pub fn draw_help(f: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -74,10 +80,25 @@ pub fn draw_help(f: &mut Frame) {
     // ── Nav bar ──
     let w = f.area().width as usize;
     let nav = Line::from(vec![
-        Span::styled(" \u{2190} Back ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " \u{2190} Back ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(BLUE)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("  ", Style::default().bg(MANTLE)),
-        Span::styled("flog Help", Style::default().fg(TEXT).bg(MANTLE).add_modifier(Modifier::BOLD)),
-        Span::styled(" ".repeat(w.saturating_sub(20)), Style::default().bg(MANTLE)),
+        Span::styled(
+            "flog Help",
+            Style::default()
+                .fg(TEXT)
+                .bg(MANTLE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " ".repeat(w.saturating_sub(20)),
+            Style::default().bg(MANTLE),
+        ),
     ]);
     f.render_widget(Paragraph::new(nav), chunks[0]);
 
@@ -89,10 +110,21 @@ pub fn draw_help(f: &mut Frame) {
     // ════════════════════════════════════
     lines.push(blank());
     lines.push(Line::from(vec![
-        Span::styled("  flog ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)),
-        Span::styled(" Flutter Log Viewer", Style::default().fg(BLUE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  flog ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(BLUE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " Flutter Log Viewer",
+            Style::default().fg(BLUE).add_modifier(Modifier::BOLD),
+        ),
     ]));
-    lines.push(Line::from(dim("  Terminal-native log viewer for Flutter developers")));
+    lines.push(Line::from(dim(
+        "  Terminal-native log viewer for Flutter developers",
+    )));
     lines.push(blank());
 
     // ════════════════════════════════════
@@ -102,14 +134,26 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(blank());
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled(" \u{25a4} Logs ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " \u{25a4} Logs ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(BLUE)
+                .add_modifier(Modifier::BOLD),
+        ),
         dim("  Real-time log stream with filtering    "),
         key("1"),
         dim(" or click"),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled(" \u{21c4} Network ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " \u{21c4} Network ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(SAPPHIRE)
+                .add_modifier(Modifier::BOLD),
+        ),
         dim("  HTTP/SSE/WS request inspector     "),
         key("2"),
         dim(" or click"),
@@ -170,9 +214,27 @@ pub fn draw_help(f: &mut Frame) {
         Span::styled(" S ", Style::default().fg(OVERLAY0).bg(SURFACE0)),
         Span::styled(" V ", Style::default().fg(OVERLAY0).bg(SURFACE0)),
         Span::styled(" D ", Style::default().fg(TEXT).bg(SURFACE0)),
-        Span::styled(" I ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)),
-        Span::styled(" W ", Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD)),
-        Span::styled(" E ", Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " I ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(BLUE)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " W ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(YELLOW)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " E ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(RED)
+                .add_modifier(Modifier::BOLD),
+        ),
         dim("  to set minimum level"),
     ]));
     lines.push(blank());
@@ -222,8 +284,14 @@ pub fn draw_help(f: &mut Frame) {
 
     lines.push(subheading("\u{1f5b1} Mouse"));
     lines.push(mouse_action("Click request", "Select and open detail"));
-    lines.push(mouse_action("Click filter pills", "Toggle protocol/method/status filter"));
-    lines.push(mouse_action("Click status buttons", "Copy cURL / Copy Response / Clear"));
+    lines.push(mouse_action(
+        "Click filter pills",
+        "Toggle protocol/method/status filter",
+    ));
+    lines.push(mouse_action(
+        "Click status buttons",
+        "Copy cURL / Copy Response / Clear",
+    ));
     lines.push(mouse_action("Scroll on detail", "Scroll detail content"));
     lines.push(blank());
 
@@ -235,35 +303,61 @@ pub fn draw_help(f: &mut Frame) {
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled(" SSE ", Style::default().fg(MANTLE).bg(PEACH).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " SSE ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(PEACH)
+                .add_modifier(Modifier::BOLD),
+        ),
         dim("   Server-Sent Events streaming"),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled(" WS ", Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " WS ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(MAUVE)
+                .add_modifier(Modifier::BOLD),
+        ),
         dim("    WebSocket bidirectional messages"),
     ]));
     lines.push(blank());
 
-    lines.push(subheading("\u{1f4e6} Detail Sections (click to expand/collapse)"));
+    lines.push(subheading(
+        "\u{1f4e6} Detail Sections (click to expand/collapse)",
+    ));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled("\u{25bc} General", Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "\u{25bc} General",
+            Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
+        ),
         dim("          URL, Method, Status, Duration, Size"),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled("\u{25b6} Query Parameters", Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "\u{25b6} Query Parameters",
+            Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
+        ),
         dim("  Parsed from URL ?key=value"),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled("\u{25b6} Request Headers", Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "\u{25b6} Request Headers",
+            Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
+        ),
         dim("   JSON with fold/unfold"),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        Span::styled("\u{25b6} Response Body", Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "\u{25b6} Response Body",
+            Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
+        ),
         dim("     JSON pretty-print with syntax colors"),
     ]));
     lines.push(blank());
@@ -292,7 +386,10 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(Line::from(vec![
         Span::raw("    "),
         dim("For SSE:  "),
-        Span::styled("FlogSseParser.wrap(stream, url: url)", Style::default().fg(GREEN)),
+        Span::styled(
+            "FlogSseParser.wrap(stream, url: url)",
+            Style::default().fg(GREEN),
+        ),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
@@ -335,7 +432,13 @@ pub fn draw_help(f: &mut Frame) {
         dim(" or "),
         key("?"),
         dim(" or click "),
-        Span::styled(" \u{2190} Back ", Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " \u{2190} Back ",
+            Style::default()
+                .fg(MANTLE)
+                .bg(BLUE)
+                .add_modifier(Modifier::BOLD),
+        ),
         dim(" to close"),
     ]));
     lines.push(blank());

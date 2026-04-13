@@ -1,15 +1,15 @@
 //! Tab bar renderer — prominent 2-line tab selector with ASCII icons.
 
+use super::{BLUE, MANTLE, OVERLAY0};
+use crate::app::{App, ViewTab};
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
+    Frame,
 };
 use unicode_width::UnicodeWidthStr;
-use crate::app::{App, ViewTab};
-use super::{BASE, MANTLE, SURFACE0, BLUE, OVERLAY0, TEXT};
 
 pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
     if area.height < 2 {
@@ -21,12 +21,15 @@ pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
     // ── Line 1: Tab labels with icons ──
 
-    let logs_icon = "▤";   // list icon
-    let net_icon = "⇄";    // exchange icon
+    let logs_icon = "▤"; // list icon
+    let net_icon = "⇄"; // exchange icon
 
     let (logs_label_style, logs_icon_style) = if app.active_tab == ViewTab::Logs {
         (
-            Style::default().fg(BLUE).bg(bg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(BLUE)
+                .bg(bg)
+                .add_modifier(Modifier::BOLD),
             Style::default().fg(BLUE).bg(bg),
         )
     } else {
@@ -38,7 +41,10 @@ pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
     let (net_label_style, net_icon_style) = if app.active_tab == ViewTab::Network {
         (
-            Style::default().fg(BLUE).bg(bg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(BLUE)
+                .bg(bg)
+                .add_modifier(Modifier::BOLD),
             Style::default().fg(BLUE).bg(bg),
         )
     } else {
@@ -52,7 +58,7 @@ pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
         Span::styled("   ", Style::default().bg(bg)),
         Span::styled(logs_icon, logs_icon_style),
         Span::styled(" Logs", logs_label_style),
-        Span::styled("        ", Style::default().bg(bg)),  // spacer between tabs
+        Span::styled("        ", Style::default().bg(bg)), // spacer between tabs
         Span::styled(net_icon, net_icon_style),
         Span::styled(" Network", net_label_style),
     ];
@@ -66,9 +72,9 @@ pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
     // "   ▤ Logs" = 3 + 1 + 5 = 9 chars for logs tab
     // "        ⇄ Network" starts at 9 + 8 = 17
     let logs_start: usize = 3;
-    let logs_end: usize = 9;   // "▤ Logs" = 6 chars, starts at 3
+    let logs_end: usize = 9; // "▤ Logs" = 6 chars, starts at 3
     let net_start: usize = 17;
-    let net_end: usize = 26;   // "⇄ Network" = 9 chars, starts at 17
+    let net_end: usize = 26; // "⇄ Network" = 9 chars, starts at 17
 
     let mut line2 = String::with_capacity(w);
     for i in 0..w {
@@ -106,10 +112,7 @@ pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
     app.layout.tab_logs_x = (logs_start as u16, logs_end as u16);
     app.layout.tab_network_x = (net_start as u16, net_end as u16);
 
-    let lines = vec![
-        Line::from(spans1),
-        Line::from(spans2),
-    ];
+    let lines = vec![Line::from(spans1), Line::from(spans2)];
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(bg)), area);
 }

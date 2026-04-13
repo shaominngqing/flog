@@ -79,7 +79,8 @@ class FlogSseParser {
           // Walk backwards to find a safe boundary (max 4 bytes for UTF-8)
           for (int i = 1; i <= 4 && i <= byteBuffer.length; i++) {
             try {
-              decoded = utf8.decode(byteBuffer.sublist(0, byteBuffer.length - i));
+              decoded =
+                  utf8.decode(byteBuffer.sublist(0, byteBuffer.length - i));
               final remaining = byteBuffer.sublist(byteBuffer.length - i);
               byteBuffer
                 ..clear()
@@ -161,7 +162,8 @@ class FlogSseParser {
         } on FormatException {
           for (int i = 1; i <= 4 && i <= byteBuffer.length; i++) {
             try {
-              decoded = utf8.decode(byteBuffer.sublist(0, byteBuffer.length - i));
+              decoded =
+                  utf8.decode(byteBuffer.sublist(0, byteBuffer.length - i));
               final remaining = byteBuffer.sublist(byteBuffer.length - i);
               byteBuffer
                 ..clear()

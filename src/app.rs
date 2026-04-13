@@ -15,9 +15,8 @@ fn infer_system_tag(text: &str) -> (LogLevel, &'static str) {
     static EXCEPTION_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(r"(?i)══.*exception|exception caught|thrown").unwrap()
     });
-    static STACKTRACE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r"^#\d+\s+").unwrap()
-    });
+    static STACKTRACE_RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"^#\d+\s+").unwrap());
 
     let trimmed = text.trim_start();
 
@@ -33,16 +32,12 @@ fn infer_system_tag(text: &str) -> (LogLevel, &'static str) {
     }
 
     // Dart stacktrace
-    if STACKTRACE_RE.is_match(trimmed)
-        || trimmed.starts_with("(elided")
-    {
+    if STACKTRACE_RE.is_match(trimmed) || trimmed.starts_with("(elided") {
         return (LogLevel::Error, "Stacktrace");
     }
 
     // Dart/Flutter assertion
-    if trimmed.starts_with("Failed assertion")
-        || trimmed.starts_with("'package:")
-    {
+    if trimmed.starts_with("Failed assertion") || trimmed.starts_with("'package:") {
         return (LogLevel::Error, "Assert");
     }
 
@@ -78,13 +73,11 @@ pub struct SearchState {
     pub match_idx: usize,
 }
 
-
 /// Tag filter input buffer.
 #[derive(Default)]
 pub struct TagFilterInput {
     pub input: String,
 }
-
 
 /// Source selection state.
 #[derive(Clone)]
@@ -129,7 +122,7 @@ pub struct StatsSnapshot {
 /// Source dropdown state (WiFi-like picker while connected).
 #[derive(Default)]
 pub struct SourceDropdownState {
-    pub tab: usize,    // 0=VM, 1=ADB
+    pub tab: usize, // 0=VM, 1=ADB
     pub selected: usize,
     pub scroll_offset: usize,
     pub discovered_vm: Vec<DiscoveredService>,
@@ -146,7 +139,6 @@ pub struct DetailState {
     /// JSON viewer fold/unfold state.
     pub viewer_state: crate::ui::json_viewer::JsonViewerState,
 }
-
 
 /// Network tab view state.
 pub struct NetworkState {
@@ -166,7 +158,8 @@ pub struct NetworkState {
     /// Maps detail panel line index -> section key (for click-to-toggle). Set by renderer.
     pub detail_section_map: Vec<Option<String>>,
     /// JSON viewer states keyed by section (e.g., "req_headers", "res_body", "sse_0").
-    pub json_viewer_states: std::collections::HashMap<String, crate::ui::json_viewer::JsonViewerState>,
+    pub json_viewer_states:
+        std::collections::HashMap<String, crate::ui::json_viewer::JsonViewerState>,
     /// Maps detail panel line index -> (section_key, source_line) for JSON bracket click.
     pub detail_json_click_map: Vec<Option<(String, usize)>>,
     filtered_indices: Vec<usize>,
@@ -183,7 +176,9 @@ impl NetworkState {
 
     /// Scroll viewport down (mouse wheel, PageDown). Moves both offset and selected.
     pub fn move_down(&mut self, n: usize, count: usize) {
-        if count == 0 { return; }
+        if count == 0 {
+            return;
+        }
         self.scroll_offset = (self.scroll_offset + n).min(count.saturating_sub(1));
         self.selected = (self.selected + n).min(count - 1);
     }
@@ -199,7 +194,9 @@ impl NetworkState {
 
     /// Move selection down (j/Down). Renderer adjusts viewport.
     pub fn select_down(&mut self, n: usize, count: usize) {
-        if count == 0 { return; }
+        if count == 0 {
+            return;
+        }
         self.selected = (self.selected + n).min(count - 1);
     }
 
@@ -332,7 +329,7 @@ pub struct App {
     pub show_source_dropdown: bool,
     pub dropdown_scan_requested: bool,
     pub dropdown: SourceDropdownState,
-    pub detail_panel_pct: u16,     // detail panel width percentage (20-60)
+    pub detail_panel_pct: u16, // detail panel width percentage (20-60)
 
     // Sub-states
     pub search: SearchState,
@@ -453,7 +450,8 @@ impl App {
         self.connected = true;
 
         if entry.tag == "flog_net" {
-            if let Some(msg) = crate::parser::network::try_parse_network(&entry.tag, &entry.message) {
+            if let Some(msg) = crate::parser::network::try_parse_network(&entry.tag, &entry.message)
+            {
                 self.network_store.process_message(msg);
                 self.network.invalidate_filter();
                 return;
@@ -462,7 +460,9 @@ impl App {
 
         let drained = self.store.add_entry(entry);
         if drained > 0 {
-            let new: BTreeSet<usize> = self.bookmarks.iter()
+            let new: BTreeSet<usize> = self
+                .bookmarks
+                .iter()
                 .filter_map(|&idx| idx.checked_sub(drained))
                 .collect();
             self.bookmarks = new;
@@ -482,12 +482,16 @@ impl App {
     // ── Filter ──
 
     pub fn filtered_indices(&mut self) -> &[usize] {
-        if self.filter_dirty { self.rebuild_filter(); }
+        if self.filter_dirty {
+            self.rebuild_filter();
+        }
         &self.filtered_indices
     }
 
     pub fn filtered_count(&mut self) -> usize {
-        if self.filter_dirty { self.rebuild_filter(); }
+        if self.filter_dirty {
+            self.rebuild_filter();
+        }
         self.filtered_indices.len()
     }
 
@@ -515,7 +519,10 @@ impl App {
         if !self.filter.search_query.is_empty() {
             for (fi, &store_idx) in self.filtered_indices.iter().enumerate() {
                 if let Some(entry) = self.store.get(store_idx) {
-                    if !self.filter.search_positions(&entry.full_message()).is_empty()
+                    if !self
+                        .filter
+                        .search_positions(&entry.full_message())
+                        .is_empty()
                         || !self.filter.search_positions(&entry.tag).is_empty()
                     {
                         self.search.matches.push(fi);
@@ -550,7 +557,9 @@ impl App {
     /// Scroll viewport down by n entries.
     pub fn move_down(&mut self, n: usize) {
         let len = self.filtered_count();
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         self.scroll_offset = (self.scroll_offset + n).min(len.saturating_sub(1));
         self.selected = (self.selected + n).min(len - 1);
         // The renderer will fine-tune scroll_offset and detect if we hit bottom.
@@ -568,7 +577,9 @@ impl App {
     /// Move selection down (keyboard j/Down), viewport follows if needed.
     pub fn select_down(&mut self, n: usize) {
         let len = self.filtered_count();
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         self.selected = (self.selected + n).min(len - 1);
         // Viewport adjustment is done by the renderer (it knows the real capacity).
     }
@@ -614,7 +625,9 @@ impl App {
     }
 
     pub fn next_match(&mut self) {
-        if self.search.matches.is_empty() { return; }
+        if self.search.matches.is_empty() {
+            return;
+        }
         if let Some(pos) = self.search.matches.iter().position(|&m| m > self.selected) {
             self.search.match_idx = pos;
         } else {
@@ -626,7 +639,9 @@ impl App {
     }
 
     pub fn prev_match(&mut self) {
-        if self.search.matches.is_empty() { return; }
+        if self.search.matches.is_empty() {
+            return;
+        }
         if let Some(pos) = self.search.matches.iter().rposition(|&m| m < self.selected) {
             self.search.match_idx = pos;
         } else {
@@ -641,7 +656,11 @@ impl App {
 
     pub fn enter_tag_filter(&mut self) {
         self.mode = AppMode::TagFilter;
-        let tags: Vec<String> = self.filter.tag_include.iter().cloned()
+        let tags: Vec<String> = self
+            .filter
+            .tag_include
+            .iter()
+            .cloned()
             .chain(self.filter.tag_exclude.iter().map(|t| format!("-{}", t)))
             .collect();
         self.tag_filter.input = tags.join(",");
@@ -680,7 +699,6 @@ impl App {
         crate::ui::json_viewer::toggle_fold(&mut self.detail.viewer_state, source_line);
     }
 
-
     pub fn detail_scroll_up(&mut self, n: usize) {
         self.detail.scroll = self.detail.scroll.saturating_sub(n);
     }
@@ -690,7 +708,9 @@ impl App {
     }
 
     pub fn selected_store_index(&mut self) -> Option<usize> {
-        if self.filter_dirty { self.rebuild_filter(); }
+        if self.filter_dirty {
+            self.rebuild_filter();
+        }
         self.filtered_indices.get(self.selected).copied()
     }
 
@@ -705,11 +725,26 @@ impl App {
             *tag_map.entry(entry.tag.clone()).or_insert(0) += 1;
         }
         let level_counts = vec![
-            (LogLevel::Debug, level_map.get(&LogLevel::Debug).copied().unwrap_or(0)),
-            (LogLevel::Info, level_map.get(&LogLevel::Info).copied().unwrap_or(0)),
-            (LogLevel::Warning, level_map.get(&LogLevel::Warning).copied().unwrap_or(0)),
-            (LogLevel::Error, level_map.get(&LogLevel::Error).copied().unwrap_or(0)),
-            (LogLevel::System, level_map.get(&LogLevel::System).copied().unwrap_or(0)),
+            (
+                LogLevel::Debug,
+                level_map.get(&LogLevel::Debug).copied().unwrap_or(0),
+            ),
+            (
+                LogLevel::Info,
+                level_map.get(&LogLevel::Info).copied().unwrap_or(0),
+            ),
+            (
+                LogLevel::Warning,
+                level_map.get(&LogLevel::Warning).copied().unwrap_or(0),
+            ),
+            (
+                LogLevel::Error,
+                level_map.get(&LogLevel::Error).copied().unwrap_or(0),
+            ),
+            (
+                LogLevel::System,
+                level_map.get(&LogLevel::System).copied().unwrap_or(0),
+            ),
         ];
         let mut tag_ranking: Vec<(String, usize)> = tag_map.into_iter().collect();
         tag_ranking.sort_by(|a, b| b.1.cmp(&a.1));
@@ -750,8 +785,14 @@ impl App {
 
     // ── Mode switches ──
 
-    pub fn enter_help(&mut self) { self.mode = AppMode::Help; self.layout.last_click = None; }
-    pub fn exit_help(&mut self) { self.mode = AppMode::Normal; self.layout.last_click = None; }
+    pub fn enter_help(&mut self) {
+        self.mode = AppMode::Help;
+        self.layout.last_click = None;
+    }
+    pub fn exit_help(&mut self) {
+        self.mode = AppMode::Normal;
+        self.layout.last_click = None;
+    }
     pub fn enter_stats(&mut self) {
         self.mode = AppMode::Stats;
         self.active_stats_tab = ViewTab::Logs;
@@ -858,7 +899,9 @@ impl App {
 
     pub fn export_logs(&mut self) {
         use std::io::Write;
-        if self.filter_dirty { self.rebuild_filter(); }
+        if self.filter_dirty {
+            self.rebuild_filter();
+        }
 
         let now = timestamp_for_filename();
         let filename = format!("flog_{}.log", now);
@@ -868,8 +911,14 @@ impl App {
             let mut count = 0;
             for &idx in &self.filtered_indices {
                 if let Some(entry) = self.store.get(idx) {
-                    writeln!(file, "{} | {:7} | {:14} | {}",
-                        entry.timestamp, entry.level.as_str(), entry.tag, entry.full_message())?;
+                    writeln!(
+                        file,
+                        "{} | {:7} | {:14} | {}",
+                        entry.timestamp,
+                        entry.level.as_str(),
+                        entry.tag,
+                        entry.full_message()
+                    )?;
                     count += 1;
                 }
             }
@@ -890,7 +939,9 @@ impl App {
     /// Check if status message has expired.
     pub fn active_status(&self) -> Option<&str> {
         if let Some((ref msg, expire)) = self.status_message {
-            if self.tick < expire { return Some(msg); }
+            if self.tick < expire {
+                return Some(msg);
+            }
         }
         None
     }
@@ -902,5 +953,10 @@ fn timestamp_for_filename() -> String {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    format!("{:02}{:02}{:02}", (secs % 86400) / 3600, (secs % 3600) / 60, secs % 60)
+    format!(
+        "{:02}{:02}{:02}",
+        (secs % 86400) / 3600,
+        (secs % 3600) / 60,
+        secs % 60
+    )
 }

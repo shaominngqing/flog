@@ -3,7 +3,6 @@
 //! Run with: cargo test --test ws_connect_test2 -- --nocapture
 
 use futures_util::{SinkExt, StreamExt};
-use serde_json::Value;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::connect_async;
@@ -39,7 +38,10 @@ async fn test_find_dds_ports() {
 
     let dds_pid = match dds_pid {
         Some(p) => p,
-        None => { println!("No DDS process found"); return; }
+        None => {
+            println!("No DDS process found");
+            return;
+        }
     };
 
     println!("DDS PID: {}", dds_pid);
@@ -75,7 +77,10 @@ async fn test_find_dds_ports() {
         }
     }
 
-    println!("\nDDS ports (excluding underlying {}): {:?}", underlying, dds_ports);
+    println!(
+        "\nDDS ports (excluding underlying {}): {:?}",
+        underlying, dds_ports
+    );
 
     // Step 3: Try HTTP GET on each DDS port to find the auth token
     for port in &dds_ports {
@@ -83,16 +88,24 @@ async fn test_find_dds_ports() {
         if let Ok(Ok(mut stream)) = tokio::time::timeout(
             Duration::from_secs(2),
             tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)),
-        ).await {
+        )
+        .await
+        {
             let req = format!(
                 "GET / HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
                 port
             );
             let _ = stream.write_all(req.as_bytes()).await;
             let mut buf = vec![0u8; 8192];
-            if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await {
+            if let Ok(Ok(n)) =
+                tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await
+            {
                 let resp = String::from_utf8_lossy(&buf[..n]);
-                println!("HTTP response ({} bytes):\n{}", n, &resp[..resp.len().min(1000)]);
+                println!(
+                    "HTTP response ({} bytes):\n{}",
+                    n,
+                    &resp[..resp.len().min(1000)]
+                );
             }
         }
     }
@@ -122,7 +135,10 @@ async fn test_connect_dds_ws() {
 
     let dds_pid = match dds_pid {
         Some(p) => p,
-        None => { println!("No DDS process found"); return; }
+        None => {
+            println!("No DDS process found");
+            return;
+        }
     };
 
     // Find DDS listening ports
@@ -159,14 +175,18 @@ async fn test_connect_dds_ws() {
         if let Ok(Ok(mut stream)) = tokio::time::timeout(
             Duration::from_secs(2),
             tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)),
-        ).await {
+        )
+        .await
+        {
             let req = format!(
                 "GET /getVM HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
                 port
             );
             let _ = stream.write_all(req.as_bytes()).await;
             let mut buf = vec![0u8; 8192];
-            if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await {
+            if let Ok(Ok(n)) =
+                tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await
+            {
                 let resp = String::from_utf8_lossy(&buf[..n]);
                 println!("GET /getVM response:\n{}", &resp[..resp.len().min(500)]);
             }
@@ -183,7 +203,9 @@ async fn test_connect_dds_ws() {
                 let get_vm = serde_json::json!({
                     "jsonrpc": "2.0", "method": "getVM", "params": {}, "id": "1"
                 });
-                tx.send(Message::Text(get_vm.to_string().into())).await.unwrap();
+                tx.send(Message::Text(get_vm.to_string().into()))
+                    .await
+                    .unwrap();
 
                 match tokio::time::timeout(Duration::from_secs(3), rx.next()).await {
                     Ok(Some(Ok(Message::Text(t)))) => {
@@ -244,10 +266,7 @@ async fn test_dart_tooling_daemon() {
                 // DTD uses JSON-RPC. Try to get VM Service URI.
                 // The DTD protocol has a "getRegisteredStreamServices" or similar.
                 // Let's try some known methods.
-                for (id, method) in [
-                    ("1", "streamListen"),
-                    ("2", "getAvailableStreams"),
-                ] {
+                for (id, method) in [("1", "streamListen"), ("2", "getAvailableStreams")] {
                     let msg = serde_json::json!({
                         "jsonrpc": "2.0",
                         "method": method,
@@ -302,7 +321,9 @@ async fn test_check_flutter_devtools_files() {
                 // Read small files to look for URLs
                 if name.ends_with(".json") || name.ends_with(".txt") || name.ends_with(".log") {
                     if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                        if content.len() < 5000 && (content.contains("127.0.0.1") || content.contains("ws://")) {
+                        if content.len() < 5000
+                            && (content.contains("127.0.0.1") || content.contains("ws://"))
+                        {
                             println!("    Content: {}", &content[..content.len().min(200)]);
                         }
                     }
@@ -336,26 +357,37 @@ async fn test_follow_302_redirect() {
 
     let url = match underlying_url {
         Some(u) => u,
-        None => { println!("No URL found"); return; }
+        None => {
+            println!("No URL found");
+            return;
+        }
     };
 
     println!("Underlying URL: {}", url);
 
     // Try HTTP GET and look at the redirect
-    let host_port = url.strip_prefix("http://").and_then(|s| s.split('/').next()).unwrap_or("127.0.0.1");
-    let path = url.strip_prefix(&format!("http://{}", host_port)).unwrap_or("/");
+    let host_port = url
+        .strip_prefix("http://")
+        .and_then(|s| s.split('/').next())
+        .unwrap_or("127.0.0.1");
+    let path = url
+        .strip_prefix(&format!("http://{}", host_port))
+        .unwrap_or("/");
 
     if let Ok(Ok(mut stream)) = tokio::time::timeout(
         Duration::from_secs(2),
         tokio::net::TcpStream::connect(host_port),
-    ).await {
+    )
+    .await
+    {
         let req = format!(
             "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
             path, host_port
         );
         let _ = stream.write_all(req.as_bytes()).await;
         let mut buf = vec![0u8; 8192];
-        if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await {
+        if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await
+        {
             let resp = String::from_utf8_lossy(&buf[..n]);
             println!("\nHTTP GET {} response:\n{}", path, resp);
         }
@@ -367,14 +399,17 @@ async fn test_follow_302_redirect() {
     if let Ok(Ok(mut stream)) = tokio::time::timeout(
         Duration::from_secs(2),
         tokio::net::TcpStream::connect(host_port),
-    ).await {
+    )
+    .await
+    {
         let req = format!(
             "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
             ws_path, host_port
         );
         let _ = stream.write_all(req.as_bytes()).await;
         let mut buf = vec![0u8; 8192];
-        if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await {
+        if let Ok(Ok(n)) = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await
+        {
             let resp = String::from_utf8_lossy(&buf[..n]);
             println!("HTTP GET {} response:\n{}", ws_path, resp);
         }

@@ -26,7 +26,8 @@ pub async fn list_adb_devices() -> Vec<AdbDevice> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 2 && parts[1] == "device" {
             let serial = parts[0].to_string();
-            let model = parts.iter()
+            let model = parts
+                .iter()
                 .find(|p| p.starts_with("model:"))
                 .map(|p| p[6..].replace('_', " "))
                 .unwrap_or_else(|| serial.clone());
@@ -54,13 +55,16 @@ impl AdbSource {
         }
         // Capture flutter + related tags. Don't use -s (silence all) which drops too much.
         // Instead use logcat with threadtime format for richer info, filter in parser.
-        args.extend_from_slice(&["logcat", "-v", "brief",
+        args.extend_from_slice(&[
+            "logcat",
+            "-v",
+            "brief",
             "-s",
-            "flutter:V",           // print() / debugPrint()
-            "FlutterJNI:W",        // Flutter engine
-            "Flutter:V",           // Flutter framework (capital F)
-            "DartVM:W",            // Dart VM messages
-            "System.out:I",        // Some Dart output goes here
+            "flutter:V",    // print() / debugPrint()
+            "FlutterJNI:W", // Flutter engine
+            "Flutter:V",    // Flutter framework (capital F)
+            "DartVM:W",     // Dart VM messages
+            "System.out:I", // Some Dart output goes here
         ]);
 
         let mut child = Command::new("adb")
@@ -72,7 +76,11 @@ impl AdbSource {
         let stdout = child.stdout.take().expect("failed to capture adb stdout");
         let reader = BufReader::new(stdout).lines();
 
-        Ok(Self { child, reader, device_name })
+        Ok(Self {
+            child,
+            reader,
+            device_name,
+        })
     }
 
     async fn query_device_name(serial: Option<&str>) -> String {

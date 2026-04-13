@@ -3,8 +3,8 @@ use std::time::Instant;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 use crate::app::{App, AppMode, SourceSelectPhase, ViewTab};
-use crate::domain::LogLevel;
 use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
+use crate::domain::LogLevel;
 
 const SCROLL_LINES: usize = 3;
 const LEVEL_BUTTON_WIDTH: u16 = 3;
@@ -43,8 +43,12 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
 
     // Check if click is in the detail side panel (Logs view only)
     if app.active_tab == ViewTab::Logs && app.show_detail_panel {
-        let panel_start = (app.layout.width as u32 * (100 - app.detail_panel_pct as u32) / 100) as u16;
-        if mouse.column >= panel_start && mouse.row > app.layout.toolbar_y && mouse.row < app.layout.timeline_y {
+        let panel_start =
+            (app.layout.width as u32 * (100 - app.detail_panel_pct as u32) / 100) as u16;
+        if mouse.column >= panel_start
+            && mouse.row > app.layout.toolbar_y
+            && mouse.row < app.layout.timeline_y
+        {
             handle_detail_panel_click(app, &mouse);
             return;
         }
@@ -73,12 +77,13 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             let x = mouse.column;
             let y = mouse.row;
             // Line 1: search
-            if y == app.layout.net_toolbar_y {
-                if x >= app.layout.net_search_x.0 && x < app.layout.net_search_x.1 {
-                    app.network.search_active = true;
-                    app.network.search_input = app.network.filter.search.clone();
-                    return;
-                }
+            if y == app.layout.net_toolbar_y
+                && x >= app.layout.net_search_x.0
+                && x < app.layout.net_search_x.1
+            {
+                app.network.search_active = true;
+                app.network.search_input = app.network.filter.search.clone();
+                return;
             }
             // Line 2: filter pills
             if y == app.layout.net_filter_pills_y {
@@ -117,7 +122,8 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
         {
             match mouse.kind {
                 MouseEventKind::ScrollUp => {
-                    app.network.detail_scroll = app.network.detail_scroll.saturating_sub(SCROLL_LINES);
+                    app.network.detail_scroll =
+                        app.network.detail_scroll.saturating_sub(SCROLL_LINES);
                     return;
                 }
                 MouseEventKind::ScrollDown => {
@@ -131,7 +137,9 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                     if y >= detail_content_y && y < app.layout.bottom_y {
                         let line_idx = app.network.detail_scroll + (y - detail_content_y) as usize;
                         // First check section_line_map for section toggle
-                        if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
+                        if let Some(Some(section_key)) =
+                            app.network.detail_section_map.get(line_idx)
+                        {
                             let key = section_key.clone();
                             if app.network.collapsed_sections.contains(&key) {
                                 app.network.collapsed_sections.remove(&key);
@@ -141,8 +149,11 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                             return;
                         }
                         // Then check json_click_map for bracket toggle
-                        if let Some(Some((section_key, source_line))) = app.network.detail_json_click_map.get(line_idx) {
-                            if let Some(state) = app.network.json_viewer_states.get_mut(section_key) {
+                        if let Some(Some((section_key, source_line))) =
+                            app.network.detail_json_click_map.get(line_idx)
+                        {
+                            if let Some(state) = app.network.json_viewer_states.get_mut(section_key)
+                            {
                                 crate::ui::json_viewer::toggle_fold(state, *source_line);
                             }
                             return;
@@ -271,11 +282,15 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
 /// How many selectable (non-current) items in the active dropdown tab.
 fn dropdown_selectable_count(app: &App) -> usize {
     if app.dropdown.tab == 0 {
-        app.dropdown.discovered_vm.iter()
+        app.dropdown
+            .discovered_vm
+            .iter()
             .filter(|s| !(app.connected && app.source_name.contains(&extract_vm_port(&s.ws_url))))
             .count()
     } else {
-        app.dropdown.discovered_adb.iter()
+        app.dropdown
+            .discovered_adb
+            .iter()
             .filter(|d| !(app.connected && app.source_name.contains(&d.model)))
             .count()
     }
@@ -285,7 +300,10 @@ fn dropdown_selectable_count(app: &App) -> usize {
 fn dropdown_confirm(app: &mut App) {
     let sel = app.dropdown.selected;
     if app.dropdown.tab == 0 {
-        let selectable: Vec<&crate::input::discover::DiscoveredService> = app.dropdown.discovered_vm.iter()
+        let selectable: Vec<&crate::input::discover::DiscoveredService> = app
+            .dropdown
+            .discovered_vm
+            .iter()
             .filter(|s| !(app.connected && app.source_name.contains(&extract_vm_port(&s.ws_url))))
             .collect();
         if let Some(svc) = selectable.get(sel) {
@@ -294,7 +312,10 @@ fn dropdown_confirm(app: &mut App) {
             app.send_source_command(crate::app::SourceCommand::ConnectVm(url));
         }
     } else {
-        let selectable: Vec<&crate::input::adb::AdbDevice> = app.dropdown.discovered_adb.iter()
+        let selectable: Vec<&crate::input::adb::AdbDevice> = app
+            .dropdown
+            .discovered_adb
+            .iter()
             .filter(|d| !(app.connected && app.source_name.contains(&d.model)))
             .collect();
         if let Some(dev) = selectable.get(sel) {
@@ -306,7 +327,9 @@ fn dropdown_confirm(app: &mut App) {
 }
 
 fn extract_vm_port(ws_url: &str) -> String {
-    ws_url.split(':').nth(2)
+    ws_url
+        .split(':')
+        .nth(2)
         .and_then(|s| s.split('/').next())
         .unwrap_or("?")
         .to_string()
@@ -498,13 +521,11 @@ fn handle_input_mouse(app: &mut App, mouse: MouseEvent) {
                 }
             }
         }
-        MouseEventKind::Down(MouseButton::Right) => {
-            match app.mode {
-                AppMode::Search => app.cancel_search(),
-                AppMode::TagFilter => app.cancel_tag_filter(),
-                _ => {}
-            }
-        }
+        MouseEventKind::Down(MouseButton::Right) => match app.mode {
+            AppMode::Search => app.cancel_search(),
+            AppMode::TagFilter => app.cancel_tag_filter(),
+            _ => {}
+        },
         MouseEventKind::ScrollUp => app.move_up(SCROLL_LINES),
         MouseEventKind::ScrollDown => app.move_down(SCROLL_LINES),
         _ => {}
@@ -513,14 +534,21 @@ fn handle_input_mouse(app: &mut App, mouse: MouseEvent) {
 
 /// Handle clicks in the detail side panel area.
 fn handle_detail_panel_click(app: &mut App, mouse: &MouseEvent) {
-    if !app.show_detail_panel { return; }
+    if !app.show_detail_panel {
+        return;
+    }
 
     // Detail panel starts at: width * (100 - detail_panel_pct) / 100
-    let panel_start_x = (app.layout.width as u32 * (100 - app.detail_panel_pct as u32) / 100) as u16;
-    if mouse.column < panel_start_x { return; }
+    let panel_start_x =
+        (app.layout.width as u32 * (100 - app.detail_panel_pct as u32) / 100) as u16;
+    if mouse.column < panel_start_x {
+        return;
+    }
 
     // Only handle clicks within the list area (not toolbar/timeline/status)
-    if mouse.row <= app.layout.toolbar_y || mouse.row >= app.layout.timeline_y { return; }
+    if mouse.row <= app.layout.toolbar_y || mouse.row >= app.layout.timeline_y {
+        return;
+    }
 
     match mouse.kind {
         MouseEventKind::ScrollUp => app.detail_scroll_up(SCROLL_LINES),
@@ -698,12 +726,25 @@ fn mock_from_selected(app: &mut App) {
         }
     };
 
-    let url_pattern = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
-    let method = if entry.method.is_empty() { None } else { Some(entry.method.clone()) };
+    let url_pattern = entry
+        .path
+        .split('?')
+        .next()
+        .unwrap_or(&entry.path)
+        .to_string();
+    let method = if entry.method.is_empty() {
+        None
+    } else {
+        Some(entry.method.clone())
+    };
     let status_code = entry.http_status.unwrap_or(200);
-    let response_body = entry.response_body.clone().unwrap_or_else(|| "{}".to_string());
+    let response_body = entry
+        .response_body
+        .clone()
+        .unwrap_or_else(|| "{}".to_string());
 
-    app.mock_rules.add(url_pattern.clone(), method, status_code, response_body, 0);
+    app.mock_rules
+        .add(url_pattern.clone(), method, status_code, response_body, 0);
     app.show_status(format!("Mock rule created for {}", url_pattern));
 }
 
@@ -732,13 +773,11 @@ fn handle_overlay_mouse(app: &mut App, mouse: MouseEvent) {
                 }
             }
         }
-        MouseEventKind::Down(MouseButton::Right) => {
-            match app.mode {
-                AppMode::Help => app.exit_help(),
-                AppMode::Stats => app.exit_stats(),
-                _ => {}
-            }
-        }
+        MouseEventKind::Down(MouseButton::Right) => match app.mode {
+            AppMode::Help => app.exit_help(),
+            AppMode::Stats => app.exit_stats(),
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -760,7 +799,9 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
     // Handle source dropdown if open
     if app.show_source_dropdown {
         match key.code {
-            KeyCode::Esc => { app.show_source_dropdown = false; }
+            KeyCode::Esc => {
+                app.show_source_dropdown = false;
+            }
             KeyCode::Tab | KeyCode::BackTab => {
                 app.dropdown.tab = 1 - app.dropdown.tab;
                 app.dropdown.selected = 0;
@@ -810,7 +851,9 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
         match key.code {
             KeyCode::Char('q') => app.should_quit = true,
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.should_quit = true
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 app.network.select_up(1);
             }
@@ -841,7 +884,9 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             }
             KeyCode::Char('s') => {
                 app.select_mode = true;
-                app.show_status("Select mode — use terminal to select text. Press any key to exit.".to_string());
+                app.show_status(
+                    "Select mode — use terminal to select text. Press any key to exit.".to_string(),
+                );
             }
             KeyCode::Char('r') => replay_selected(app),
             KeyCode::Char('c') => copy_as_curl(app),
@@ -867,7 +912,9 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
     // Logs tab key handling
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.should_quit = true
+        }
         KeyCode::Up | KeyCode::Char('k') => app.select_up(1),
         KeyCode::Down | KeyCode::Char('j') => app.select_down(1),
         KeyCode::PageUp => app.move_up(20),
@@ -880,7 +927,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => app.toggle_detail_panel(),
         KeyCode::Char('s') => {
             app.select_mode = true;
-            app.show_status("Select mode \u{2014} use terminal to select text. Press any key to exit.".to_string());
+            app.show_status(
+                "Select mode \u{2014} use terminal to select text. Press any key to exit."
+                    .to_string(),
+            );
         }
         KeyCode::Char('c') => copy_current_log(app),
         KeyCode::Char('e') => app.export_logs(),
@@ -897,7 +947,9 @@ fn handle_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => app.apply_search(),
         KeyCode::Esc => app.cancel_search(),
-        KeyCode::Backspace => { app.search.input.pop(); }
+        KeyCode::Backspace => {
+            app.search.input.pop();
+        }
         KeyCode::Char(c) => app.search.input.push(c),
         _ => {}
     }
@@ -907,7 +959,9 @@ fn handle_filter_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => app.apply_tag_filter(),
         KeyCode::Esc => app.cancel_tag_filter(),
-        KeyCode::Backspace => { app.tag_filter.input.pop(); }
+        KeyCode::Backspace => {
+            app.tag_filter.input.pop();
+        }
         KeyCode::Char(c) => app.tag_filter.input.push(c),
         _ => {}
     }
@@ -915,13 +969,11 @@ fn handle_filter_key(app: &mut App, key: KeyEvent) {
 
 fn handle_overlay_key(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => {
-            match app.mode {
-                AppMode::Help => app.exit_help(),
-                AppMode::Stats => app.exit_stats(),
-                _ => {}
-            }
-        }
+        KeyCode::Esc | KeyCode::Char('q') => match app.mode {
+            AppMode::Help => app.exit_help(),
+            AppMode::Stats => app.exit_stats(),
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -941,10 +993,10 @@ fn handle_source_select_key(app: &mut App, key: KeyEvent) {
                     app.exit_source_select();
                     app.send_source_command(SourceCommand::AutoDiscover);
                 }
-                Some(SourceSelectPhase::ScanningVm) |
-                Some(SourceSelectPhase::ScanningAdb) |
-                Some(SourceSelectPhase::PickVmService(_)) |
-                Some(SourceSelectPhase::PickAdbDevice(_)) => {
+                Some(SourceSelectPhase::ScanningVm)
+                | Some(SourceSelectPhase::ScanningAdb)
+                | Some(SourceSelectPhase::PickVmService(_))
+                | Some(SourceSelectPhase::PickAdbDevice(_)) => {
                     // Back to choose type
                     app.source_select.phase = Some(SourceSelectPhase::ChooseType);
                     app.source_select.selected_idx = 0;
@@ -1025,10 +1077,18 @@ fn confirm_source_select(app: &mut App) {
             _ => None,
         },
         Some(SourceSelectPhase::PickVmService(services)) => {
-            if services.get(idx).is_some() { Some("pick_vm") } else { None }
+            if services.get(idx).is_some() {
+                Some("pick_vm")
+            } else {
+                None
+            }
         }
         Some(SourceSelectPhase::PickAdbDevice(devices)) => {
-            if devices.get(idx).is_some() { Some("pick_adb") } else { None }
+            if devices.get(idx).is_some() {
+                Some("pick_adb")
+            } else {
+                None
+            }
         }
         _ => None,
     };
@@ -1041,7 +1101,8 @@ fn confirm_source_select(app: &mut App) {
             app.source_select.phase = Some(SourceSelectPhase::ScanningAdb);
         }
         Some("pick_vm") => {
-            if let Some(SourceSelectPhase::PickVmService(services)) = app.source_select.phase.take() {
+            if let Some(SourceSelectPhase::PickVmService(services)) = app.source_select.phase.take()
+            {
                 if let Some(svc) = services.get(idx) {
                     let url = svc.ws_url.clone();
                     app.exit_source_select();
@@ -1050,7 +1111,8 @@ fn confirm_source_select(app: &mut App) {
             }
         }
         Some("pick_adb") => {
-            if let Some(SourceSelectPhase::PickAdbDevice(devices)) = app.source_select.phase.take() {
+            if let Some(SourceSelectPhase::PickAdbDevice(devices)) = app.source_select.phase.take()
+            {
                 if let Some(dev) = devices.get(idx) {
                     let serial = dev.serial.clone();
                     app.exit_source_select();
