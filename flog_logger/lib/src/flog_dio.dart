@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
 
 import 'flog_http_interceptor.dart';
 import 'flog_net.dart' show flogEnabled;
@@ -112,17 +110,27 @@ class FlogDio implements Dio {
       );
 
       // Register VM Service extension so flog can configure the proxy remotely.
+      // Uses a request interceptor that rewrites URLs to go through the proxy,
+      // preserving the original URL in a custom header for proper forwarding.
       try {
         developer.registerExtension('ext.flog.setProxy',
             (String method, Map<String, String> params) async {
           final port = int.tryParse(params['port'] ?? '');
           if (port != null) {
-            _inner.httpClientAdapter = IOHttpClientAdapter(
-              createHttpClient: () {
-                final client = HttpClient();
-                client.findProxy = (uri) => 'PROXY localhost:$port';
-                return client;
-              },
+            // Add an interceptor that rewrites requests to go through proxy
+            _inner.interceptors.insert(
+              0,
+              InterceptorsWrapper(
+                onRequest: (options, handler) {
+                  // Store original URL in custom header
+                  final originalUrl = options.uri.toString();
+                  options.headers['x-flog-target'] = originalUrl;
+                  // Rewrite to proxy: keep the path, change scheme+host
+                  final proxyBase = 'http://localhost:$port';
+                  options.baseUrl = proxyBase;
+                  handler.next(options);
+                },
+              ),
             );
           }
           return developer.ServiceExtensionResponse.result('{"ok": true}');

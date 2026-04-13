@@ -95,13 +95,15 @@ async fn handle_request(
     let method = req.method().to_string();
     let uri = req.uri().to_string();
 
-    // Determine the target URL. When used as an HTTP proxy, the URI is absolute.
-    // If relative, try to reconstruct from Host header.
-    let target_url = if uri.starts_with("http://") || uri.starts_with("https://") {
+    // Determine the target URL.
+    // Priority: x-flog-target header (set by FlogDio interceptor) > absolute URI > Host header
+    let target_url = if let Some(target) = req.headers().get("x-flog-target") {
+        target.to_str().unwrap_or(&uri).to_string()
+    } else if uri.starts_with("http://") || uri.starts_with("https://") {
         uri.clone()
     } else if let Some(host) = req.headers().get("host") {
         let host_str = host.to_str().unwrap_or("localhost");
-        format!("http://{}{}", host_str, uri)
+        format!("https://{}{}", host_str, uri)
     } else {
         uri.clone()
     };
@@ -178,10 +180,11 @@ async fn forward_request(
     app: &Arc<Mutex<App>>,
     method: &str,
     target_url: &str,
-    _req: Request<Incoming>,
+    req: Request<Incoming>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     let client = match reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
+        .no_proxy() // don't recurse through ourselves
         .build()
     {
         Ok(c) => c,
@@ -205,8 +208,27 @@ async fn forward_request(
         _ => reqwest::Method::GET,
     };
 
+    // Forward original headers
+    let mut headers = reqwest::header::HeaderMap::new();
+    for (key, val) in req.headers() {
+        if let Ok(name) = reqwest::header::HeaderName::from_bytes(key.as_str().as_bytes()) {
+            if let Ok(v) = reqwest::header::HeaderValue::from_bytes(val.as_bytes()) {
+                headers.insert(name, v);
+            }
+        }
+    }
+
+    // Forward original body
+    use http_body_util::BodyExt;
+    let body_bytes = req.into_body().collect().await.map(|b| b.to_bytes()).unwrap_or_default();
+
     let start = Instant::now();
-    let result = client.request(reqwest_method, target_url).send().await;
+    let result = client
+        .request(reqwest_method, target_url)
+        .headers(headers)
+        .body(body_bytes.to_vec())
+        .send()
+        .await;
     let _duration_ms = start.elapsed().as_millis() as u64;
 
     match result {
