@@ -518,9 +518,6 @@ async fn run_loop(
                         ui::network::stats::draw_network_stats(f, &mut app_guard)
                     }
                 },
-                AppMode::MockRules => {
-                    ui::network::mock_rules::draw_mock_rules(f, &mut app_guard);
-                }
                 AppMode::MockRuleEdit => {
                     // Draw normal Network view underneath, then editor overlay on top
                     ui::draw(f, &mut app_guard);

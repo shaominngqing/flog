@@ -18,7 +18,6 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         AppMode::TagFilter => handle_filter_key(app, key),
         AppMode::Help | AppMode::Stats => handle_overlay_key(app, key),
         AppMode::SourceSelect => handle_source_select_key(app, key),
-        AppMode::MockRules => handle_mock_rules_key(app, key),
         AppMode::MockRuleEdit => handle_mock_edit_key(app, key),
     }
 }
@@ -29,7 +28,6 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
         AppMode::Search | AppMode::TagFilter => handle_input_mouse(app, mouse),
         AppMode::Help | AppMode::Stats => handle_overlay_mouse(app, mouse),
         AppMode::SourceSelect => handle_source_select_mouse(app, mouse),
-        AppMode::MockRules => handle_mock_rules_mouse(app, mouse),
         AppMode::MockRuleEdit => handle_mock_edit_mouse(app, mouse),
     }
 }
@@ -1078,53 +1076,6 @@ fn handle_overlay_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-// ══════════════════════════════════════
-//  Mock Rules overlay
-// ══════════════════════════════════════
-
-fn handle_mock_rules_key(app: &mut App, key: KeyEvent) {
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => app.mode = AppMode::Normal,
-        KeyCode::Char('j') | KeyCode::Down => {
-            let len = app.mock_rules.len();
-            if len > 0 {
-                app.mock_rule_selected = (app.mock_rule_selected + 1).min(len - 1);
-            }
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            if app.mock_rule_selected > 0 {
-                app.mock_rule_selected -= 1;
-            }
-        }
-        KeyCode::Enter | KeyCode::Char('e') => {
-            if let Some(rule) = app.mock_rules.rules().get(app.mock_rule_selected) {
-                let id = rule.id;
-                app.enter_mock_edit(id);
-            }
-        }
-        KeyCode::Char(' ') => {
-            // Toggle enabled/disabled
-            if let Some(rule) = app.mock_rules.rules().get(app.mock_rule_selected) {
-                let id = rule.id;
-                app.mock_rules.toggle(id);
-            }
-        }
-        KeyCode::Char('d') | KeyCode::Delete => {
-            // Delete rule
-            if let Some(rule) = app.mock_rules.rules().get(app.mock_rule_selected) {
-                let id = rule.id;
-                app.mock_rules.remove(id);
-                if app.mock_rule_selected > 0
-                    && app.mock_rule_selected >= app.mock_rules.len()
-                {
-                    app.mock_rule_selected = app.mock_rules.len().saturating_sub(1);
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
 fn handle_mock_edit_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => app.cancel_mock_edit(),
@@ -1178,77 +1129,6 @@ fn handle_mock_edit_key(app: &mut App, key: KeyEvent) {
                 }
             }
         }
-    }
-}
-
-fn handle_mock_rules_mouse(app: &mut App, mouse: MouseEvent) {
-    match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left) => {
-            let x = mouse.column;
-            let y = mouse.row;
-            let now = Instant::now();
-
-            // Double-click detection
-            let is_double = if let Some((prev_time, prev_x, prev_y)) = app.layout.last_click {
-                now.duration_since(prev_time).as_millis() < DOUBLE_CLICK_MS
-                    && prev_x == x
-                    && prev_y == y
-            } else {
-                false
-            };
-            app.layout.last_click = Some((now, x, y));
-
-            // Back button (top-left)
-            if y == 0 && x < 10 {
-                app.mode = AppMode::Normal;
-                return;
-            }
-
-            // Check rule regions
-            for (row_idx, action, ry, x_start, x_end) in app.layout.mock_rule_regions.clone() {
-                if y == ry && x >= x_start && x < x_end {
-                    match action.as_str() {
-                        "select" => {
-                            app.mock_rule_selected = row_idx;
-                            // Double-click on row → enter edit
-                            if is_double {
-                                if let Some(rule) = app.mock_rules.rules().get(row_idx) {
-                                    let id = rule.id;
-                                    app.enter_mock_edit(id);
-                                }
-                            }
-                        }
-                        "edit" => {
-                            if let Some(rule) = app.mock_rules.rules().get(row_idx) {
-                                let id = rule.id;
-                                app.enter_mock_edit(id);
-                            }
-                        }
-                        "toggle" => {
-                            if let Some(rule) = app.mock_rules.rules().get(row_idx) {
-                                let id = rule.id;
-                                app.mock_rules.toggle(id);
-                            }
-                        }
-                        "delete" => {
-                            if let Some(rule) = app.mock_rules.rules().get(row_idx) {
-                                let id = rule.id;
-                                app.mock_rules.remove(id);
-                                if app.mock_rule_selected >= app.mock_rules.len()
-                                    && app.mock_rule_selected > 0
-                                {
-                                    app.mock_rule_selected -= 1;
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
-            }
-        }
-        MouseEventKind::Down(MouseButton::Right) => app.mode = AppMode::Normal,
-        _ => {}
     }
 }
 

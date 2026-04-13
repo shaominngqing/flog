@@ -61,8 +61,25 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     spans1.push(Span::styled(" ", Style::default().bg(bg)));
     x += 1;
 
+    // Compute proxy status text first so we can reserve space for it
+    let proxy_text = if app.proxy_running {
+        let port = app.proxy_port.unwrap_or(0);
+        let rule_count = app.mock_rules.enabled_count();
+        if !app.is_vm_service_connected() {
+            format!("\u{25cb} Proxy :{} ", port) // hollow -- not connected to Dart
+        } else if rule_count > 0 {
+            format!("\u{25cf} Proxy :{} ({} rules) ", port, rule_count) // solid green
+        } else {
+            format!("\u{25cf} Proxy :{} ", port) // solid blue -- connected, no rules
+        }
+    } else {
+        String::new()
+    };
+    let proxy_w = proxy_text.width();
+    let proxy_reserved = if proxy_w > 0 { proxy_w + 1 } else { 0 }; // +1 for gap
+
     let search_start = x;
-    let sw: usize = w.saturating_sub(8); // use most of the width for search
+    let sw: usize = w.saturating_sub(x as usize + proxy_reserved + 2); // reserve space for proxy
     let search_text = if is_searching {
         format!("/{}_", app.network.search_input)
     } else if app.network.filter.search.is_empty() {
@@ -81,32 +98,17 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     x += sw as u16;
     let search_end = x;
 
-    // Proxy status indicator (always shown when proxy is running)
-    let proxy_text = if app.proxy_running {
-        let port = app.proxy_port.unwrap_or(0);
-        let rule_count = app.mock_rules.enabled_count();
-        if !app.is_vm_service_connected() {
-            format!("\u{25cb} Proxy :{} ", port) // ○ hollow — not connected to Dart
-        } else if rule_count > 0 {
-            format!("\u{25cf} Proxy :{} ({} rules) ", port, rule_count) // ● solid green
-        } else {
-            format!("\u{25cf} Proxy :{} ", port) // ● solid blue — connected, no rules
-        }
-    } else {
-        String::new()
-    };
-
-    let proxy_w = proxy_text.width();
+    // Proxy status indicator (right-aligned on line 1)
     let rem1 = (area.width as usize).saturating_sub(x as usize);
     if !proxy_text.is_empty() && rem1 > proxy_w {
         let gap = rem1.saturating_sub(proxy_w);
         spans1.push(Span::styled(" ".repeat(gap), Style::default().bg(bg)));
         let proxy_color = if !app.is_vm_service_connected() {
-            OVERLAY0 // gray — not connected
+            OVERLAY0 // gray -- not connected
         } else if app.mock_rules.enabled_count() > 0 {
-            PROXY_GREEN // green — connected with active rules
+            PROXY_GREEN // green -- connected with active rules
         } else {
-            BLUE // blue — connected, no rules
+            BLUE // blue -- connected, no rules
         };
         spans1.push(Span::styled(
             proxy_text,

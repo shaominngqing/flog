@@ -55,7 +55,6 @@ pub enum AppMode {
     Help,
     Stats,
     SourceSelect,
-    MockRules,
     MockRuleEdit,
 }
 
@@ -884,7 +883,7 @@ impl App {
         }
         self.mock_edit_is_new = false;
         self.mock_edit_rule_id = None;
-        self.mode = AppMode::MockRules;
+        self.mode = AppMode::Normal;
     }
 
     pub fn cancel_mock_edit(&mut self) {
@@ -895,7 +894,7 @@ impl App {
         }
         self.mock_edit_is_new = false;
         self.mock_edit_rule_id = None;
-        self.mode = AppMode::MockRules;
+        self.mode = AppMode::Normal;
     }
 
     pub fn exit_source_select(&mut self) {
