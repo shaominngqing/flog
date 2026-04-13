@@ -814,6 +814,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('r') => replay_selected(app),
             KeyCode::Char('c') => copy_as_curl(app),
             KeyCode::Char('y') => copy_response(app),
+            KeyCode::Char('S') => app.enter_network_stats(),
             KeyCode::Char('?') => app.enter_help(),
             KeyCode::Char('1') => app.switch_tab(ViewTab::Logs),
             KeyCode::Char('2') => app.switch_tab(ViewTab::Network),

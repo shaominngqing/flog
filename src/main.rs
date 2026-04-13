@@ -460,7 +460,12 @@ async fn run_loop(
             terminal.draw(|f| {
                 match app_guard.mode {
                     AppMode::Help => ui::help::draw_help(f),
-                    AppMode::Stats => ui::logs::stats::draw_stats(f, &mut app_guard),
+                    AppMode::Stats => {
+                        match app_guard.active_stats_tab {
+                            crate::app::ViewTab::Logs => ui::logs::stats::draw_stats(f, &mut app_guard),
+                            crate::app::ViewTab::Network => ui::network::stats::draw_network_stats(f, &mut app_guard),
+                        }
+                    }
                     _ => ui::draw(f, &mut app_guard),
                 }
             })?;

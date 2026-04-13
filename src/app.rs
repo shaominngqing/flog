@@ -355,6 +355,8 @@ pub struct App {
     pub layout: LayoutCache,
     pub tick: u64,
     pub stats_snapshot: Option<StatsSnapshot>,
+    /// Which tab the Stats overlay was opened from (Logs or Network).
+    pub active_stats_tab: ViewTab,
 
     // Scroll
     pub auto_scroll: bool,
@@ -398,6 +400,7 @@ impl App {
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
+            active_stats_tab: ViewTab::Logs,
             auto_scroll: true,
             new_logs_since_pause: 0,
             filtered_indices: Vec::new(),
@@ -743,9 +746,15 @@ impl App {
     pub fn exit_help(&mut self) { self.mode = AppMode::Normal; self.layout.last_click = None; }
     pub fn enter_stats(&mut self) {
         self.mode = AppMode::Stats;
+        self.active_stats_tab = ViewTab::Logs;
         self.layout.last_click = None;
         // Snapshot stats on entry to prevent flickering from live data changes
         self.stats_snapshot = Some(self.compute_stats());
+    }
+    pub fn enter_network_stats(&mut self) {
+        self.mode = AppMode::Stats;
+        self.active_stats_tab = ViewTab::Network;
+        self.layout.last_click = None;
     }
     pub fn exit_stats(&mut self) {
         self.mode = AppMode::Normal;

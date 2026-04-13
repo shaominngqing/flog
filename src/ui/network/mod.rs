@@ -2,6 +2,7 @@
 
 pub mod detail;
 pub mod filter;
+pub mod stats;
 
 use ratatui::{
     Frame,
