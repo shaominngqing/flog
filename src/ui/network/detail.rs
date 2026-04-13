@@ -93,12 +93,35 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
             json_click_map.push(None);
         }
     }
-    all_lines.push(Line::from(Span::styled(
-        "\u{2500}".repeat(inner_w),
-        Style::default().fg(SURFACE0),
-    )));
-    section_line_map.push(None);
-    json_click_map.push(None);
+    // Divider line with [Mock] button (VM Service only)
+    {
+        let mock_btn = if app.is_vm_service_connected() { " [Mock] " } else { "" };
+        let divider_w = inner_w.saturating_sub(mock_btn.len());
+        let mut divider_spans = vec![
+            Span::styled(
+                "\u{2500}".repeat(divider_w),
+                Style::default().fg(SURFACE0),
+            ),
+        ];
+        if !mock_btn.is_empty() {
+            divider_spans.push(Span::styled(
+                mock_btn,
+                Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD),
+            ));
+            // Register click region — will be offset by area.x+1 and the content_y + line_idx
+            // We store the raw line index; the click handler translates using detail_content_y + scroll
+            let line_idx = all_lines.len();
+            let btn_x_start = (area.x + 1 + divider_w as u16) as u16;
+            let btn_x_end = btn_x_start + mock_btn.len() as u16;
+            let btn_y = area.y + 1 + line_idx as u16; // approximate — before scroll
+            app.layout.detail_mock_btn = Some((btn_y, btn_x_start, btn_x_end));
+        } else {
+            app.layout.detail_mock_btn = None;
+        }
+        all_lines.push(Line::from(divider_spans));
+        section_line_map.push(None);
+        json_click_map.push(None);
+    }
 
     // ── General ──
     let sec = "General";

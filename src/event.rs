@@ -190,7 +190,17 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                     return;
                 }
                 MouseEventKind::Down(MouseButton::Left) => {
+                    let x = mouse.column;
                     let y = mouse.row;
+
+                    // Check [Mock] button in detail header
+                    if let Some((btn_y, btn_x_start, btn_x_end)) = app.layout.detail_mock_btn {
+                        if y == btn_y && x >= btn_x_start && x < btn_x_end {
+                            mock_from_selected(app);
+                            return;
+                        }
+                    }
+
                     // Use the precise Y set by the detail renderer
                     let detail_content_y = app.layout.net_detail_content_y;
                     if y >= detail_content_y && y < app.layout.bottom_y {
@@ -244,7 +254,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                 "replay" => replay_selected(app),
                                 "curl" => copy_as_curl(app),
                                 "response" => copy_response(app),
-                                "mock" => mock_from_selected(app),
+                                "mock" => app.enter_mock_rules(),
                                 // mockrules removed — rules show in side panel via Mock button
                                 "stats" => app.enter_network_stats(),
                                 "clear" => {
