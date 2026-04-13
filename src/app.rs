@@ -364,6 +364,8 @@ pub struct App {
     // Proxy
     pub proxy_port: Option<u16>,
     pub proxy_running: bool,
+    /// Proxy connection status message for the UI indicator.
+    pub proxy_dart_connected: bool,
     pub mock_rules: crate::proxy::mock::MockRuleStore,
     pub mock_rule_selected: usize,
     pub mock_edit_rule_id: Option<usize>,
@@ -420,6 +422,7 @@ impl App {
             last_source_type: None,
             proxy_port: None,
             proxy_running: false,
+            proxy_dart_connected: false,
             mock_rules: crate::proxy::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
             mock_edit_rule_id: None,

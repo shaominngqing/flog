@@ -23,10 +23,12 @@ pub struct VmServiceSource {
 }
 
 impl VmServiceSource {
+    /// Returns (Self, proxy_handshake_ok).
+    /// proxy_handshake_ok is true if we successfully called ext.flog.setProxy.
     pub async fn new(
         uri: &str,
         proxy_port: Option<u16>,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(Self, bool), Box<dyn std::error::Error + Send + Sync>> {
         let (mut ws_stream, _) = connect_async(uri).await?;
 
         // ── Before split: do getVM + proxy handshake using the unsplit stream ──
@@ -75,6 +77,7 @@ impl VmServiceSource {
         }
 
         // Step 2: If we have an isolate ID and a proxy port, call setProxy
+        let mut proxy_ok = false;
         if let (Some(ref iso_id), Some(port)) = (&isolate_id, proxy_port) {
             let call_ext = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -86,10 +89,23 @@ impl VmServiceSource {
                 },
                 "id": "proxy_notify"
             });
-            ws_stream
+            if ws_stream
                 .send(Message::Text(call_ext.to_string().into()))
                 .await
-                .ok();
+                .is_ok()
+            {
+                // Wait briefly for the response to confirm success
+                if let Ok(Some(Ok(Message::Text(resp)))) =
+                    tokio::time::timeout(std::time::Duration::from_millis(500), ws_stream.next()).await
+                {
+                    if let Ok(json) = serde_json::from_str::<Value>(&resp.to_string()) {
+                        if json.get("id").and_then(|v| v.as_str()) == Some("proxy_notify") {
+                            // Check if there's an error
+                            proxy_ok = json.get("error").is_none();
+                        }
+                    }
+                }
+            }
         }
 
         // ── Now split for normal operation ──
@@ -106,11 +122,11 @@ impl VmServiceSource {
             let _ = sender.send(Message::Text(msg.to_string().into())).await;
         }
 
-        Ok(Self {
+        Ok((Self {
             receiver,
             uri: uri.to_string(),
             pending_lines: Vec::new(),
-        })
+        }, proxy_ok))
     }
 
     pub async fn next_event(&mut self) -> Option<SourceEvent> {
