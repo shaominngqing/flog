@@ -65,16 +65,14 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     let proxy_text = if app.proxy_running {
         let port = app.proxy_port.unwrap_or(0);
         let rule_count = app.mock_rules.enabled_count();
-        if app.proxy_dart_connected {
-            if rule_count > 0 {
-                format!("\u{25cf} Proxy :{} ({} rules) ", port, rule_count)
-            } else {
-                format!("\u{25cf} Proxy :{} ready ", port)
-            }
+        if app.proxy_dart_connected && rule_count > 0 {
+            format!("Proxy :{} | Dart connected | {} rules active ", port, rule_count)
+        } else if app.proxy_dart_connected {
+            format!("Proxy :{} | Dart connected ", port)
         } else if app.is_vm_service_connected() {
-            format!("\u{25cb} Proxy :{} ext failed ", port)
+            format!("Proxy :{} | Dart not connected ", port)
         } else {
-            format!("\u{25cb} Proxy :{} ", port)
+            format!("Proxy :{} | waiting for VM Service ", port)
         }
     } else {
         String::new()
