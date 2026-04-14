@@ -78,14 +78,16 @@ class FlogMockInterceptor extends Interceptor {
         data: _tryParseJson(rule.responseBody),
       );
 
+      // Use callFollowing: true so subsequent interceptors (like ApiResponseInterceptor)
+      // still process the response (e.g. unwrap {code, message, result} envelope)
       if (rule.delayMs > 0) {
         Future.delayed(Duration(milliseconds: rule.delayMs), () {
-          handler.resolve(response);
+          handler.resolve(response, true);
         });
         return;
       }
 
-      handler.resolve(response);
+      handler.resolve(response, true);
       return;
     }
 
