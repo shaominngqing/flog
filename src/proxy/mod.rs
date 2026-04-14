@@ -222,9 +222,14 @@ async fn forward_request(
         _ => reqwest::Method::GET,
     };
 
-    // Forward original headers
+    // Forward original headers, excluding proxy-specific ones
     let mut headers = reqwest::header::HeaderMap::new();
+    let skip_headers = ["host", "x-flog-target", "content-length", "transfer-encoding"];
     for (key, val) in req.headers() {
+        let key_str = key.as_str().to_lowercase();
+        if skip_headers.contains(&key_str.as_str()) {
+            continue;
+        }
         if let Ok(name) = reqwest::header::HeaderName::from_bytes(key.as_str().as_bytes()) {
             if let Ok(v) = reqwest::header::HeaderValue::from_bytes(val.as_bytes()) {
                 headers.insert(name, v);
