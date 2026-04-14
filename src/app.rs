@@ -798,13 +798,6 @@ impl App {
         self.active_tab = tab;
     }
 
-    pub fn next_tab(&mut self) {
-        self.active_tab = match self.active_tab {
-            ViewTab::Logs => ViewTab::Network,
-            ViewTab::Network => ViewTab::Logs,
-        };
-    }
-
     // ── Mode switches ──
 
     pub fn enter_help(&mut self) {

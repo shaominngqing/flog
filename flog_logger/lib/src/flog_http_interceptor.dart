@@ -138,6 +138,11 @@ class FlogHttpInterceptor extends Interceptor {
       data['body'] = _truncate(_encodeBody(response.data));
     }
 
+    final isMocked = response.requestOptions.extra['flog_mocked'] == true;
+    if (isMocked) {
+      data['mocked'] = true;
+    }
+
     emitNet(data);
     handler.next(response);
   }

@@ -65,9 +65,12 @@ class FlogMockInterceptor extends Interceptor {
       if (!rule.enabled) continue;
       if (!url.contains(rule.urlPattern)) continue;
       if (rule.method != null &&
-          !rule.method!.toLowerCase().contains(method.toLowerCase())) {
+          rule.method!.toLowerCase() != method.toLowerCase()) {
         continue;
       }
+
+      // Mark this request as mocked so FlogHttpInterceptor can flag it
+      options.extra['flog_mocked'] = true;
 
       final response = Response(
         requestOptions: options,

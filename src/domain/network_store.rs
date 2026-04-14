@@ -103,6 +103,9 @@ impl NetworkStore {
     fn handle_res(&mut self, msg: FlogNetMessage) {
         if let Some(entry) = self.find_by_id_mut(msg.id) {
             entry.status = NetworkStatus::Completed;
+            if msg.mocked == Some(true) {
+                entry.source = crate::domain::network::EntrySource::Mocked;
+            }
             entry.http_status = msg.status;
             entry.duration = msg.duration;
             if let Some(headers) = msg.headers {

@@ -22,6 +22,7 @@ impl StatusFilter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::All => "All",
@@ -32,6 +33,7 @@ impl StatusFilter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn next(&self) -> Self {
         match self {
             Self::All => Self::Completed,
@@ -65,6 +67,7 @@ impl MethodFilter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::All => "All",
@@ -76,6 +79,7 @@ impl MethodFilter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn next(&self) -> Self {
         match self {
             Self::All => Self::Get,
@@ -106,6 +110,7 @@ impl ProtocolFilter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::All => "All",
@@ -115,6 +120,7 @@ impl ProtocolFilter {
         }
     }
 
+    #[allow(dead_code)]
     pub fn next(&self) -> Self {
         match self {
             Self::All => Self::Http,
@@ -163,6 +169,7 @@ impl NetworkFilter {
         true
     }
 
+    #[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         self.status != StatusFilter::All
             || self.method != MethodFilter::All

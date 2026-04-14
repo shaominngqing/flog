@@ -20,6 +20,7 @@ pub struct MockRule {
     pub enabled: bool,
     /// Number of times this rule has been matched.
     #[serde(skip)]
+    #[allow(dead_code)]
     pub hit_count: u32,
 }
 
@@ -69,6 +70,7 @@ impl MockRuleStore {
 
     /// Find a matching rule for the given URL and method.
     /// Returns a clone of the matched rule (with hit_count incremented).
+    #[allow(dead_code)]
     pub fn find_match(&mut self, url: &str, method: &str) -> Option<MockRule> {
         for rule in self.rules.iter_mut() {
             if !rule.enabled {
@@ -111,6 +113,7 @@ impl MockRuleStore {
     }
 
     /// Whether the store has no rules.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
     }

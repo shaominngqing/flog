@@ -152,7 +152,7 @@ async fn source_manager(
         let app_c = Arc::clone(&app);
         match cmd {
             SourceCommand::ConnectVm(uri) => {
-                current_task = Some(tokio::spawn(start_vm_service(app_c, uri)));
+                current_task = Some(tokio::spawn(run_vm_service(app_c, uri)));
             }
             SourceCommand::ConnectAdb(serial) => {
                 current_task = Some(tokio::spawn(start_adb(app_c, serial)));
@@ -219,7 +219,7 @@ async fn run_source_selection(app: Arc<Mutex<App>>) {
                         {
                             app.lock().await.exit_source_select();
                         }
-                        start_vm_service_with_reconnect(app, ws_url).await;
+                        run_vm_service(app, ws_url).await;
                         return;
                     }
                     _ => {
@@ -339,7 +339,7 @@ async fn auto_discover_loop(app: Arc<Mutex<App>>) {
 }
 
 /// Connect to VM Service; on disconnect, return to scanning UI.
-async fn start_vm_service_with_reconnect(app: Arc<Mutex<App>>, uri: String) {
+async fn run_vm_service(app: Arc<Mutex<App>>, uri: String) {
     let host = uri.split('/').nth(2).unwrap_or(&uri).to_string();
     match input::vm_service::VmServiceSource::new(&uri).await {
         Ok(mut source) => {
@@ -416,52 +416,6 @@ async fn start_adb(app: Arc<Mutex<App>>, serial: Option<String>) {
     }
 }
 
-async fn start_vm_service(app: Arc<Mutex<App>>, uri: String) {
-    let host = uri.split('/').nth(2).unwrap_or(&uri).to_string();
-    match input::vm_service::VmServiceSource::new(&uri).await {
-        Ok(mut source) => {
-            let (mock_tx, mut mock_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-            {
-                let mut a = app.lock().await;
-                a.source_name = format!("WS \u{2192} {}", host);
-                a.connected = true;
-                a.last_source_type = Some(LastSourceType::Vm);
-                a.mock_sync_tx = Some(mock_tx);
-            }
-            loop {
-                tokio::select! {
-                    event = source.next_event() => {
-                        match event {
-                            Some(e) => {
-                                let mut a = app.lock().await;
-                                dispatch_event(&mut a, e);
-                            }
-                            None => break,
-                        }
-                    }
-                    Some(rules_json) = mock_rx.recv() => {
-                        if let Some(iso_id) = source.isolate_id.clone() {
-                            source.sync_mock_rules(&iso_id, &rules_json).await;
-                        }
-                    }
-                }
-            }
-            // Disconnected — return to scanning UI
-            {
-                let mut a = app.lock().await;
-                a.enter_scanning_on_disconnect();
-                a.show_status("Disconnected. Scanning...".into());
-                a.send_source_command(SourceCommand::ShowSourceSelect);
-            }
-        }
-        Err(e) => {
-            let mut a = app.lock().await;
-            a.source_name = format!("WS failed: {}", e);
-            a.enter_scanning_on_disconnect();
-            a.send_source_command(SourceCommand::ShowSourceSelect);
-        }
-    }
-}
 
 async fn start_stdin(app: Arc<Mutex<App>>) {
     let mut source = input::stdin_source::StdinSource::new();

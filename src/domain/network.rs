@@ -10,6 +10,7 @@ pub enum Protocol {
 }
 
 impl Protocol {
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Http => "HTTP",
@@ -42,8 +43,10 @@ pub enum EntrySource {
 
 #[derive(Debug, Clone)]
 pub struct SseChunk {
+    #[allow(dead_code)]
     pub seq: u32,
     pub data: String,
+    #[allow(dead_code)]
     pub size: u64,
 }
 
@@ -52,6 +55,7 @@ pub struct WsMessage {
     pub direction: WsDirection,
     pub data: String,
     pub size: u64,
+    #[allow(dead_code)]
     pub timestamp: String,
 }
 
@@ -59,6 +63,7 @@ pub struct WsMessage {
 pub struct NetworkEntry {
     pub id: u64,
     pub protocol: Protocol,
+    #[allow(dead_code)]
     pub timestamp: String,
     pub method: String,
     pub url: String,
@@ -203,6 +208,7 @@ pub struct FlogNetMessage {
     pub code: Option<u16>,
     pub reason: Option<String>,
     pub error: Option<String>,
+    pub mocked: Option<bool>,
 }
 
 #[cfg(test)]

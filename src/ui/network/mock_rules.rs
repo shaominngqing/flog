@@ -1,7 +1,7 @@
 //! Mock Rules — side panel view and editor overlay for managing mock rules.
 
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
@@ -10,19 +10,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 
-// Catppuccin Macchiato palette
-const BASE: Color = Color::Rgb(36, 39, 58);
-const TEXT: Color = Color::Rgb(202, 211, 245);
-const SUBTEXT0: Color = Color::Rgb(165, 173, 203);
-const SURFACE0: Color = Color::Rgb(54, 58, 79);
-const SURFACE1: Color = Color::Rgb(65, 69, 89);
-const MANTLE: Color = Color::Rgb(30, 32, 48);
-const GREEN: Color = Color::Rgb(166, 218, 149);
-const YELLOW: Color = Color::Rgb(238, 212, 159);
-const RED: Color = Color::Rgb(237, 135, 150);
-const BLUE: Color = Color::Rgb(138, 173, 244);
-const MAUVE: Color = Color::Rgb(198, 160, 246);
-const OVERLAY0: Color = Color::Rgb(110, 115, 141);
+use super::super::{BASE, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, RED, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW};
 
 pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
     let area = f.area();

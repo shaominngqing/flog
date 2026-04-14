@@ -14,16 +14,7 @@ use ratatui::{
 use crate::app::App;
 use crate::domain::network::NetworkStatus;
 
-// Catppuccin Macchiato palette
-const TEXT: Color = Color::Rgb(202, 211, 245);
-const SUBTEXT0: Color = Color::Rgb(165, 173, 203);
-const SURFACE0: Color = Color::Rgb(54, 58, 79);
-const MANTLE: Color = Color::Rgb(30, 32, 48);
-const GREEN: Color = Color::Rgb(166, 218, 149);
-const YELLOW: Color = Color::Rgb(238, 212, 159);
-const RED: Color = Color::Rgb(237, 135, 150);
-const BLUE: Color = Color::Rgb(138, 173, 244);
-const TEAL: Color = Color::Rgb(139, 213, 202);
+use super::super::{BLUE, GREEN, MANTLE, RED, SUBTEXT0, SURFACE0, TEAL, TEXT, YELLOW};
 
 // ── Helpers ──
 

@@ -53,7 +53,7 @@ impl VmServiceSource {
         while tokio::time::Instant::now() < deadline {
             match tokio::time::timeout(std::time::Duration::from_millis(500), ws_stream.next()).await {
                 Ok(Some(Ok(Message::Text(text)))) => {
-                    if let Ok(json) = serde_json::from_str::<Value>(&text.to_string()) {
+                    if let Ok(json) = serde_json::from_str::<Value>(text.as_ref()) {
                         if json.get("id").and_then(|v| v.as_str()) == Some("flog_getvm") {
                             if let Some(isolates) = json.get("result").and_then(|r| r.get("isolates")) {
                                 if let Some(first) = isolates.as_array().and_then(|a| a.first()) {
