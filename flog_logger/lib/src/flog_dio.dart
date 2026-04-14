@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -91,8 +92,6 @@ class FlogDio implements Dio {
     FlogHttpConfig? flogConfig,
     BaseOptions? options,
   }) : _inner = Dio(options ?? BaseOptions(baseUrl: baseUrl ?? '')) {
-    // ignore: avoid_print
-    print('[flog_dart] FlogDio created, flogEnabled=$flogEnabled');
     if (baseUrl != null && options == null) {
       _inner.options.baseUrl = baseUrl;
     }
@@ -111,73 +110,82 @@ class FlogDio implements Dio {
         ),
       );
 
-      // Auto-detect flog proxy: background probe every 3 seconds.
-      // When proxy is found, requests are routed through it.
-      // When proxy disappears, requests go direct. Zero configuration needed.
+      // Proxy interceptor: rewrites requests to go through flog proxy.
+      // Activated by VM Service extension (flog sends host+port on connect)
+      // or by background probe (for when app starts before flog).
       _proxyInterceptor = InterceptorsWrapper(
         onRequest: (options, handler) {
-          if (_activeProxyPort != null) {
-            // Save original full URL before rewriting
+          if (_proxyHost != null && _proxyPort != null) {
             final originalUrl = options.uri.toString();
             options.headers['x-flog-target'] = originalUrl;
-            // Rewrite to proxy: set path to absolute proxy URL
             final proxyPath = options.uri.path;
             final proxyQuery = options.uri.query;
             final queryPart = proxyQuery.isNotEmpty ? '?$proxyQuery' : '';
-            options.path = 'http://localhost:$_activeProxyPort$proxyPath$queryPart';
+            options.path = 'http://$_proxyHost:$_proxyPort$proxyPath$queryPart';
             options.baseUrl = '';
-            // ignore: avoid_print
-            print('[flog_dart] Proxying: $originalUrl → ${options.path}');
           }
           handler.next(options);
         },
       );
       _inner.interceptors.insert(0, _proxyInterceptor!);
+
+      // Register VM Service extension: flog will call this with host+port
+      try {
+        developer.registerExtension('ext.flog.setProxy',
+            (String method, Map<String, String> params) async {
+          final host = params['host'];
+          final port = int.tryParse(params['port'] ?? '');
+          if (host != null && port != null) {
+            _proxyHost = host;
+            _proxyPort = port;
+            // ignore: avoid_print
+            print('[flog_dart] Proxy configured via VM Service: $host:$port');
+          }
+          return developer.ServiceExtensionResponse.result('{"ok": true}');
+        });
+      } catch (_) {
+        // Extension may already be registered
+      }
+
+      // Also start background probe as fallback (for app-starts-before-flog case)
       _startProxyProbe();
     }
   }
 
-  /// Current detected proxy port, or null if no proxy found.
-  static int? _activeProxyPort;
+  /// Proxy host (computer's LAN IP or localhost).
+  static String? _proxyHost;
+
+  /// Proxy port.
+  static int? _proxyPort;
 
   /// Timer for background proxy probing.
   static Timer? _probeTimer;
 
-  /// The interceptor instance that rewrites URLs to proxy.
+  /// The interceptor that rewrites URLs to proxy.
   InterceptorsWrapper? _proxyInterceptor;
 
-  /// Start background probing for flog proxy on ports 9999-10008.
+  /// Start background probing as fallback.
   void _startProxyProbe() {
-    // Probe immediately, then every 3 seconds
-    _probeProxy();
     _probeTimer?.cancel();
     _probeTimer = Timer.periodic(const Duration(seconds: 3), (_) => _probeProxy());
+    _probeProxy(); // probe immediately
   }
 
-  /// Try to connect to flog proxy on ports 9999-10008.
+  /// Try localhost ports 9999-10008 (works for simulators and adb reverse).
   static Future<void> _probeProxy() async {
-    // ignore: avoid_print
-    print('[flog_dart] Probing proxy ports 9999-10008...');
+    if (_proxyHost != null && _proxyPort != null) return; // already configured via extension
     for (int port = 9999; port <= 10008; port++) {
       try {
         final socket = await Socket.connect('localhost', port,
             timeout: const Duration(milliseconds: 100));
         socket.destroy();
-        if (_activeProxyPort != port) {
-          // ignore: avoid_print
-          print('[flog_dart] Proxy detected on port $port');
-        }
-        _activeProxyPort = port;
+        _proxyHost = 'localhost';
+        _proxyPort = port;
         return;
       } catch (_) {
-        // Port not available, try next
+        // try next
       }
     }
-    if (_activeProxyPort != null) {
-      // ignore: avoid_print
-      print('[flog_dart] Proxy lost');
-    }
-    _activeProxyPort = null; // No proxy found
   }
 
   /// Sends an HTTP request and returns a parsed SSE stream.

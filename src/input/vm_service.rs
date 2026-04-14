@@ -23,13 +23,85 @@ pub struct VmServiceSource {
 }
 
 impl VmServiceSource {
+    /// Connect to VM Service. If `proxy_port` is Some, attempts to notify
+    /// Dart about the proxy via service extension. Returns (Self, proxy_ok).
     pub async fn new(
         uri: &str,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let (ws_stream, _) = connect_async(uri).await?;
+        proxy_port: Option<u16>,
+    ) -> Result<(Self, bool), Box<dyn std::error::Error + Send + Sync>> {
+        let (mut ws_stream, _) = connect_async(uri).await?;
+
+        // ── Phase 1: Get isolate ID (before split) ──
+        let mut isolate_id: Option<String> = None;
+        let mut proxy_ok = false;
+
+        // Send getVM
+        let get_vm = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getVM",
+            "id": "flog_getvm"
+        });
+        ws_stream.send(Message::Text(get_vm.to_string().into())).await.ok();
+
+        // Read responses until we get the getVM result (max 3 seconds)
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        while tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(std::time::Duration::from_millis(500), ws_stream.next()).await {
+                Ok(Some(Ok(Message::Text(text)))) => {
+                    if let Ok(json) = serde_json::from_str::<Value>(&text.to_string()) {
+                        if json.get("id").and_then(|v| v.as_str()) == Some("flog_getvm") {
+                            if let Some(isolates) = json.get("result").and_then(|r| r.get("isolates")) {
+                                if let Some(first) = isolates.as_array().and_then(|a| a.first()) {
+                                    isolate_id = first.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                Ok(Some(Ok(_))) | Ok(Some(Err(_))) => continue,
+                _ => break,
+            }
+        }
+
+        // ── Phase 2: Call ext.flog.setProxy with host IP + port ──
+        if let (Some(ref iso_id), Some(port)) = (&isolate_id, proxy_port) {
+            // Get local network IP so real devices can reach the proxy
+            let host_ip = get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+
+            let call = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "ext.flog.setProxy",
+                "params": {
+                    "isolateId": iso_id,
+                    "host": host_ip,
+                    "port": port.to_string(),
+                },
+                "id": "flog_setproxy"
+            });
+            ws_stream.send(Message::Text(call.to_string().into())).await.ok();
+
+            // Wait for response
+            let deadline2 = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+            while tokio::time::Instant::now() < deadline2 {
+                match tokio::time::timeout(std::time::Duration::from_millis(500), ws_stream.next()).await {
+                    Ok(Some(Ok(Message::Text(text)))) => {
+                        if let Ok(json) = serde_json::from_str::<Value>(&text.to_string()) {
+                            if json.get("id").and_then(|v| v.as_str()) == Some("flog_setproxy") {
+                                proxy_ok = json.get("error").is_none();
+                                break;
+                            }
+                        }
+                    }
+                    Ok(Some(Ok(_))) | Ok(Some(Err(_))) => continue,
+                    _ => break,
+                }
+            }
+        }
+
+        // ── Phase 3: Split and subscribe to streams ──
         let (mut sender, receiver) = ws_stream.split();
 
-        // Subscribe to streams. Ignore "already subscribed" errors.
         for (id, stream_id) in [("1", "Logging"), ("2", "Stdout"), ("3", "Stderr")] {
             let msg = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -40,11 +112,11 @@ impl VmServiceSource {
             let _ = sender.send(Message::Text(msg.to_string().into())).await;
         }
 
-        Ok(Self {
+        Ok((Self {
             receiver,
             uri: uri.to_string(),
             pending_lines: Vec::new(),
-        })
+        }, proxy_ok))
     }
 
     pub async fn next_event(&mut self) -> Option<SourceEvent> {
@@ -244,4 +316,15 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
         }
     }
     Some(buf)
+}
+
+/// Get the first non-loopback IPv4 address of this machine.
+fn get_local_ip() -> Option<String> {
+    use std::net::UdpSocket;
+    // Connect to a public address to determine the local IP
+    // (no actual data is sent)
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    let addr = socket.local_addr().ok()?;
+    Some(addr.ip().to_string())
 }
