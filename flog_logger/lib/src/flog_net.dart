@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 /// Master kill-switch.  `dart.vm.product` is true in release builds,
 /// so flogEnabled becomes false and AOT tree-shaking removes all flog code.
@@ -18,8 +19,13 @@ int _nextId = 1;
 int nextNetId() => _nextId++;
 
 /// Emit a flog_net protocol message.
+/// Uses both print() (for ADB/stdin) and developer.log() (for VM Service on all platforms).
 void emitNet(Map<String, dynamic> data) {
   if (!flogEnabled) return;
+  final json = jsonEncode(data);
+  // print() for ADB logcat and stdin pipe
   // ignore: avoid_print
-  print('[INFO][$_tag] ${jsonEncode(data)}');
+  print('[INFO][$_tag] $json');
+  // developer.log() for VM Service Logging stream (works on iOS real device)
+  developer.log(json, name: _tag);
 }

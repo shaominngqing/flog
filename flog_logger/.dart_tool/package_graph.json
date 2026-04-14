@@ -31,19 +31,6 @@
       ]
     },
     {
-      "name": "dio",
-      "version": "5.9.2",
-      "dependencies": [
-        "async",
-        "collection",
-        "dio_web_adapter",
-        "http_parser",
-        "meta",
-        "mime",
-        "path"
-      ]
-    },
-    {
       "name": "web_socket",
       "version": "1.0.1",
       "dependencies": [
@@ -70,6 +57,18 @@
       ]
     },
     {
+      "name": "typed_data",
+      "version": "1.4.0",
+      "dependencies": [
+        "collection"
+      ]
+    },
+    {
+      "name": "collection",
+      "version": "1.19.1",
+      "dependencies": []
+    },
+    {
       "name": "async",
       "version": "2.13.1",
       "dependencies": [
@@ -78,28 +77,26 @@
       ]
     },
     {
-      "name": "dio_web_adapter",
-      "version": "2.1.2",
+      "name": "meta",
+      "version": "1.18.2",
+      "dependencies": []
+    },
+    {
+      "name": "dio",
+      "version": "5.9.2",
       "dependencies": [
-        "dio",
+        "async",
+        "collection",
+        "dio_web_adapter",
         "http_parser",
         "meta",
-        "web"
+        "mime",
+        "path"
       ]
     },
     {
       "name": "path",
       "version": "1.9.1",
-      "dependencies": []
-    },
-    {
-      "name": "mime",
-      "version": "2.0.0",
-      "dependencies": []
-    },
-    {
-      "name": "meta",
-      "version": "1.18.2",
       "dependencies": []
     },
     {
@@ -113,15 +110,13 @@
       ]
     },
     {
-      "name": "collection",
-      "version": "1.19.1",
-      "dependencies": []
-    },
-    {
-      "name": "typed_data",
-      "version": "1.4.0",
+      "name": "dio_web_adapter",
+      "version": "2.1.2",
       "dependencies": [
-        "collection"
+        "dio",
+        "http_parser",
+        "meta",
+        "web"
       ]
     },
     {
@@ -130,6 +125,11 @@
       "dependencies": [
         "source_span"
       ]
+    },
+    {
+      "name": "mime",
+      "version": "2.0.0",
+      "dependencies": []
     },
     {
       "name": "source_span",

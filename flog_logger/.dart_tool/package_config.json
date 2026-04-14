@@ -3,109 +3,109 @@
   "packages": [
     {
       "name": "async",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/async-2.13.1",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/async-2.13.1",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     },
     {
       "name": "collection",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/collection-1.19.1",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/collection-1.19.1",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     },
     {
       "name": "crypto",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/crypto-3.0.7",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/crypto-3.0.7",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     },
     {
       "name": "dio",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/dio-5.9.2",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/dio-5.9.2",
       "packageUri": "lib/",
       "languageVersion": "2.18"
     },
     {
       "name": "dio_web_adapter",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/dio_web_adapter-2.1.2",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/dio_web_adapter-2.1.2",
       "packageUri": "lib/",
       "languageVersion": "3.3"
     },
     {
       "name": "http_parser",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/http_parser-4.1.2",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/http_parser-4.1.2",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     },
     {
       "name": "lints",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/lints-4.0.0",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/lints-4.0.0",
       "packageUri": "lib/",
       "languageVersion": "3.1"
     },
     {
       "name": "meta",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/meta-1.18.2",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/meta-1.18.2",
       "packageUri": "lib/",
       "languageVersion": "3.5"
     },
     {
       "name": "mime",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/mime-2.0.0",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/mime-2.0.0",
       "packageUri": "lib/",
       "languageVersion": "3.2"
     },
     {
       "name": "path",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/path-1.9.1",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/path-1.9.1",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     },
     {
       "name": "source_span",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/source_span-1.10.2",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/source_span-1.10.2",
       "packageUri": "lib/",
       "languageVersion": "3.1"
     },
     {
       "name": "stream_channel",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/stream_channel-2.1.4",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/stream_channel-2.1.4",
       "packageUri": "lib/",
       "languageVersion": "3.3"
     },
     {
       "name": "string_scanner",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/string_scanner-1.4.1",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/string_scanner-1.4.1",
       "packageUri": "lib/",
       "languageVersion": "3.1"
     },
     {
       "name": "term_glyph",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/term_glyph-1.2.2",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/term_glyph-1.2.2",
       "packageUri": "lib/",
       "languageVersion": "3.1"
     },
     {
       "name": "typed_data",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/typed_data-1.4.0",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/typed_data-1.4.0",
       "packageUri": "lib/",
       "languageVersion": "3.5"
     },
     {
       "name": "web",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/web-1.1.1",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/web-1.1.1",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     },
     {
       "name": "web_socket",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/web_socket-1.0.1",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/web_socket-1.0.1",
       "packageUri": "lib/",
       "languageVersion": "3.4"
     },
     {
       "name": "web_socket_channel",
-      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.dev/web_socket_channel-3.0.3",
+      "rootUri": "file:///Users/shaomingqing/.pub-cache/hosted/pub.flutter-io.cn/web_socket_channel-3.0.3",
       "packageUri": "lib/",
       "languageVersion": "3.3"
     },
