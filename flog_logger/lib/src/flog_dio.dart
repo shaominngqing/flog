@@ -115,9 +115,16 @@ class FlogDio implements Dio {
       _proxyInterceptor = InterceptorsWrapper(
         onRequest: (options, handler) {
           if (_activeProxyPort != null) {
+            // Save original full URL before rewriting
             final originalUrl = options.uri.toString();
             options.headers['x-flog-target'] = originalUrl;
-            options.baseUrl = 'http://localhost:$_activeProxyPort';
+            // Rewrite to proxy: set path to absolute proxy URL
+            // This overrides baseUrl resolution completely
+            final proxyPath = options.uri.path;
+            final proxyQuery = options.uri.query;
+            final queryPart = proxyQuery.isNotEmpty ? '?$proxyQuery' : '';
+            options.path = 'http://localhost:$_activeProxyPort$proxyPath$queryPart';
+            options.baseUrl = ''; // clear so path is used as-is
           }
           handler.next(options);
         },
