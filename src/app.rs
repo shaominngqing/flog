@@ -186,6 +186,8 @@ pub struct NetworkState {
     pub sse_merged_mode: bool,
     /// Index of the currently selected field in Merged mode's field list.
     pub sse_merged_field_idx: usize,
+    /// Whether WS detail shows Chat view (true, default) or Raw view (false).
+    pub ws_chat_mode: bool,
     filtered_indices: Vec<usize>,
     filter_dirty: bool,
 }
@@ -252,6 +254,7 @@ impl NetworkState {
             sse_merge_rules: std::collections::HashMap::new(),
             sse_merged_mode: false,
             sse_merged_field_idx: 0,
+            ws_chat_mode: true,
             filtered_indices: Vec::new(),
             filter_dirty: true,
         }
@@ -327,6 +330,8 @@ pub struct LayoutCache {
     pub detail_mock_btn: Option<(u16, u16, u16)>,
     /// SSE pill line: (all_lines_index, header_text_width) for computing pill click positions.
     pub sse_pill_line: Option<(usize, usize)>,
+    /// WS pill line: (all_lines_index, header_text_width) for computing pill click positions.
+    pub ws_pill_line: Option<(usize, usize)>,
     /// Network status bar button regions: (name, x_start, x_end).
     pub net_buttons: Vec<(String, u16, u16)>,
     /// Network toolbar Y position.
