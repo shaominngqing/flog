@@ -33,6 +33,7 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `network_filter.rs` — `NetworkFilter` with `ProtocolFilter`, `MethodFilter`, `StatusFilter`
   - `mock.rs` — `MockRule`, `MockRuleStore` — interceptor-based mock system (URL pattern matching, method filter, status code, response body, delay, enable/toggle)
   - `sse_merge.rs` — SSE Merged View utilities: `extract_field_paths` (scans all chunks for leaf-string JSON paths), `resolve_path`, `auto_detect_field` (knows OpenAI/Claude streaming patterns), `merge_field` (concatenates a field across chunks)
+  - `ws_chat.rs` — WS Chat View utilities: `extract_type` (scans type/event/action/op/cmd/method keys), `has_binary_content` (detects base64 >1KB), `group_messages` (groups consecutive same-type/direction messages, merges delta fields), `preview_message` (replaces binary with size labels)
 
 - **`parser/`** — Strategy-pattern log format parser chain, tried in order:
   1. `structured.rs` — Structured `[LEVEL][Tag] message` format
@@ -72,7 +73,7 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `AppMode`: Normal, Search, TagFilter, Help, Stats, SourceSelect
   - `ViewTab`: Logs, Network
   - `SseMergeRule`, `SsePathSegment` — SSE Merged View rule types (field_path + display)
-  - `NetworkState`: selected, scroll_offset, auto_scroll, filter, collapsed_sections, json_viewer_states, sse_merge_rules, sse_merged_mode, sse_merged_field_idx
+  - `NetworkState`: selected, scroll_offset, auto_scroll, filter, collapsed_sections, json_viewer_states, sse_merge_rules, sse_merged_mode, sse_merged_field_idx, ws_chat_mode
   - `DetailState`: scroll, header_lines, viewer_state (JsonViewerState)
 - `event.rs` — Keyboard/mouse event dispatch (tab bar clicks, detail panel scroll, filter pill clicks)
 - `cli.rs` — CLI argument parsing (clap)

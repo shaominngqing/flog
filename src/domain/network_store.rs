@@ -158,6 +158,7 @@ impl NetworkStore {
         if let Some(entry) = self.find_by_id_mut(msg.id) {
             let data = msg.data.unwrap_or_default();
             let size = msg.size.unwrap_or(data.len() as u64);
+
             entry.ws_messages.push(WsMessage {
                 direction,
                 data,

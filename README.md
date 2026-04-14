@@ -75,7 +75,7 @@ flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它
   - Request / Response Headers
   - Request / Response Body（JSON 语法高亮，逐层展开）
   - SSE Events（每个 chunk 可展开查看 JSON，支持 Merged 聚合视图）
-  - WebSocket Messages（发送/接收，方向标记）
+  - WebSocket Messages（Chat 对话流视图：按方向分列、type 标签、delta 消息自动拼接、binary 数据智能折叠；可切换 Raw 原始列表）
 - 过滤器（Protocol / Method / Status 行内 pill 切换）
 - URL 搜索
 - Copy as cURL（一键复制为 curl 命令）
@@ -217,7 +217,7 @@ await ws.close();
 |------|------|
 | `/` | URL 搜索 |
 | `c` | Copy as cURL（仅 HTTP） |
-| `y` | Copy Response（SSE Merged 模式下复制拼接文本） |
+| `y` | Copy Response（SSE Merged / WS Chat 模式下复制拼接文本） |
 | `r` | Replay 重放请求（仅 HTTP） |
 | `M` | 从当前请求创建 Mock 规则（仅 HTTP） |
 | `S` | 统计面板 |
