@@ -142,11 +142,12 @@ async fn source_manager(
     let mut current_task: Option<tokio::task::JoinHandle<()>> = None;
 
     while let Some(cmd) = cmd_rx.recv().await {
-        // Cancel previous source task
+        // Cancel previous source task and clear session data
         if let Some(handle) = current_task.take() {
             handle.abort();
             let mut a = app.lock().await;
             a.connected = false;
+            a.clear_session_data();
         }
 
         let app_c = Arc::clone(&app);

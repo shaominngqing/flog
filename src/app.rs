@@ -888,6 +888,26 @@ impl App {
         self.show_source_dropdown = false;
     }
 
+    /// Clear all session data when switching devices/sources.
+    /// Ensures data from one device doesn't leak into another.
+    pub fn clear_session_data(&mut self) {
+        self.store = LogStore::new();
+        self.network_store = crate::domain::NetworkStore::new();
+        self.network = NetworkState::new();
+        self.mock_rules = crate::domain::mock::MockRuleStore::new();
+        self.mock_rule_selected = 0;
+        self.mock_edit_rule_id = None;
+        self.mock_edit_field = 0;
+        self.mock_edit_top_values = Vec::new();
+        self.mock_edit_body = crate::ui::text_editor::TextEditor::new("");
+        self.bookmarks.clear();
+        self.filter_dirty = true;
+        self.scroll_offset = 0;
+        self.selected = 0;
+        self.auto_scroll = true;
+        self.new_logs_since_pause = 0;
+    }
+
     /// Enter SourceSelect scanning phase after a disconnect.
     /// Returns to the correct scanning animation (radar for VM, phone for ADB)
     /// based on the last connection type.
