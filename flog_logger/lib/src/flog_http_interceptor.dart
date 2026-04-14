@@ -107,6 +107,43 @@ class FlogHttpInterceptor extends Interceptor {
       return;
     }
 
+    // Handle mocked responses — onRequest was never called, so no _idMap entry
+    final isMocked = response.requestOptions.extra['flog_mocked'] == true;
+    if (isMocked) {
+      final id = nextNetId();
+      final url = response.requestOptions.uri.toString();
+
+      // Emit req
+      final reqData = <String, dynamic>{
+        'id': id,
+        't': 'req',
+        'p': 'http',
+        'method': response.requestOptions.method,
+        'url': url,
+      };
+      if (includeRequestHeaders) {
+        reqData['headers'] = response.requestOptions.headers;
+      }
+      emitNet(reqData);
+
+      // Emit res with mocked flag
+      final resData = <String, dynamic>{
+        'id': id,
+        't': 'res',
+        'p': 'http',
+        'status': response.statusCode,
+        'duration': 0,
+        'mocked': true,
+      };
+      if (includeResponseBody && response.data != null) {
+        resData['body'] = _truncate(_encodeBody(response.data));
+      }
+      emitNet(resData);
+
+      handler.next(response);
+      return;
+    }
+
     final key = response.requestOptions.hashCode;
     final id = _idMap.remove(key);
     final start = _startMap.remove(key);
@@ -136,11 +173,6 @@ class FlogHttpInterceptor extends Interceptor {
 
     if (includeResponseBody && response.data != null) {
       data['body'] = _truncate(_encodeBody(response.data));
-    }
-
-    final isMocked = response.requestOptions.extra['flog_mocked'] == true;
-    if (isMocked) {
-      data['mocked'] = true;
     }
 
     emitNet(data);
