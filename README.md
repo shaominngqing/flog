@@ -80,6 +80,9 @@ flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它
 - URL 搜索
 - Copy as cURL（一键复制为 curl 命令）
 - Copy Response（复制响应体）
+- **Replay** — 重放请求（从详情面板触发，通过 VM Service 重新发送）
+- **Performance Stats** — 统计面板（延迟百分位、Top 5 慢请求、状态码分布、按域名统计）
+- **Mock** — 在 TUI 中创建 Mock 规则（URL 匹配、Method 过滤、自定义 Status/Body/Delay），通过 VM Service 同步到 Dart 应用，拦截匹配请求返回预设响应
 - 自动滚动 + LIVE 指示器
 - 1 万条请求缓冲
 
@@ -111,8 +114,33 @@ flog 能识别任何 Flutter 日志输出。搭配 [flog_dart](https://pub.dev/p
 ```bash
 # pubspec.yaml
 dependencies:
-  flog_dart: ^0.2.0
+  flog_dart: ^0.3.0
 ```
+
+### 快速接入（推荐）
+
+用 `FlogDio` 替换 `Dio`，零配置自动接入 Network Inspector + Mock：
+
+```dart
+import 'package:flog_dart/flog_logger.dart';
+
+// 替换 Dio() → FlogDio()，自动注入 HTTP 日志 + Mock 拦截器
+final dio = FlogDio(baseUrl: 'https://api.example.com');
+
+// 正常使用，所有请求自动出现在 flog Network 面板
+final response = await dio.get('/users');
+
+// SSE 流式请求也内置支持
+final sse = await dio.sse('/chat/completions',
+  method: 'POST',
+  data: {'prompt': 'hello'},
+);
+await for (final event in sse.stream) {
+  print(event);
+}
+```
+
+> Release 构建自动 tree-shake：`flogEnabled` 在 release 模式为 `false`，所有 flog 代码被 AOT 移除，零开销。
 
 ### 日志
 
@@ -124,7 +152,9 @@ log.i('-> GET /api/users');
 log.e('Connection failed: $e');
 ```
 
-### Network Inspector
+### 手动接入 Network Inspector
+
+如果不想用 `FlogDio`，可以手动添加拦截器：
 
 ```dart
 final dio = Dio();

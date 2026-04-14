@@ -28,9 +28,10 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `entry.rs` — `LogEntry`, `LogLevel`, `InputSource` types
   - `filter.rs` — `FilterState` with level/tag/search filtering, pre-compiled regex
   - `store.rs` — Ring-buffer log storage (100K cap, drains oldest 10% when full, folds consecutive duplicates)
-  - `network.rs` — `NetworkEntry`, `Protocol` (Http/Sse/Ws), `NetworkStatus`, `SseChunk`, `WsMessage`, `FlogNetMessage`
+  - `network.rs` — `NetworkEntry`, `Protocol` (Http/Sse/Ws), `NetworkStatus`, `SseChunk`, `WsMessage`, `FlogNetMessage`, `EntrySource` (App/Replay/Mocked)
   - `network_store.rs` — Network request storage (10K cap), processes flog_net protocol messages
   - `network_filter.rs` — `NetworkFilter` with `ProtocolFilter`, `MethodFilter`, `StatusFilter`
+  - `mock.rs` — `MockRule`, `MockRuleStore` — interceptor-based mock system (URL pattern matching, method filter, status code, response body, delay, enable/toggle)
 
 - **`parser/`** — Strategy-pattern log format parser chain, tried in order:
   1. `structured.rs` — Structured `[LEVEL][Tag] message` format
@@ -58,6 +59,9 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `network/mod.rs` — Network view (toolbar with filter pills, request table, status bar)
   - `network/detail.rs` — Network detail panel (General, Query Params, Headers, Body, SSE Events, WS Messages)
   - `network/filter.rs` — Network toolbar renderer (2-line: search + protocol/method/status pills)
+  - `network/stats.rs` — Network statistics overlay (latency percentiles, top-5 slowest, status distribution, per-domain breakdown)
+  - `network/mock_rules.rs` — Mock rules side panel + edit overlay (create/edit/toggle/delete rules, JSON body editor)
+  - `text_editor.rs` — Multi-line text editor component (cursor, editing, viewport scroll) — used by mock rule body editor
   - `source_select.rs` — Source picker UI
   - `help.rs` — Comprehensive help overlay
 
@@ -78,9 +82,11 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
 1. Source task receives log line
 2. Parser chain recognizes format → `LogEntry`
 3. `app.add_entry()` checks if tag == `flog_net`:
-   - Yes → parse JSON, route to `NetworkStore`
+   - Yes → parse JSON, route to `NetworkStore` (marks `source: App`)
    - No → add to `LogStore`
-4. Renderer reads filtered indices, renders to terminal
+4. Mock system: rules created in TUI → synced to Dart via VM Service extension (`ext.flog.syncMockRules`) → `FlogMockInterceptor` intercepts matching requests before network → logged with `source: Mocked`
+5. Replay: user triggers replay from Network detail → re-sends request via Dart VM Service → new entry with `source: Replay`
+6. Renderer reads filtered indices, renders to terminal
 
 ### Concurrency Model
 
@@ -99,10 +105,20 @@ Both Logs and Network use the same pattern:
 `flog_logger/` contains the Dart companion package published as [flog_dart](https://pub.dev/packages/flog_dart) on pub.dev.
 
 - `FlogLogger` — Structured `[LEVEL][Tag] message` logging
+- `FlogDio` — Drop-in `Dio` replacement that auto-instruments HTTP for Network Inspector. Inserts `FlogMockInterceptor` + `FlogHttpInterceptor` automatically. Also provides `sse()` convenience method for SSE streams.
 - `FlogHttpInterceptor` — Dio interceptor for HTTP request/response logging (⚠ must be added BEFORE response-modifying interceptors)
+- `FlogMockInterceptor` — Dio interceptor that intercepts requests matching mock rules synced from the flog TUI via VM Service extension (`ext.flog.syncMockRules`). Resolves with canned responses without hitting the network.
 - `FlogSseParser` — SSE stream wrapper with chunk-level logging
 - `FlogWebSocket` — WebSocket wrapper with send/recv logging
-- Protocol: `[INFO][flog_net] {JSON}` via `print()`
+- Protocol: `[INFO][flog_net] {JSON}` via `print()` + `developer.log()` (for iOS real device via VM Service Logging stream)
+
+### Tree-shaking / `flogEnabled`
+
+`flogEnabled` is a compile-time constant: `true` in debug, `false` in release (`dart.vm.product`). When `false`, all flog code is eliminated by AOT tree-shaking — zero overhead in production. Can be overridden with `-DFL0G_ENABLED=true/false`.
+
+### Mock System
+
+Mock rules are created in the flog TUI (Network tab → `M` to open mock rules panel). Rules define URL pattern, optional method filter, status code, response body, and optional delay. The TUI syncs rules to the running Dart app via VM Service extension `ext.flog.syncMockRules`. `FlogMockInterceptor` (inserted automatically by `FlogDio`) intercepts matching requests and resolves with the canned response. Mocked requests are still logged and appear in the Network Inspector tagged as "Mocked".
 
 ## CI/CD
 
