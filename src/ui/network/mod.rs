@@ -587,34 +587,48 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         (spans, w as u16)
     };
 
-    let mut buttons: Vec<(&str, &str, Style)> = vec![
-        (
+    // Check if selected entry is HTTP (some buttons are HTTP-only)
+    let selected_is_http = {
+        let sel = app.network.selected;
+        let indices = app.network.filtered_indices(&app.network_store);
+        indices
+            .get(sel)
+            .and_then(|&idx| app.network_store.get(idx))
+            .map(|e| e.protocol == Protocol::Http)
+            .unwrap_or(false)
+    };
+
+    let mut buttons: Vec<(&str, &str, Style)> = Vec::new();
+
+    if selected_is_http {
+        buttons.push((
             "replay",
             " Replay ",
             Style::default()
                 .fg(MANTLE)
                 .bg(BLUE)
                 .add_modifier(Modifier::BOLD),
-        ),
-        (
+        ));
+        buttons.push((
             "curl",
             " Copy as cURL ",
             Style::default()
                 .fg(MANTLE)
                 .bg(GREEN)
                 .add_modifier(Modifier::BOLD),
-        ),
-        (
-            "response",
-            " Copy Response ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(SAPPHIRE)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ];
+        ));
+    }
 
-    if app.is_vm_service_connected() {
+    buttons.push((
+        "response",
+        " Copy Response ",
+        Style::default()
+            .fg(MANTLE)
+            .bg(SAPPHIRE)
+            .add_modifier(Modifier::BOLD),
+    ));
+
+    if selected_is_http && app.is_vm_service_connected() {
         buttons.push((
             "mock",
             " Mock ",

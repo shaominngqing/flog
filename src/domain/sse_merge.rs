@@ -2,11 +2,28 @@
 
 use crate::app::SsePathSegment;
 
-/// Extract all unique leaf-string field paths from a JSON value.
-/// Returns vec of (path_segments, display_string) pairs.
-pub fn extract_field_paths(json: &serde_json::Value) -> Vec<(Vec<SsePathSegment>, String)> {
+/// Extract all unique leaf-string field paths from a single JSON value.
+fn extract_field_paths_single(json: &serde_json::Value) -> Vec<(Vec<SsePathSegment>, String)> {
     let mut paths = Vec::new();
     collect_paths(json, &mut Vec::new(), &mut String::new(), &mut paths);
+    paths
+}
+
+/// Extract all unique leaf-string field paths by scanning ALL chunks.
+/// Different chunks may introduce new fields (e.g., `delta.content` only appears
+/// from chunk 2+), so we scan every chunk and merge results.
+pub fn extract_field_paths(chunks_data: &[&str]) -> Vec<(Vec<SsePathSegment>, String)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut paths = Vec::new();
+    for cd in chunks_data {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(cd) {
+            for item in extract_field_paths_single(&json) {
+                if seen.insert(item.1.clone()) {
+                    paths.push(item);
+                }
+            }
+        }
+    }
     paths
 }
 
@@ -71,9 +88,8 @@ pub fn auto_detect_field(chunks_data: &[&str]) -> Option<(Vec<SsePathSegment>, S
         return None;
     }
 
-    // Parse first chunk to get candidate paths
-    let first: serde_json::Value = serde_json::from_str(chunks_data[0]).ok()?;
-    let candidates = extract_field_paths(&first);
+    // Scan multiple chunks to get all candidate paths
+    let candidates = extract_field_paths(chunks_data);
 
     if candidates.is_empty() {
         return None;
@@ -81,17 +97,22 @@ pub fn auto_detect_field(chunks_data: &[&str]) -> Option<(Vec<SsePathSegment>, S
 
     // Known LLM streaming patterns (check in order)
     let known_patterns = [
-        "choices[0].delta.content",      // OpenAI / compatible
+        "choices[0].delta.content",      // OpenAI Chat Completions
+        "output[0].delta.content",       // OpenAI Responses API
         "delta.text",                     // Claude API
-        "output[0].delta.content",        // Some OpenAI variants
+        "delta.content",                  // Generic delta
         "data",                           // Generic SSE
     ];
 
     for pattern in &known_patterns {
         if let Some(candidate) = candidates.iter().find(|(_, d)| d == pattern) {
-            // Verify it resolves in at least the first chunk
-            if resolve_path(&first, &candidate.0).is_some() {
-                return Some(candidate.clone());
+            // Verify it resolves in at least one chunk
+            for cd in chunks_data.iter() {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(cd) {
+                    if resolve_path(&parsed, &candidate.0).is_some() {
+                        return Some(candidate.clone());
+                    }
+                }
             }
         }
     }
@@ -100,8 +121,7 @@ pub fn auto_detect_field(chunks_data: &[&str]) -> Option<(Vec<SsePathSegment>, S
     let min_count = if chunks_data.len() > 1 { 2 } else { 1 };
     for (path, display) in &candidates {
         let mut count = 0;
-        for cd in chunks_data.iter().take(5) {
-            // Sample first 5 chunks
+        for cd in chunks_data.iter() {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(cd) {
                 if resolve_path(&parsed, path).is_some() {
                     count += 1;
@@ -146,13 +166,27 @@ mod tests {
 
     #[test]
     fn test_extract_field_paths() {
-        let json: serde_json::Value = serde_json::from_str(&openai_chunk("hello")).unwrap();
-        let paths = extract_field_paths(&json);
+        let c = openai_chunk("hello");
+        let chunks: Vec<&str> = vec![&c];
+        let paths = extract_field_paths(&chunks);
         let displays: Vec<&str> = paths.iter().map(|(_, d)| d.as_str()).collect();
         assert!(displays.contains(&"id"));
         assert!(displays.contains(&"object"));
         assert!(displays.contains(&"choices[0].delta.content"));
         assert!(displays.contains(&"model"));
+    }
+
+    #[test]
+    fn test_extract_field_paths_multi_chunk() {
+        // First chunk has no content, second does — both fields should appear
+        let c1 = serde_json::json!({"id": "123", "type": "start"}).to_string();
+        let c2 = serde_json::json!({"id": "123", "delta": {"content": "hello"}}).to_string();
+        let chunks: Vec<&str> = vec![&c1, &c2];
+        let paths = extract_field_paths(&chunks);
+        let displays: Vec<&str> = paths.iter().map(|(_, d)| d.as_str()).collect();
+        assert!(displays.contains(&"id"));
+        assert!(displays.contains(&"type"));
+        assert!(displays.contains(&"delta.content"));
     }
 
     #[test]

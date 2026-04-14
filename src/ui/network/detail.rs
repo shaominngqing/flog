@@ -357,7 +357,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
             let sec_key = "SSE Events";
             let is_collapsed = app.network.collapsed_sections.contains(sec_key);
 
-            // Section header with pill toggle
+            // Section header with pill toggle + clear button
             {
                 let events_pill = Span::styled(
                     " Events ",
@@ -369,6 +369,10 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                         .fg(MANTLE)
                         .bg(SAPPHIRE)
                         .add_modifier(Modifier::BOLD),
+                );
+                let clear_pill = Span::styled(
+                    " \u{00d7} ",
+                    Style::default().fg(RED).bg(SURFACE0),
                 );
                 let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
                 let header_text = format!(
@@ -384,6 +388,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     events_pill,
                     Span::raw(" "),
                     merged_pill,
+                    Span::raw(" "),
+                    clear_pill,
                 ]));
                 app.layout.sse_pill_line = Some((all_lines.len() - 1, header_text.len()));
                 section_line_map.push(Some(sec_key.to_string()));
@@ -397,14 +403,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     let chunks_data: Vec<&str> =
                         entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
 
-                    // Build candidate field list
-                    let candidates = if let Some(first_json) =
-                        chunks_data.first().and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok())
-                    {
-                        sse_merge::extract_field_paths(&first_json)
-                    } else {
-                        vec![]
-                    };
+                    // Build candidate field list (scan multiple chunks)
+                    let candidates = sse_merge::extract_field_paths(&chunks_data);
 
                     // Render field selector
                     let selected_idx = app.network.sse_merged_field_idx.min(
@@ -455,16 +455,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                         }
                     }
 
-                    // Clear rule button
-                    all_lines.push(Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(
-                            " Clear Rule ",
-                            Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD),
-                        ),
-                    ]));
-                    section_line_map.push(Some("SSE_CLEAR_RULE".to_string()));
-                    json_click_map.push(None);
+                    // Clear rule is now handled by the × pill in the header line
                 }
             }
             all_lines.push(Line::raw(""));

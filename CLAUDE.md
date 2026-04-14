@@ -32,6 +32,7 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `network_store.rs` — Network request storage (10K cap), processes flog_net protocol messages
   - `network_filter.rs` — `NetworkFilter` with `ProtocolFilter`, `MethodFilter`, `StatusFilter`
   - `mock.rs` — `MockRule`, `MockRuleStore` — interceptor-based mock system (URL pattern matching, method filter, status code, response body, delay, enable/toggle)
+  - `sse_merge.rs` — SSE Merged View utilities: `extract_field_paths` (scans all chunks for leaf-string JSON paths), `resolve_path`, `auto_detect_field` (knows OpenAI/Claude streaming patterns), `merge_field` (concatenates a field across chunks)
 
 - **`parser/`** — Strategy-pattern log format parser chain, tried in order:
   1. `structured.rs` — Structured `[LEVEL][Tag] message` format
@@ -57,7 +58,7 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `logs/timeline.rs` — Timeline heatmap
   - `logs/stats.rs` — Statistics view
   - `network/mod.rs` — Network view (toolbar with filter pills, request table, status bar)
-  - `network/detail.rs` — Network detail panel (General, Query Params, Headers, Body, SSE Events, WS Messages)
+  - `network/detail.rs` — Network detail panel (General, Query Params, Headers, Body, SSE Events with Merged View, WS Messages)
   - `network/filter.rs` — Network toolbar renderer (2-line: search + protocol/method/status pills)
   - `network/stats.rs` — Network statistics overlay (latency percentiles, top-5 slowest, status distribution, per-domain breakdown)
   - `network/mock_rules.rs` — Mock rules side panel + edit overlay (create/edit/toggle/delete rules, JSON body editor)
@@ -70,7 +71,8 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
 - `app.rs` — Central state machine
   - `AppMode`: Normal, Search, TagFilter, Help, Stats, SourceSelect
   - `ViewTab`: Logs, Network
-  - `NetworkState`: selected, scroll_offset, auto_scroll, filter, collapsed_sections, json_viewer_states
+  - `SseMergeRule`, `SsePathSegment` — SSE Merged View rule types (field_path + display)
+  - `NetworkState`: selected, scroll_offset, auto_scroll, filter, collapsed_sections, json_viewer_states, sse_merge_rules, sse_merged_mode, sse_merged_field_idx
   - `DetailState`: scroll, header_lines, viewer_state (JsonViewerState)
 - `event.rs` — Keyboard/mouse event dispatch (tab bar clicks, detail panel scroll, filter pill clicks)
 - `cli.rs` — CLI argument parsing (clap)
@@ -86,7 +88,8 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
    - No → add to `LogStore`
 4. Mock system: rules created in TUI → synced to Dart via VM Service extension (`ext.flog.syncMockRules`) → `FlogMockInterceptor` intercepts matching requests before network → logged with `source: Mocked`
 5. Replay: user triggers replay from Network detail → re-sends request via Dart VM Service → new entry with `source: Replay`
-6. Renderer reads filtered indices, renders to terminal
+6. SSE Merged View: user clicks [Merged] pill on SSE entry → `auto_detect_field` scans all chunks for known LLM patterns (OpenAI `choices[0].delta.content`, Claude `delta.text`, etc.) → creates `SseMergeRule` keyed by exact URL path → `merge_field` concatenates chosen field across all chunks → rule persists for same-path entries within session
+7. Renderer reads filtered indices, renders to terminal
 
 ### Concurrency Model
 

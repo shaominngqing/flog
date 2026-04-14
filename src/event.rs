@@ -227,21 +227,45 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                         if let Some(entry) = app.network_store.get(idx) {
                                             if entry.protocol == crate::domain::network::Protocol::Sse {
                                                 let rule_key = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
+                                                let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
                                                 if !app.network.sse_merge_rules.contains_key(&rule_key) {
-                                                    let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
                                                     if let Some((path, display)) = crate::domain::sse_merge::auto_detect_field(&chunks_data) {
-                                                        app.network.sse_merge_rules.insert(rule_key, crate::app::SseMergeRule {
+                                                        app.network.sse_merge_rules.insert(rule_key.clone(), crate::app::SseMergeRule {
                                                             field_path: path,
                                                             field_display: display,
                                                         });
                                                     }
                                                 }
                                                 app.network.sse_merged_mode = true;
-                                                app.network.sse_merged_field_idx = 0;
+                                                // Sync field_idx with the rule's field
+                                                if let Some(rule) = app.network.sse_merge_rules.get(&rule_key) {
+                                                    let candidates = crate::domain::sse_merge::extract_field_paths(&chunks_data);
+                                                    app.network.sse_merged_field_idx = candidates.iter()
+                                                        .position(|(_, d)| d == &rule.field_display)
+                                                        .unwrap_or(0);
+                                                } else {
+                                                    app.network.sse_merged_field_idx = 0;
+                                                }
                                             }
                                         }
                                     }
                                     return;
+                                } else {
+                                    // Check × (clear rule) pill — right after Merged pill
+                                    let clear_start = merged_end + 1;
+                                    let clear_end = clear_start + " \u{00d7} ".len();
+                                    if click_x >= clear_start && click_x < clear_end {
+                                        let sel = app.network.selected;
+                                        let indices = app.network.filtered_indices(&app.network_store).to_vec();
+                                        if let Some(&store_idx) = indices.get(sel) {
+                                            if let Some(entry) = app.network_store.get(store_idx) {
+                                                let rule_key = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
+                                                app.network.sse_merge_rules.remove(&rule_key);
+                                                app.network.sse_merged_mode = false;
+                                            }
+                                        }
+                                        return;
+                                    }
                                 }
                                 // If click is not on pills, fall through to section toggle below
                             }
@@ -259,8 +283,8 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                         if let Some(entry) = app.network_store.get(store_idx) {
                                             let rule_key = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
                                             let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
-                                            if let Some(first_json) = chunks_data.first().and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok()) {
-                                                let candidates = crate::domain::sse_merge::extract_field_paths(&first_json);
+                                            {
+                                                let candidates = crate::domain::sse_merge::extract_field_paths(&chunks_data);
                                                 if let Some((path, display)) = candidates.into_iter().nth(fi) {
                                                     app.network.sse_merge_rules.insert(rule_key, crate::app::SseMergeRule {
                                                         field_path: path,
@@ -378,12 +402,10 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                             if app.network.sse_merged_mode {
                                                 if let Some(rule) = app.network.sse_merge_rules.get(&rule_key) {
                                                     let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
-                                                    if let Some(first_json) = chunks_data.first().and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok()) {
-                                                        let candidates = crate::domain::sse_merge::extract_field_paths(&first_json);
-                                                        app.network.sse_merged_field_idx = candidates.iter()
-                                                            .position(|(_, d)| d == &rule.field_display)
-                                                            .unwrap_or(0);
-                                                    }
+                                                    let candidates = crate::domain::sse_merge::extract_field_paths(&chunks_data);
+                                                    app.network.sse_merged_field_idx = candidates.iter()
+                                                        .position(|(_, d)| d == &rule.field_display)
+                                                        .unwrap_or(0);
                                                 }
                                             }
                                         } else {
@@ -410,12 +432,10 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                             if app.network.sse_merged_mode {
                                                 if let Some(rule) = app.network.sse_merge_rules.get(&rule_key) {
                                                     let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
-                                                    if let Some(first_json) = chunks_data.first().and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok()) {
-                                                        let candidates = crate::domain::sse_merge::extract_field_paths(&first_json);
-                                                        app.network.sse_merged_field_idx = candidates.iter()
-                                                            .position(|(_, d)| d == &rule.field_display)
-                                                            .unwrap_or(0);
-                                                    }
+                                                    let candidates = crate::domain::sse_merge::extract_field_paths(&chunks_data);
+                                                    app.network.sse_merged_field_idx = candidates.iter()
+                                                        .position(|(_, d)| d == &rule.field_display)
+                                                        .unwrap_or(0);
                                                 }
                                             }
                                         } else {
@@ -897,6 +917,28 @@ fn copy_response(app: &mut App) {
         }
     };
 
+    // SSE: copy merged text (if in merged mode) or all chunk data
+    if entry.protocol == crate::domain::network::Protocol::Sse && !entry.sse_chunks.is_empty() {
+        let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
+        let text = if app.network.sse_merged_mode {
+            let rule_key = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
+            if let Some(rule) = app.network.sse_merge_rules.get(&rule_key) {
+                crate::domain::sse_merge::merge_field(&chunks_data, &rule.field_path)
+            } else {
+                chunks_data.join("\n")
+            }
+        } else {
+            chunks_data.join("\n")
+        };
+        if text.is_empty() {
+            app.show_status("No SSE data".to_string());
+            return;
+        }
+        let msg = copy_to_clipboard(&text);
+        app.show_status(format!("Response {}", msg));
+        return;
+    }
+
     let body = entry.response_body.as_deref().unwrap_or("");
     if body.is_empty() {
         app.show_status("No response body".to_string());
@@ -1123,19 +1165,17 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                     if let Some(entry) = app.network_store.get(idx) {
                         if entry.protocol == crate::domain::network::Protocol::Sse {
                             let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
-                            if let Some(first_json) = chunks_data.first().and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok()) {
-                                let candidates = crate::domain::sse_merge::extract_field_paths(&first_json);
-                                let count = candidates.len();
-                                if count > 0 {
-                                    let new_idx = (app.network.sse_merged_field_idx + 1).min(count - 1);
-                                    app.network.sse_merged_field_idx = new_idx;
-                                    let rule_key = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
-                                    if let Some((path, display)) = candidates.into_iter().nth(new_idx) {
-                                        app.network.sse_merge_rules.insert(rule_key, crate::app::SseMergeRule {
-                                            field_path: path,
-                                            field_display: display,
-                                        });
-                                    }
+                            let candidates = crate::domain::sse_merge::extract_field_paths(&chunks_data);
+                            let count = candidates.len();
+                            if count > 0 {
+                                let new_idx = (app.network.sse_merged_field_idx + 1).min(count - 1);
+                                app.network.sse_merged_field_idx = new_idx;
+                                let rule_key = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
+                                if let Some((path, display)) = candidates.into_iter().nth(new_idx) {
+                                    app.network.sse_merge_rules.insert(rule_key, crate::app::SseMergeRule {
+                                        field_path: path,
+                                        field_display: display,
+                                    });
                                 }
                             }
                         }
@@ -1151,14 +1191,12 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                         if entry.protocol == crate::domain::network::Protocol::Sse {
                             let rule_key = entry.path.split('?').next().unwrap_or(&entry.path).to_string();
                             let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
-                            if let Some(first_json) = chunks_data.first().and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok()) {
-                                let candidates = crate::domain::sse_merge::extract_field_paths(&first_json);
-                                if let Some((path, display)) = candidates.into_iter().nth(app.network.sse_merged_field_idx) {
-                                    app.network.sse_merge_rules.insert(rule_key, crate::app::SseMergeRule {
-                                        field_path: path,
-                                        field_display: display,
-                                    });
-                                }
+                            let candidates = crate::domain::sse_merge::extract_field_paths(&chunks_data);
+                            if let Some((path, display)) = candidates.into_iter().nth(app.network.sse_merged_field_idx) {
+                                app.network.sse_merge_rules.insert(rule_key, crate::app::SseMergeRule {
+                                    field_path: path,
+                                    field_display: display,
+                                });
                             }
                         }
                     }

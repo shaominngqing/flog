@@ -74,15 +74,16 @@ flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它
   - Query Parameters（自动解析 URL 参数）
   - Request / Response Headers
   - Request / Response Body（JSON 语法高亮，逐层展开）
-  - SSE Events（每个 chunk 可展开查看 JSON）
+  - SSE Events（每个 chunk 可展开查看 JSON，支持 Merged 聚合视图）
   - WebSocket Messages（发送/接收，方向标记）
 - 过滤器（Protocol / Method / Status 行内 pill 切换）
 - URL 搜索
 - Copy as cURL（一键复制为 curl 命令）
-- Copy Response（复制响应体）
+- Copy Response（复制响应体；SSE Merged 模式下复制拼接后的完整文本）
 - **Replay** — 重放请求（从详情面板触发，通过 VM Service 重新发送）
 - **Performance Stats** — 统计面板（延迟百分位、Top 5 慢请求、状态码分布、按域名统计）
-- **Mock** — 在 TUI 中创建 Mock 规则（URL 匹配、Method 过滤、自定义 Status/Body/Delay），通过 VM Service 同步到 Dart 应用，拦截匹配请求返回预设响应
+- **Mock** — 在 TUI 中创建 Mock 规则（URL 匹配、Method 过滤、自定义 Status/Body/Delay），通过 VM Service 同步到 Dart 应用，拦截匹配请求返回预设响应（仅 HTTP）
+- **SSE Merged View** — 将 SSE 流式响应中的多个 chunk 按指定 JSON 字段拼接为完整文本。自动识别 OpenAI / Claude 等 LLM streaming 格式，也支持手动切换字段。设置后同一 URL 的后续请求自动继承
 - 自动滚动 + LIVE 指示器
 - 1 万条请求缓冲
 
@@ -215,9 +216,14 @@ await ws.close();
 | 按键 | 功能 |
 |------|------|
 | `/` | URL 搜索 |
-| `c` | Copy as cURL |
-| `y` | Copy Response |
+| `c` | Copy as cURL（仅 HTTP） |
+| `y` | Copy Response（SSE Merged 模式下复制拼接文本） |
+| `r` | Replay 重放请求（仅 HTTP） |
+| `M` | 从当前请求创建 Mock 规则（仅 HTTP） |
+| `S` | 统计面板 |
 | `Enter` | 打开/关闭详情面板 |
+| `j/k` | SSE Merged 模式下切换字段；其他情况移动选择 |
+| `Esc` | SSE Merged 模式下退出；其他情况清除过滤 |
 | `s` | 选择模式 |
 
 ## 安装
