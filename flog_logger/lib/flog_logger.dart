@@ -14,6 +14,7 @@ import 'src/flog_net.dart' show flogEnabled;
 
 export 'src/flog_net.dart' show nextNetId, emitNet, flogEnabled;
 export 'src/flog_http_interceptor.dart';
+export 'src/flog_mock_interceptor.dart';
 export 'src/flog_sse_parser.dart';
 export 'src/flog_web_socket.dart';
 export 'src/flog_dio.dart' show FlogDio, FlogHttpConfig, SseResponse;

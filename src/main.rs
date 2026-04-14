@@ -6,7 +6,6 @@ mod domain;
 mod event;
 pub mod input;
 pub mod parser;
-pub mod proxy;
 mod replay;
 mod session;
 mod ui;
@@ -74,23 +73,6 @@ async fn main() -> io::Result<()> {
             while let Some(entry) = replay_rx.recv().await {
                 let app_c = Arc::clone(&app_for_replay);
                 tokio::spawn(replay::replay_request(app_c, entry));
-            }
-        });
-    }
-
-    // Start proxy server
-    {
-        let app_proxy = Arc::clone(&app);
-        tokio::spawn(async move {
-            match crate::proxy::start_proxy(Arc::clone(&app_proxy)).await {
-                Ok(port) => {
-                    let mut a = app_proxy.lock().await;
-                    a.show_status(format!("Proxy started on :{}", port));
-                }
-                Err(_e) => {
-                    let mut a = app_proxy.lock().await;
-                    a.show_status("Proxy failed to start".to_string());
-                }
             }
         });
     }
@@ -307,21 +289,34 @@ async fn auto_discover_loop(app: Arc<Mutex<App>>) {
             a.source_name = format!("Connecting to {}...", discovered.name);
         }
 
-        let proxy_port = { app.lock().await.proxy_port };
-        if let Ok((mut source, proxy_ok)) = input::vm_service::VmServiceSource::new(&discovered.ws_url, proxy_port).await {
+        if let Ok(mut source) = input::vm_service::VmServiceSource::new(&discovered.ws_url).await {
+            let (mock_tx, mut mock_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             {
                 let mut a = app.lock().await;
                 a.source_name = format!("WS \u{2192} {}", discovered.name);
                 a.connected = true;
                 a.last_source_type = Some(LastSourceType::Vm);
-                a.proxy_dart_connected = proxy_ok;
-                let proxy_msg = if proxy_ok { " + Proxy" } else { "" };
-                a.show_status(format!("Connected to VM Service ({}){}", discovered.name, proxy_msg));
+                a.mock_sync_tx = Some(mock_tx);
+                a.show_status(format!("Connected to VM Service ({})", discovered.name));
             }
 
-            while let Some(event) = source.next_event().await {
-                let mut a = app.lock().await;
-                dispatch_event(&mut a, event);
+            loop {
+                tokio::select! {
+                    event = source.next_event() => {
+                        match event {
+                            Some(e) => {
+                                let mut a = app.lock().await;
+                                dispatch_event(&mut a, e);
+                            }
+                            None => break,
+                        }
+                    }
+                    Some(rules_json) = mock_rx.recv() => {
+                        if let Some(iso_id) = source.isolate_id.clone() {
+                            source.sync_mock_rules(&iso_id, &rules_json).await;
+                        }
+                    }
+                }
             }
 
             // Disconnected — return to scanning UI
@@ -346,19 +341,33 @@ async fn auto_discover_loop(app: Arc<Mutex<App>>) {
 /// Connect to VM Service; on disconnect, return to scanning UI.
 async fn start_vm_service_with_reconnect(app: Arc<Mutex<App>>, uri: String) {
     let host = uri.split('/').nth(2).unwrap_or(&uri).to_string();
-    let proxy_port = { app.lock().await.proxy_port };
-    match input::vm_service::VmServiceSource::new(&uri, proxy_port).await {
-        Ok((mut source, proxy_ok)) => {
+    match input::vm_service::VmServiceSource::new(&uri).await {
+        Ok(mut source) => {
+            let (mock_tx, mut mock_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             {
                 let mut a = app.lock().await;
                 a.source_name = format!("WS \u{2192} {}", host);
                 a.connected = true;
                 a.last_source_type = Some(LastSourceType::Vm);
-                a.proxy_dart_connected = proxy_ok;
+                a.mock_sync_tx = Some(mock_tx);
             }
-            while let Some(event) = source.next_event().await {
-                let mut a = app.lock().await;
-                dispatch_event(&mut a, event);
+            loop {
+                tokio::select! {
+                    event = source.next_event() => {
+                        match event {
+                            Some(e) => {
+                                let mut a = app.lock().await;
+                                dispatch_event(&mut a, e);
+                            }
+                            None => break,
+                        }
+                    }
+                    Some(rules_json) = mock_rx.recv() => {
+                        if let Some(iso_id) = source.isolate_id.clone() {
+                            source.sync_mock_rules(&iso_id, &rules_json).await;
+                        }
+                    }
+                }
             }
             // Disconnected — return to scanning UI
             {
@@ -409,19 +418,33 @@ async fn start_adb(app: Arc<Mutex<App>>, serial: Option<String>) {
 
 async fn start_vm_service(app: Arc<Mutex<App>>, uri: String) {
     let host = uri.split('/').nth(2).unwrap_or(&uri).to_string();
-    let proxy_port = { app.lock().await.proxy_port };
-    match input::vm_service::VmServiceSource::new(&uri, proxy_port).await {
-        Ok((mut source, proxy_ok)) => {
+    match input::vm_service::VmServiceSource::new(&uri).await {
+        Ok(mut source) => {
+            let (mock_tx, mut mock_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             {
                 let mut a = app.lock().await;
                 a.source_name = format!("WS \u{2192} {}", host);
                 a.connected = true;
                 a.last_source_type = Some(LastSourceType::Vm);
-                a.proxy_dart_connected = proxy_ok;
+                a.mock_sync_tx = Some(mock_tx);
             }
-            while let Some(event) = source.next_event().await {
-                let mut a = app.lock().await;
-                dispatch_event(&mut a, event);
+            loop {
+                tokio::select! {
+                    event = source.next_event() => {
+                        match event {
+                            Some(e) => {
+                                let mut a = app.lock().await;
+                                dispatch_event(&mut a, e);
+                            }
+                            None => break,
+                        }
+                    }
+                    Some(rules_json) = mock_rx.recv() => {
+                        if let Some(iso_id) = source.isolate_id.clone() {
+                            source.sync_mock_rules(&iso_id, &rules_json).await;
+                        }
+                    }
+                }
             }
             // Disconnected — return to scanning UI
             {

@@ -2,6 +2,7 @@
 
 pub mod entry;
 pub mod filter;
+pub mod mock;
 pub mod network;
 pub mod network_filter;
 pub mod network_store;

@@ -361,17 +361,15 @@ pub struct App {
     /// return to the correct scanning phase on disconnect.
     pub last_source_type: Option<LastSourceType>,
 
-    // Proxy
-    pub proxy_port: Option<u16>,
-    pub proxy_running: bool,
-    /// Proxy connection status message for the UI indicator.
-    pub proxy_dart_connected: bool,
-    pub mock_rules: crate::proxy::mock::MockRuleStore,
+    // Mock rules
+    pub mock_rules: crate::domain::mock::MockRuleStore,
     pub mock_rule_selected: usize,
     pub mock_edit_rule_id: Option<usize>,
     pub mock_edit_field: usize,
     pub mock_edit_top_values: Vec<String>,
     pub mock_edit_body: crate::ui::text_editor::TextEditor,
+    /// Channel to sync mock rules to Dart via VM Service extension.
+    pub mock_sync_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 
     // UI
     pub layout: LayoutCache,
@@ -419,15 +417,13 @@ impl App {
             source_command_tx: None,
             replay_tx: None,
             last_source_type: None,
-            proxy_port: None,
-            proxy_running: false,
-            proxy_dart_connected: false,
-            mock_rules: crate::proxy::mock::MockRuleStore::new(),
+            mock_rules: crate::domain::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
             mock_edit_rule_id: None,
             mock_edit_field: 0,
             mock_edit_top_values: Vec::new(),
             mock_edit_body: crate::ui::text_editor::TextEditor::new(""),
+            mock_sync_tx: None,
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
@@ -838,8 +834,8 @@ impl App {
     }
 
     pub fn enter_mock_rules(&mut self) {
-        if !self.proxy_dart_connected {
-            self.show_status("Mock unavailable — Dart proxy not connected".to_string());
+        if !self.is_vm_service_connected() {
+            self.show_status("Mock unavailable — VM Service not connected".to_string());
             return;
         }
         // Toggle mock rules panel in the right side (like detail panel)
@@ -904,7 +900,7 @@ impl App {
     /// based on the last connection type.
     pub fn enter_scanning_on_disconnect(&mut self) {
         self.connected = false;
-        self.proxy_dart_connected = false;
+        self.mock_sync_tx = None;
         self.show_source_dropdown = false;
         self.mode = AppMode::SourceSelect;
         self.source_select.selected_idx = 0;

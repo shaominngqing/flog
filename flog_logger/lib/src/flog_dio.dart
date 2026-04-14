@@ -1,10 +1,10 @@
-import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
-import 'dart:io';
 
 import 'package:dio/dio.dart';
 
 import 'flog_http_interceptor.dart';
+import 'flog_mock_interceptor.dart';
 import 'flog_net.dart' show flogEnabled;
 import 'flog_sse_parser.dart';
 
@@ -63,8 +63,9 @@ class SseResponse {
 /// A drop-in replacement for [Dio] that automatically instruments HTTP
 /// requests for the flog Network Inspector.
 ///
-/// When [flogEnabled] is true, a [FlogHttpInterceptor] is inserted at
-/// position 0 so all requests are logged without manual setup.
+/// When [flogEnabled] is true, a [FlogHttpInterceptor] is inserted so all
+/// requests are logged without manual setup. A [FlogMockInterceptor] is also
+/// inserted before the HTTP interceptor so mock rules from flog take effect.
 ///
 /// Also provides a convenience [sse] method for Server-Sent Events streams.
 ///
@@ -85,8 +86,8 @@ class FlogDio implements Dio {
   /// Creates a [FlogDio] instance.
   ///
   /// If [baseUrl] is provided and [options] is null, sets the base URL on the
-  /// default options. If [flogEnabled] is true, a [FlogHttpInterceptor] is
-  /// automatically inserted at position 0 using settings from [flogConfig].
+  /// default options. If [flogEnabled] is true, a [FlogMockInterceptor] and
+  /// [FlogHttpInterceptor] are automatically inserted.
   FlogDio({
     String? baseUrl,
     FlogHttpConfig? flogConfig,
@@ -98,8 +99,13 @@ class FlogDio implements Dio {
 
     if (flogEnabled) {
       final config = flogConfig ?? const FlogHttpConfig();
+
+      // Mock interceptor first — intercepts before real network
+      _inner.interceptors.insert(0, FlogMockInterceptor());
+
+      // HTTP logging interceptor second — logs all requests (including mocked ones)
       _inner.interceptors.insert(
-        0,
+        1,
         FlogHttpInterceptor(
           includeRequestHeaders: config.includeRequestHeaders,
           includeResponseHeaders: config.includeResponseHeaders,
@@ -110,82 +116,20 @@ class FlogDio implements Dio {
         ),
       );
 
-      // Proxy interceptor: rewrites requests to go through flog proxy.
-      // Activated by VM Service extension (flog sends host+port on connect)
-      // or by background probe (for when app starts before flog).
-      _proxyInterceptor = InterceptorsWrapper(
-        onRequest: (options, handler) {
-          if (_proxyHost != null && _proxyPort != null) {
-            final originalUrl = options.uri.toString();
-            options.headers['x-flog-target'] = originalUrl;
-            final proxyPath = options.uri.path;
-            final proxyQuery = options.uri.query;
-            final queryPart = proxyQuery.isNotEmpty ? '?$proxyQuery' : '';
-            options.path = 'http://$_proxyHost:$_proxyPort$proxyPath$queryPart';
-            options.baseUrl = '';
-          }
-          handler.next(options);
-        },
-      );
-      _inner.interceptors.insert(0, _proxyInterceptor!);
-
-      // Register VM Service extension: flog will call this with host+port
+      // Register VM Service extension for mock rule sync
       try {
-        developer.registerExtension('ext.flog.setProxy',
+        developer.registerExtension('ext.flog.syncMockRules',
             (String method, Map<String, String> params) async {
-          final host = params['host'];
-          final port = int.tryParse(params['port'] ?? '');
-          if (host != null && port != null) {
-            _proxyHost = host;
-            _proxyPort = port;
-            _probeTimer?.cancel();
-            _probeTimer = null;
-            // ignore: avoid_print
-            print('[flog_dart] Proxy configured via VM Service: $host:$port');
-          }
-          return developer.ServiceExtensionResponse.result('{"ok": true}');
+          final rulesJson = params['rules'] ?? '[]';
+          final rules = (jsonDecode(rulesJson) as List)
+              .map((r) => FlogMockRule.fromJson(r as Map<String, dynamic>))
+              .toList();
+          FlogMockInterceptor.updateRules(rules);
+          return developer.ServiceExtensionResponse.result(
+              jsonEncode({'ok': true, 'count': rules.length}));
         });
       } catch (_) {
         // Extension may already be registered
-      }
-
-      // Also start background probe as fallback (for app-starts-before-flog case)
-      _startProxyProbe();
-    }
-  }
-
-  /// Proxy host (computer's LAN IP or localhost).
-  static String? _proxyHost;
-
-  /// Proxy port.
-  static int? _proxyPort;
-
-  /// Timer for background proxy probing.
-  static Timer? _probeTimer;
-
-  /// The interceptor that rewrites URLs to proxy.
-  InterceptorsWrapper? _proxyInterceptor;
-
-  /// Start background probing as fallback.
-  void _startProxyProbe() {
-    _probeTimer?.cancel();
-    _probeTimer = Timer.periodic(const Duration(seconds: 3), (_) => _probeProxy());
-    _probeProxy(); // probe immediately
-  }
-
-  /// Try localhost ports 9999-10008 (works for simulators and adb reverse).
-  static Future<void> _probeProxy() async {
-    if (_proxyHost != null && _proxyPort != null) return; // already configured via extension
-    for (int port = 9999; port <= 10008; port++) {
-      try {
-        final socket = await Socket.connect('localhost', port,
-            timeout: const Duration(milliseconds: 100));
-        socket.destroy();
-        _proxyHost = 'localhost';
-        _proxyPort = port;
-        return;
-      } catch (_) {
-        // try next
       }
     }
   }

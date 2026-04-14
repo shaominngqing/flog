@@ -17,8 +17,6 @@ use super::super::{
     BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, RED, SAPPHIRE, SURFACE0, SURFACE1, TEXT, YELLOW,
 };
 
-const PROXY_GREEN: ratatui::style::Color = ratatui::style::Color::Rgb(166, 218, 149);
-
 /// Render a filter pill: selected = bright colored bg, unselected = subtle bg.
 fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'a> {
     if selected {
@@ -61,27 +59,22 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     spans1.push(Span::styled(" ", Style::default().bg(bg)));
     x += 1;
 
-    // Compute proxy status text first so we can reserve space for it
-    let proxy_text = if app.proxy_running {
-        let port = app.proxy_port.unwrap_or(0);
+    // Mock status indicator (right side of line 1)
+    let mock_text = if app.is_vm_service_connected() {
         let rule_count = app.mock_rules.enabled_count();
-        if app.proxy_dart_connected && rule_count > 0 {
-            format!("Proxy :{} | Dart connected | {} rules active ", port, rule_count)
-        } else if app.proxy_dart_connected {
-            format!("Proxy :{} | Dart connected ", port)
-        } else if app.is_vm_service_connected() {
-            format!("Proxy :{} | Dart not connected ", port)
+        if rule_count > 0 {
+            format!("{} mock rules active ", rule_count)
         } else {
-            format!("Proxy :{} | waiting for VM Service ", port)
+            String::new()
         }
     } else {
         String::new()
     };
-    let proxy_w = proxy_text.width();
-    let proxy_reserved = if proxy_w > 0 { proxy_w + 1 } else { 0 }; // +1 for gap
+    let mock_w = mock_text.width();
+    let mock_reserved = if mock_w > 0 { mock_w + 1 } else { 0 };
 
     let search_start = x;
-    let sw: usize = w.saturating_sub(x as usize + proxy_reserved + 2); // reserve space for proxy
+    let sw: usize = w.saturating_sub(x as usize + mock_reserved + 2);
     let search_text = if is_searching {
         format!("/{}_", app.network.search_input)
     } else if app.network.filter.search.is_empty() {
@@ -100,21 +93,14 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     x += sw as u16;
     let search_end = x;
 
-    // Proxy status indicator (right-aligned on line 1)
+    // Mock status indicator (right-aligned on line 1)
     let rem1 = (area.width as usize).saturating_sub(x as usize);
-    if !proxy_text.is_empty() && rem1 > proxy_w {
-        let gap = rem1.saturating_sub(proxy_w);
+    if !mock_text.is_empty() && rem1 > mock_w {
+        let gap = rem1.saturating_sub(mock_w);
         spans1.push(Span::styled(" ".repeat(gap), Style::default().bg(bg)));
-        let proxy_color = if app.proxy_dart_connected && app.mock_rules.enabled_count() > 0 {
-            PROXY_GREEN // green — connected with active rules
-        } else if app.proxy_dart_connected {
-            BLUE // blue — connected, ready
-        } else {
-            OVERLAY0 // gray — not connected to Dart
-        };
         spans1.push(Span::styled(
-            proxy_text,
-            Style::default().fg(proxy_color).bg(bg),
+            mock_text,
+            Style::default().fg(GREEN).bg(bg),
         ));
     } else if rem1 > 0 {
         spans1.push(Span::styled(" ".repeat(rem1), Style::default().bg(bg)));

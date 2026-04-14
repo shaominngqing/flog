@@ -77,12 +77,14 @@ class FlogHttpInterceptor extends Interceptor {
     _idMap[key] = id;
     _startMap[key] = DateTime.now();
 
+    final url = options.uri.toString();
+
     final data = <String, dynamic>{
       'id': id,
       't': 'req',
       'p': 'http',
       'method': options.method,
-      'url': options.uri.toString(),
+      'url': url,
     };
 
     if (includeRequestHeaders) {

@@ -1,7 +1,9 @@
-//! Mock rule types and matching for the proxy server.
+//! Mock rule types and matching for the interceptor-based mock system.
+
+use serde::Serialize;
 
 /// A single mock rule that intercepts matching requests.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MockRule {
     pub id: usize,
     /// Substring pattern matched against the request URL.
@@ -17,6 +19,7 @@ pub struct MockRule {
     /// Whether this rule is active.
     pub enabled: bool,
     /// Number of times this rule has been matched.
+    #[serde(skip)]
     pub hit_count: u32,
 }
 
@@ -121,6 +124,11 @@ impl MockRuleStore {
     pub fn enabled_count(&self) -> usize {
         self.rules.iter().filter(|r| r.enabled).count()
     }
+
+    /// Serialize all rules to a JSON string for syncing to Dart.
+    pub fn to_json_string(&self) -> String {
+        serde_json::to_string(&self.rules).unwrap_or_else(|_| "[]".to_string())
+    }
 }
 
 #[cfg(test)]
@@ -197,5 +205,16 @@ mod tests {
         store.find_match("/api/other", "POST");
 
         assert_eq!(store.rules()[0].hit_count, 2);
+    }
+
+    #[test]
+    fn test_to_json_string() {
+        let mut store = MockRuleStore::new();
+        store.add("/api/users".into(), Some("GET".into()), 200, "[]".into(), 0);
+        let json = store.to_json_string();
+        assert!(json.contains("url_pattern"));
+        assert!(json.contains("/api/users"));
+        // hit_count should be skipped
+        assert!(!json.contains("hit_count"));
     }
 }

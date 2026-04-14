@@ -153,6 +153,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                 if let Some(rule) = app.mock_rules.rules().get(row_idx) {
                                     let id = rule.id;
                                     app.mock_rules.toggle(id);
+                                    trigger_mock_sync(app);
                                 }
                             }
                             "delete" => {
@@ -162,6 +163,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                     if app.mock_rule_selected >= app.mock_rules.len() && app.mock_rule_selected > 0 {
                                         app.mock_rule_selected -= 1;
                                     }
+                                    trigger_mock_sync(app);
                                 }
                             }
                             _ => {}
@@ -776,10 +778,18 @@ fn copy_response(app: &mut App) {
     app.show_status(format!("Response {}", msg));
 }
 
+/// Trigger mock rule sync to Dart via VM Service extension.
+fn trigger_mock_sync(app: &App) {
+    if let Some(tx) = &app.mock_sync_tx {
+        let json = app.mock_rules.to_json_string();
+        let _ = tx.send(json);
+    }
+}
+
 /// Create a mock rule from the currently selected network request and open editor.
 fn mock_from_selected(app: &mut App) {
-    if !app.proxy_dart_connected {
-        app.show_status("Mock unavailable — Dart proxy not connected".to_string());
+    if !app.is_vm_service_connected() {
+        app.show_status("Mock unavailable — VM Service not connected".to_string());
         return;
     }
 
@@ -829,6 +839,7 @@ fn mock_from_selected(app: &mut App) {
 
     app.mock_rules
         .add(url_pattern.clone(), method, status_code, response_body, 0);
+    trigger_mock_sync(app);
 
     // Show rules panel in right side and give feedback
     app.network.show_mock_rules_panel = true;
@@ -1089,9 +1100,13 @@ fn handle_overlay_key(app: &mut App, key: KeyEvent) {
 fn handle_mock_edit_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => app.cancel_mock_edit(),
-        KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => app.save_mock_edit(),
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.save_mock_edit();
+            trigger_mock_sync(app);
+        }
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.save_mock_edit()
+            app.save_mock_edit();
+            trigger_mock_sync(app);
         }
         KeyCode::Tab => {
             app.mock_edit_field = (app.mock_edit_field + 1) % 5;
@@ -1158,6 +1173,7 @@ fn handle_mock_edit_mouse(app: &mut App, mouse: MouseEvent) {
                         "delay" => app.mock_edit_field = 3,
                         "save" => {
                             app.save_mock_edit();
+                            trigger_mock_sync(app);
                             return;
                         }
                         "cancel" => {

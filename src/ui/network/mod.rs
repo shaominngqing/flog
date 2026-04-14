@@ -614,7 +614,7 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         ),
     ];
 
-    if app.proxy_dart_connected {
+    if app.is_vm_service_connected() {
         buttons.push((
             "mock",
             " Mock ",

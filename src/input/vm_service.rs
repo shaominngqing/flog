@@ -17,23 +17,28 @@ pub struct VmServiceSource {
             tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
         >,
     >,
+    sender: futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        Message,
+    >,
     uri: String,
+    /// Isolate ID for VM Service extension calls.
+    pub isolate_id: Option<String>,
     /// Buffered stdout lines from Stdout/Stderr events (one WS message can contain multiple lines).
     pending_lines: Vec<StdoutLine>,
 }
 
 impl VmServiceSource {
-    /// Connect to VM Service. If `proxy_port` is Some, attempts to notify
-    /// Dart about the proxy via service extension. Returns (Self, proxy_ok).
+    /// Connect to VM Service, get isolate ID, subscribe to streams.
     pub async fn new(
         uri: &str,
-        proxy_port: Option<u16>,
-    ) -> Result<(Self, bool), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let (mut ws_stream, _) = connect_async(uri).await?;
 
         // ── Phase 1: Get isolate ID (before split) ──
         let mut isolate_id: Option<String> = None;
-        let mut proxy_ok = false;
 
         // Send getVM
         let get_vm = serde_json::json!({
@@ -64,42 +69,7 @@ impl VmServiceSource {
             }
         }
 
-        // ── Phase 2: Call ext.flog.setProxy with host IP + port ──
-        if let (Some(ref iso_id), Some(port)) = (&isolate_id, proxy_port) {
-            // Get local network IP so real devices can reach the proxy
-            let host_ip = get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
-
-            let call = serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "ext.flog.setProxy",
-                "params": {
-                    "isolateId": iso_id,
-                    "host": host_ip,
-                    "port": port.to_string(),
-                },
-                "id": "flog_setproxy"
-            });
-            ws_stream.send(Message::Text(call.to_string().into())).await.ok();
-
-            // Wait for response
-            let deadline2 = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
-            while tokio::time::Instant::now() < deadline2 {
-                match tokio::time::timeout(std::time::Duration::from_millis(500), ws_stream.next()).await {
-                    Ok(Some(Ok(Message::Text(text)))) => {
-                        if let Ok(json) = serde_json::from_str::<Value>(&text.to_string()) {
-                            if json.get("id").and_then(|v| v.as_str()) == Some("flog_setproxy") {
-                                proxy_ok = json.get("error").is_none();
-                                break;
-                            }
-                        }
-                    }
-                    Ok(Some(Ok(_))) | Ok(Some(Err(_))) => continue,
-                    _ => break,
-                }
-            }
-        }
-
-        // ── Phase 3: Split and subscribe to streams ──
+        // ── Phase 2: Split and subscribe to streams ──
         let (mut sender, receiver) = ws_stream.split();
 
         for (id, stream_id) in [("1", "Logging"), ("2", "Stdout"), ("3", "Stderr")] {
@@ -112,11 +82,27 @@ impl VmServiceSource {
             let _ = sender.send(Message::Text(msg.to_string().into())).await;
         }
 
-        Ok((Self {
+        Ok(Self {
             receiver,
+            sender,
             uri: uri.to_string(),
+            isolate_id,
             pending_lines: Vec::new(),
-        }, proxy_ok))
+        })
+    }
+
+    /// Sync mock rules to Dart via VM Service extension.
+    pub async fn sync_mock_rules(&mut self, isolate_id: &str, rules_json: &str) {
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "ext.flog.syncMockRules",
+            "params": {
+                "isolateId": isolate_id,
+                "rules": rules_json,
+            },
+            "id": "mock_sync"
+        });
+        let _ = self.sender.send(Message::Text(msg.to_string().into())).await;
     }
 
     pub async fn next_event(&mut self) -> Option<SourceEvent> {
@@ -316,15 +302,4 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
         }
     }
     Some(buf)
-}
-
-/// Get the first non-loopback IPv4 address of this machine.
-fn get_local_ip() -> Option<String> {
-    use std::net::UdpSocket;
-    // Connect to a public address to determine the local IP
-    // (no actual data is sent)
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    let addr = socket.local_addr().ok()?;
-    Some(addr.ip().to_string())
 }

@@ -21,7 +21,3 @@ clap = { version = "4", features = ["derive"] }
 tokio-tungstenite = { version = "0.26", features = ["connect"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-hyper = { version = "1", features = ["server", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
-http-body-util = "0.1"
-bytes = "1"
