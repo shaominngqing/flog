@@ -141,6 +141,22 @@ pub struct DetailState {
     pub viewer_state: crate::ui::json_viewer::JsonViewerState,
 }
 
+/// A segment in a JSON field path.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SsePathSegment {
+    Key(String),
+    Index(usize),
+}
+
+/// A saved SSE merge rule: which JSON field path to concatenate across chunks.
+#[derive(Clone)]
+pub struct SseMergeRule {
+    /// JSON field path like `["choices", 0, "delta", "content"]`
+    pub field_path: Vec<SsePathSegment>,
+    /// Human-readable path string like `choices[0].delta.content`
+    pub field_display: String,
+}
+
 /// Network tab view state.
 pub struct NetworkState {
     pub selected: usize,
@@ -164,6 +180,12 @@ pub struct NetworkState {
         std::collections::HashMap<String, crate::ui::json_viewer::JsonViewerState>,
     /// Maps detail panel line index -> (section_key, source_line) for JSON bracket click.
     pub detail_json_click_map: Vec<Option<(String, usize)>>,
+    /// SSE merge rules: URL path (no query params) → merge rule.
+    pub sse_merge_rules: std::collections::HashMap<String, SseMergeRule>,
+    /// Whether the current SSE detail is showing Merged mode (true) or Events mode (false).
+    pub sse_merged_mode: bool,
+    /// Index of the currently selected field in Merged mode's field list.
+    pub sse_merged_field_idx: usize,
     filtered_indices: Vec<usize>,
     filter_dirty: bool,
 }
@@ -227,6 +249,9 @@ impl NetworkState {
             detail_section_map: Vec::new(),
             json_viewer_states: std::collections::HashMap::new(),
             detail_json_click_map: Vec::new(),
+            sse_merge_rules: std::collections::HashMap::new(),
+            sse_merged_mode: false,
+            sse_merged_field_idx: 0,
             filtered_indices: Vec::new(),
             filter_dirty: true,
         }
