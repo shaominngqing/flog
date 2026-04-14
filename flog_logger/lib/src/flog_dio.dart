@@ -91,6 +91,8 @@ class FlogDio implements Dio {
     FlogHttpConfig? flogConfig,
     BaseOptions? options,
   }) : _inner = Dio(options ?? BaseOptions(baseUrl: baseUrl ?? '')) {
+    // ignore: avoid_print
+    print('[flog_dart] FlogDio created, flogEnabled=$flogEnabled');
     if (baseUrl != null && options == null) {
       _inner.options.baseUrl = baseUrl;
     }
@@ -119,12 +121,13 @@ class FlogDio implements Dio {
             final originalUrl = options.uri.toString();
             options.headers['x-flog-target'] = originalUrl;
             // Rewrite to proxy: set path to absolute proxy URL
-            // This overrides baseUrl resolution completely
             final proxyPath = options.uri.path;
             final proxyQuery = options.uri.query;
             final queryPart = proxyQuery.isNotEmpty ? '?$proxyQuery' : '';
             options.path = 'http://localhost:$_activeProxyPort$proxyPath$queryPart';
-            options.baseUrl = ''; // clear so path is used as-is
+            options.baseUrl = '';
+            // ignore: avoid_print
+            print('[flog_dart] Proxying: $originalUrl → ${options.path}');
           }
           handler.next(options);
         },
@@ -153,16 +156,26 @@ class FlogDio implements Dio {
 
   /// Try to connect to flog proxy on ports 9999-10008.
   static Future<void> _probeProxy() async {
+    // ignore: avoid_print
+    print('[flog_dart] Probing proxy ports 9999-10008...');
     for (int port = 9999; port <= 10008; port++) {
       try {
         final socket = await Socket.connect('localhost', port,
             timeout: const Duration(milliseconds: 100));
         socket.destroy();
+        if (_activeProxyPort != port) {
+          // ignore: avoid_print
+          print('[flog_dart] Proxy detected on port $port');
+        }
         _activeProxyPort = port;
         return;
       } catch (_) {
         // Port not available, try next
       }
+    }
+    if (_activeProxyPort != null) {
+      // ignore: avoid_print
+      print('[flog_dart] Proxy lost');
     }
     _activeProxyPort = null; // No proxy found
   }

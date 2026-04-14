@@ -50,6 +50,11 @@ pub async fn start_proxy(app: Arc<Mutex<App>>) -> Result<u16, String> {
                     accept_loop(listener, app_clone).await;
                 });
 
+                // Auto adb reverse so real devices can reach the proxy
+                let _ = std::process::Command::new("adb")
+                    .args(["reverse", &format!("tcp:{}", port), &format!("tcp:{}", port)])
+                    .output();
+
                 return Ok(port);
             }
             Err(_) => continue,
