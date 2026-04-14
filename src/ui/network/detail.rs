@@ -15,6 +15,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::domain::network::{NetworkStatus, Protocol, WsDirection};
+use crate::domain::sse_merge;
 use crate::ui::json_viewer::{self, JsonViewerState};
 
 use super::super::{
@@ -63,6 +64,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let mut section_line_map: Vec<Option<String>> = Vec::new();
     // Track which line indices map to JSON bracket clicks
     let mut json_click_map: Vec<Option<(String, usize)>> = Vec::new();
+    app.layout.sse_pill_line = None;
 
     // ── Header: method pill + path (wrapped) ──
     let method_c = method_color(&entry.method);
@@ -95,7 +97,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     }
     // Divider line with [Mock] button (VM Service only)
     {
-        let mock_btn = if app.is_vm_service_connected() { " [Mock] " } else { "" };
+        let mock_btn = if app.is_vm_service_connected() && entry.protocol == Protocol::Http { " [Mock] " } else { "" };
         let divider_w = inner_w.saturating_sub(mock_btn.len());
         let mut divider_spans = vec![
             Span::styled(
@@ -342,68 +344,227 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     // ── SSE Stream Events ──
     if entry.protocol == Protocol::Sse && !entry.sse_chunks.is_empty() {
-        let sec_name = format!("SSE Events ({})", entry.sse_chunks.len());
-        let sec_key = "SSE Events";
-        let is_collapsed = app.network.collapsed_sections.contains(sec_key);
-        push_section_header(
-            &mut all_lines,
-            &mut section_line_map,
-            &mut json_click_map,
-            &sec_name,
-            is_collapsed,
-        );
-        // Use sec_key for the map entry (strip count)
-        if let Some(last) = section_line_map.last_mut() {
-            *last = Some(sec_key.to_string());
-        }
-        if !is_collapsed {
-            // Pre-collapse SSE chunks by default on FIRST render only.
-            // Use a sentinel key to track whether we've initialized.
-            let init_key = "_sse_init";
-            if !app.network.collapsed_sections.contains(init_key) {
-                app.network.collapsed_sections.insert(init_key.to_string());
-                for i in 0..entry.sse_chunks.len() {
-                    app.network.collapsed_sections.insert(format!("SSE#{}", i));
+        let rule_key = path_without_query(&entry.path).to_string();
+        let has_rule = app.network.sse_merge_rules.contains_key(&rule_key);
+
+        // Check if chunks contain JSON (merged mode is available)
+        let has_json_chunks = entry.sse_chunks.first()
+            .map(|c| serde_json::from_str::<serde_json::Value>(&c.data).is_ok())
+            .unwrap_or(false);
+
+        if has_rule && app.network.sse_merged_mode {
+            // ── Merged mode ──
+            let sec_key = "SSE Events";
+            let is_collapsed = app.network.collapsed_sections.contains(sec_key);
+
+            // Section header with pill toggle
+            {
+                let events_pill = Span::styled(
+                    " Events ",
+                    Style::default().fg(OVERLAY0).bg(SURFACE0),
+                );
+                let merged_pill = Span::styled(
+                    " Merged ",
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(SAPPHIRE)
+                        .add_modifier(Modifier::BOLD),
+                );
+                let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+                let header_text = format!(
+                    " {} SSE Events ({})  ",
+                    icon,
+                    entry.sse_chunks.len()
+                );
+                all_lines.push(Line::from(vec![
+                    Span::styled(
+                        header_text.clone(),
+                        Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
+                    ),
+                    events_pill,
+                    Span::raw(" "),
+                    merged_pill,
+                ]));
+                app.layout.sse_pill_line = Some((all_lines.len() - 1, header_text.len()));
+                section_line_map.push(Some(sec_key.to_string()));
+                json_click_map.push(None);
+            }
+
+            if !is_collapsed {
+                let rule = app.network.sse_merge_rules.get(&rule_key).cloned();
+                if let Some(rule) = rule {
+                    // Collect all chunk data refs
+                    let chunks_data: Vec<&str> =
+                        entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
+
+                    // Build candidate field list
+                    let candidates = if let Some(first_json) =
+                        chunks_data.first().and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok())
+                    {
+                        sse_merge::extract_field_paths(&first_json)
+                    } else {
+                        vec![]
+                    };
+
+                    // Render field selector
+                    let selected_idx = app.network.sse_merged_field_idx.min(
+                        candidates.len().saturating_sub(1),
+                    );
+                    for (fi, (_, display)) in candidates.iter().enumerate() {
+                        let is_active = fi == selected_idx;
+                        let marker = if is_active { "\u{2023} " } else { "  " };
+                        let style = if is_active {
+                            Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(OVERLAY0)
+                        };
+                        all_lines.push(Line::from(Span::styled(
+                            format!("  {}{}", marker, display),
+                            style,
+                        )));
+                        section_line_map.push(Some(format!("SSE_FIELD#{}", fi)));
+                        json_click_map.push(None);
+                    }
+
+                    // Divider
+                    let divider_w = inner_w.saturating_sub(2);
+                    all_lines.push(Line::from(Span::styled(
+                        format!("  {}", "\u{2500}".repeat(divider_w)),
+                        Style::default().fg(SURFACE0),
+                    )));
+                    section_line_map.push(None);
+                    json_click_map.push(None);
+
+                    // Merge and render concatenated text
+                    let merged_text = sse_merge::merge_field(&chunks_data, &rule.field_path);
+                    if merged_text.is_empty() {
+                        all_lines.push(Line::from(Span::styled(
+                            "   (no data for this field)",
+                            Style::default().fg(OVERLAY0),
+                        )));
+                        section_line_map.push(None);
+                        json_click_map.push(None);
+                    } else {
+                        for wl in wrap_text(&merged_text, inner_w.saturating_sub(3), 500) {
+                            all_lines.push(Line::from(Span::styled(
+                                format!("   {}", wl),
+                                Style::default().fg(TEXT),
+                            )));
+                            section_line_map.push(None);
+                            json_click_map.push(None);
+                        }
+                    }
+
+                    // Clear rule button
+                    all_lines.push(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(
+                            " Clear Rule ",
+                            Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD),
+                        ),
+                    ]));
+                    section_line_map.push(Some("SSE_CLEAR_RULE".to_string()));
+                    json_click_map.push(None);
+                }
+            }
+            all_lines.push(Line::raw(""));
+            section_line_map.push(None);
+            json_click_map.push(None);
+        } else {
+            // ── Events mode (original + pill toggle if JSON chunks exist) ──
+            let sec_name = format!("SSE Events ({})", entry.sse_chunks.len());
+            let sec_key = "SSE Events";
+            let is_collapsed = app.network.collapsed_sections.contains(sec_key);
+
+            if has_json_chunks {
+                // Show pills when chunks are JSON (merged mode available)
+                let events_pill = Span::styled(
+                    " Events ",
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(SAPPHIRE)
+                        .add_modifier(Modifier::BOLD),
+                );
+                let merged_pill = Span::styled(
+                    " Merged ",
+                    Style::default().fg(OVERLAY0).bg(SURFACE0),
+                );
+                let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+                let header_text = format!(" {} {}  ", icon, sec_name);
+                all_lines.push(Line::from(vec![
+                    Span::styled(
+                        header_text.clone(),
+                        Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
+                    ),
+                    events_pill,
+                    Span::raw(" "),
+                    merged_pill,
+                ]));
+                app.layout.sse_pill_line = Some((all_lines.len() - 1, header_text.len()));
+                section_line_map.push(Some(sec_key.to_string()));
+                json_click_map.push(None);
+            } else {
+                push_section_header(
+                    &mut all_lines,
+                    &mut section_line_map,
+                    &mut json_click_map,
+                    &sec_name,
+                    is_collapsed,
+                );
+                // Override map entry to use fixed key (strip count)
+                if let Some(last) = section_line_map.last_mut() {
+                    *last = Some(sec_key.to_string());
                 }
             }
 
-            for (i, chunk) in entry.sse_chunks.iter().enumerate() {
-                let chunk_key = format!("SSE#{}", i);
-                let chunk_collapsed = app.network.collapsed_sections.contains(&chunk_key);
-                let prefix = if chunk_collapsed {
-                    "  \u{25b6}"
-                } else {
-                    "  \u{25bc}"
-                };
-                let prefix_text = format!("{} #{} ", prefix, i);
-                let preview_w = inner_w.saturating_sub(prefix_text.len() + 1);
-                all_lines.push(Line::from(vec![
-                    Span::styled(prefix_text, Style::default().fg(OVERLAY0)),
-                    Span::styled(
-                        if chunk_collapsed {
-                            if chunk.data.len() > preview_w {
-                                format!("{}...", &chunk.data[..preview_w.saturating_sub(3)])
+            if !is_collapsed {
+                // Pre-collapse SSE chunks by default on FIRST render only.
+                let init_key = "_sse_init";
+                if !app.network.collapsed_sections.contains(init_key) {
+                    app.network.collapsed_sections.insert(init_key.to_string());
+                    for i in 0..entry.sse_chunks.len() {
+                        app.network.collapsed_sections.insert(format!("SSE#{}", i));
+                    }
+                }
+
+                for (i, chunk) in entry.sse_chunks.iter().enumerate() {
+                    let chunk_key = format!("SSE#{}", i);
+                    let chunk_collapsed = app.network.collapsed_sections.contains(&chunk_key);
+                    let prefix = if chunk_collapsed {
+                        "  \u{25b6}"
+                    } else {
+                        "  \u{25bc}"
+                    };
+                    let prefix_text = format!("{} #{} ", prefix, i);
+                    let preview_w = inner_w.saturating_sub(prefix_text.len() + 1);
+                    all_lines.push(Line::from(vec![
+                        Span::styled(prefix_text, Style::default().fg(OVERLAY0)),
+                        Span::styled(
+                            if chunk_collapsed {
+                                if chunk.data.len() > preview_w {
+                                    format!("{}...", &chunk.data[..preview_w.saturating_sub(3)])
+                                } else {
+                                    chunk.data.clone()
+                                }
                             } else {
-                                chunk.data.clone()
-                            }
-                        } else {
-                            String::new()
-                        },
-                        Style::default().fg(SUBTEXT0),
-                    ),
-                ]));
-                section_line_map.push(Some(chunk_key.clone()));
-                json_click_map.push(None);
-                if !chunk_collapsed {
-                    render_json_section(
-                        &mut all_lines,
-                        &mut section_line_map,
-                        &mut json_click_map,
-                        &chunk.data,
-                        &format!("sse_{}", i),
-                        &mut app.network.json_viewer_states,
-                        inner_w,
-                    );
+                                String::new()
+                            },
+                            Style::default().fg(SUBTEXT0),
+                        ),
+                    ]));
+                    section_line_map.push(Some(chunk_key.clone()));
+                    json_click_map.push(None);
+                    if !chunk_collapsed {
+                        render_json_section(
+                            &mut all_lines,
+                            &mut section_line_map,
+                            &mut json_click_map,
+                            &chunk.data,
+                            &format!("sse_{}", i),
+                            &mut app.network.json_viewer_states,
+                            inner_w,
+                        );
+                    }
                 }
             }
             all_lines.push(Line::raw(""));
@@ -745,4 +906,9 @@ fn http_status_text(code: u16) -> &'static str {
         504 => "Gateway Timeout",
         _ => "",
     }
+}
+
+/// Strip query params from URL path for merge rule matching.
+fn path_without_query(path: &str) -> &str {
+    path.split('?').next().unwrap_or(path)
 }

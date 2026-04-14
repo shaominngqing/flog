@@ -325,6 +325,8 @@ pub struct LayoutCache {
     pub net_detail_content_y: u16,
     /// Click region for [Mock] button in detail panel header: (y, x_start, x_end)
     pub detail_mock_btn: Option<(u16, u16, u16)>,
+    /// SSE pill line: (all_lines_index, header_text_width) for computing pill click positions.
+    pub sse_pill_line: Option<(usize, usize)>,
     /// Network status bar button regions: (name, x_start, x_end).
     pub net_buttons: Vec<(String, u16, u16)>,
     /// Network toolbar Y position.
