@@ -969,6 +969,51 @@ fn copy_response(app: &mut App) {
         return;
     }
 
+    // WS: copy chat summary (if in chat mode) or all message data
+    if entry.protocol == crate::domain::network::Protocol::Ws && !entry.ws_messages.is_empty() {
+        let text = if app.network.ws_chat_mode {
+            let msgs: Vec<(crate::domain::network::WsDirection, &str, u64)> = entry
+                .ws_messages
+                .iter()
+                .map(|m| (m.direction, m.data.as_str(), m.size))
+                .collect();
+            let groups = crate::domain::ws_chat::group_messages(&msgs);
+            let mut lines = Vec::new();
+            for group in &groups {
+                let arrow = match group.direction {
+                    crate::domain::network::WsDirection::Send => "\u{2192}",
+                    crate::domain::network::WsDirection::Recv => "\u{2190}",
+                };
+                if group.is_binary {
+                    let total_kb = group.total_size as f64 / 1024.0;
+                    lines.push(format!("{} {} [binary {:.1}KB]", arrow, group.type_label, total_kb));
+                } else if let Some(ref merged) = group.merged_delta {
+                    lines.push(format!("{} {} (\u{00d7}{})", arrow, group.type_label, group.msg_indices.len()));
+                    if !merged.is_empty() {
+                        lines.push(merged.clone());
+                    }
+                } else {
+                    for &mi in &group.msg_indices {
+                        if let Some(msg) = entry.ws_messages.get(mi) {
+                            let preview = crate::domain::ws_chat::preview_message(&msg.data, 200);
+                            lines.push(format!("{} {}", arrow, preview));
+                        }
+                    }
+                }
+            }
+            lines.join("\n")
+        } else {
+            entry.ws_messages.iter().map(|m| m.data.as_str()).collect::<Vec<_>>().join("\n")
+        };
+        if text.is_empty() {
+            app.show_status("No WS data".to_string());
+            return;
+        }
+        let msg = copy_to_clipboard(&text);
+        app.show_status(format!("Response {}", msg));
+        return;
+    }
+
     let body = entry.response_body.as_deref().unwrap_or("");
     if body.is_empty() {
         app.show_status("No response body".to_string());
