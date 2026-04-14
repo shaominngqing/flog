@@ -372,7 +372,6 @@ pub struct App {
     pub mock_edit_field: usize,
     pub mock_edit_top_values: Vec<String>,
     pub mock_edit_body: crate::ui::text_editor::TextEditor,
-    pub mock_edit_is_new: bool,
 
     // UI
     pub layout: LayoutCache,
@@ -429,7 +428,6 @@ impl App {
             mock_edit_field: 0,
             mock_edit_top_values: Vec::new(),
             mock_edit_body: crate::ui::text_editor::TextEditor::new(""),
-            mock_edit_is_new: false,
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
@@ -886,18 +884,11 @@ impl App {
                 rule.response_body = self.mock_edit_body.content();
             }
         }
-        self.mock_edit_is_new = false;
         self.mock_edit_rule_id = None;
         self.mode = AppMode::Normal;
     }
 
     pub fn cancel_mock_edit(&mut self) {
-        if self.mock_edit_is_new {
-            if let Some(id) = self.mock_edit_rule_id {
-                self.mock_rules.remove(id);
-            }
-        }
-        self.mock_edit_is_new = false;
         self.mock_edit_rule_id = None;
         self.mode = AppMode::Normal;
     }
@@ -913,6 +904,7 @@ impl App {
     /// based on the last connection type.
     pub fn enter_scanning_on_disconnect(&mut self) {
         self.connected = false;
+        self.proxy_dart_connected = false;
         self.show_source_dropdown = false;
         self.mode = AppMode::SourceSelect;
         self.source_select.selected_idx = 0;

@@ -138,6 +138,8 @@ class FlogDio implements Dio {
           if (host != null && port != null) {
             _proxyHost = host;
             _proxyPort = port;
+            _probeTimer?.cancel();
+            _probeTimer = null;
             // ignore: avoid_print
             print('[flog_dart] Proxy configured via VM Service: $host:$port');
           }

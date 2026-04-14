@@ -47,11 +47,7 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
     );
 
     // Draw border block
-    let title_text = if app.mock_edit_is_new {
-        " New Mock Rule "
-    } else {
-        " Edit Mock Rule "
-    };
+    let title_text = " Edit Mock Rule ";
     let block = Block::default()
         .title(title_text)
         .title_style(
