@@ -6,6 +6,7 @@ pub mod mock;
 pub mod network;
 pub mod network_filter;
 pub mod network_store;
+pub mod sse_merge;
 pub mod store;
 
 pub use entry::{InputSource, LogEntry, LogLevel, ParseResult};
