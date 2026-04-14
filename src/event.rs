@@ -271,6 +271,24 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                             }
                         }
 
+                        // Check WS pill clicks (Chat/Raw toggle)
+                        if let Some((pill_line, header_w)) = app.layout.ws_pill_line {
+                            if line_idx == pill_line {
+                                let click_x = (x.saturating_sub(app.layout.net_detail_x + 1)) as usize;
+                                let chat_start = header_w;
+                                let chat_end = chat_start + " Chat ".len();
+                                let raw_start = chat_end + 1;
+                                let raw_end = raw_start + " Raw ".len();
+                                if click_x >= chat_start && click_x < chat_end {
+                                    app.network.ws_chat_mode = true;
+                                    return;
+                                } else if click_x >= raw_start && click_x < raw_end {
+                                    app.network.ws_chat_mode = false;
+                                    return;
+                                }
+                            }
+                        }
+
                         // Check SSE-specific section keys before generic toggle
                         if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
                             // Field selection in Merged mode
@@ -309,6 +327,18 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                     }
                                 }
                                 return;
+                            }
+                            // WS group expand/collapse in Chat mode
+                            if let Some(idx_str) = section_key.strip_prefix("WS_GROUP#") {
+                                if idx_str.parse::<usize>().is_ok() {
+                                    let key = section_key.clone();
+                                    if app.network.collapsed_sections.contains(&key) {
+                                        app.network.collapsed_sections.remove(&key);
+                                    } else {
+                                        app.network.collapsed_sections.insert(key);
+                                    }
+                                    return;
+                                }
                             }
                         }
 

@@ -16,6 +16,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::app::App;
 use crate::domain::network::{NetworkStatus, Protocol, WsDirection};
 use crate::domain::sse_merge;
+use crate::domain::ws_chat;
 use crate::ui::json_viewer::{self, JsonViewerState};
 
 use super::super::{
@@ -65,6 +66,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     // Track which line indices map to JSON bracket clicks
     let mut json_click_map: Vec<Option<(String, usize)>> = Vec::new();
     app.layout.sse_pill_line = None;
+    app.layout.ws_pill_line = None;
 
     // ── Header: method pill + path (wrapped) ──
     let method_c = method_color(&entry.method);
@@ -566,71 +568,209 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     // ── WebSocket Messages ──
     if entry.protocol == Protocol::Ws && !entry.ws_messages.is_empty() {
-        let sent = entry
-            .ws_messages
-            .iter()
-            .filter(|m| m.direction == WsDirection::Send)
-            .count();
-        let recv = entry
-            .ws_messages
-            .iter()
-            .filter(|m| m.direction == WsDirection::Recv)
-            .count();
-        let sec_name = format!("Messages ({} sent / {} recv)", sent, recv);
+        let sent = entry.ws_messages.iter().filter(|m| m.direction == WsDirection::Send).count();
+        let recv = entry.ws_messages.iter().filter(|m| m.direction == WsDirection::Recv).count();
+        let sec_name = format!("Messages ({}\u{2191} {}\u{2193})", sent, recv);
         let sec_key = "WS Messages";
         let is_collapsed = app.network.collapsed_sections.contains(sec_key);
-        push_section_header(
-            &mut all_lines,
-            &mut section_line_map,
-            &mut json_click_map,
-            &sec_name,
-            is_collapsed,
-        );
-        if let Some(last) = section_line_map.last_mut() {
-            *last = Some(sec_key.to_string());
+
+        // Header with Chat/Raw pills
+        {
+            let chat_pill = if app.network.ws_chat_mode {
+                Span::styled(" Chat ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD))
+            } else {
+                Span::styled(" Chat ", Style::default().fg(OVERLAY0).bg(SURFACE0))
+            };
+            let raw_pill = if !app.network.ws_chat_mode {
+                Span::styled(" Raw ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD))
+            } else {
+                Span::styled(" Raw ", Style::default().fg(OVERLAY0).bg(SURFACE0))
+            };
+            let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+            let header_text = format!(" {} {}  ", icon, sec_name);
+            all_lines.push(Line::from(vec![
+                Span::styled(header_text.clone(), Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+                chat_pill,
+                Span::raw(" "),
+                raw_pill,
+            ]));
+            app.layout.ws_pill_line = Some((all_lines.len() - 1, header_text.len()));
+            section_line_map.push(Some(sec_key.to_string()));
+            json_click_map.push(None);
         }
+
         if !is_collapsed {
-            for (i, msg) in entry.ws_messages.iter().enumerate() {
-                let (arrow, color) = match msg.direction {
-                    WsDirection::Send => ("\u{2192}", GREEN), // →
-                    WsDirection::Recv => ("\u{2190}", BLUE),  // ←
-                };
-                let msg_key = format!("WS#{}", i);
-                let msg_collapsed = app.network.collapsed_sections.contains(&msg_key);
-                let prefix = if msg_collapsed {
-                    "\u{25b6}"
-                } else {
-                    "\u{25bc}"
-                };
-                let ws_prefix_text = format!("  {} {} ", prefix, arrow);
-                let ws_preview_w = inner_w.saturating_sub(ws_prefix_text.len() + 1);
-                all_lines.push(Line::from(vec![
-                    Span::styled(ws_prefix_text, Style::default().fg(color)),
-                    Span::styled(
-                        if msg_collapsed {
-                            if msg.data.len() > ws_preview_w {
-                                format!("{}...", &msg.data[..ws_preview_w.saturating_sub(3)])
-                            } else {
-                                msg.data.clone()
+            if app.network.ws_chat_mode {
+                // ── Chat mode ──
+                let msgs: Vec<(crate::domain::network::WsDirection, &str, u64)> = entry
+                    .ws_messages
+                    .iter()
+                    .map(|m| (m.direction, m.data.as_str(), m.size))
+                    .collect();
+                let groups = ws_chat::group_messages(&msgs);
+
+                // Pre-collapse large non-delta groups on first render
+                let ws_init_key = "_ws_chat_init";
+                if !app.network.collapsed_sections.contains(ws_init_key) {
+                    app.network.collapsed_sections.insert(ws_init_key.to_string());
+                    for (gi, group) in groups.iter().enumerate() {
+                        if group.msg_indices.len() > 10 && group.merged_delta.is_none() && !group.is_binary {
+                            app.network.collapsed_sections.insert(format!("WS_GROUP#{}", gi));
+                        }
+                    }
+                }
+
+                for (gi, group) in groups.iter().enumerate() {
+                    let group_key = format!("WS_GROUP#{}", gi);
+                    let group_collapsed = app.network.collapsed_sections.contains(&group_key);
+                    let (arrow, color) = match group.direction {
+                        WsDirection::Send => ("\u{2192}", GREEN),  // →
+                        WsDirection::Recv => ("\u{2190}", BLUE),   // ←
+                    };
+                    let is_recv = group.direction == WsDirection::Recv;
+                    let indent = if is_recv { "          " } else { " " };
+                    let count = group.msg_indices.len();
+                    let count_str = if count > 1 { format!(" (\u{00d7}{})", count) } else { String::new() };
+
+                    if group.is_binary && count > 1 {
+                        // Binary group: single line summary
+                        let total_kb = group.total_size as f64 / 1024.0;
+                        all_lines.push(Line::from(Span::styled(
+                            format!("{}{} {}{} [binary {:.1}KB]", indent, arrow, group.type_label, count_str, total_kb),
+                            Style::default().fg(color),
+                        )));
+                        section_line_map.push(Some(group_key.clone()));
+                        json_click_map.push(None);
+                    } else if group.merged_delta.is_some() {
+                        // Delta group: show type + count, then merged text
+                        let toggle = if group_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+                        all_lines.push(Line::from(Span::styled(
+                            format!("{}{} {} {}{}", indent, arrow, toggle, group.type_label, count_str),
+                            Style::default().fg(color),
+                        )));
+                        section_line_map.push(Some(group_key.clone()));
+                        json_click_map.push(None);
+
+                        if !group_collapsed {
+                            if let Some(ref merged) = group.merged_delta {
+                                let text_indent = if is_recv { "            " } else { "   " };
+                                if merged.is_empty() {
+                                    all_lines.push(Line::from(Span::styled(
+                                        format!("{}(no delta content)", text_indent),
+                                        Style::default().fg(OVERLAY0),
+                                    )));
+                                    section_line_map.push(None);
+                                    json_click_map.push(None);
+                                } else {
+                                    let wrap_w = inner_w.saturating_sub(text_indent.len());
+                                    for wl in wrap_text(merged, wrap_w, 200) {
+                                        all_lines.push(Line::from(Span::styled(
+                                            format!("{}{}", text_indent, wl),
+                                            Style::default().fg(TEXT),
+                                        )));
+                                        section_line_map.push(None);
+                                        json_click_map.push(None);
+                                    }
+                                }
                             }
-                        } else {
-                            format!("({} bytes)", msg.size)
-                        },
-                        Style::default().fg(SUBTEXT0),
-                    ),
-                ]));
-                section_line_map.push(Some(msg_key.clone()));
-                json_click_map.push(None);
-                if !msg_collapsed {
-                    render_json_section(
-                        &mut all_lines,
-                        &mut section_line_map,
-                        &mut json_click_map,
-                        &msg.data,
-                        &format!("ws_{}", i),
-                        &mut app.network.json_viewer_states,
-                        inner_w,
-                    );
+                        }
+                    } else {
+                        // Individual messages or collapsible large group
+                        if count > 10 {
+                            let toggle = if group_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+                            all_lines.push(Line::from(Span::styled(
+                                format!("{}{} {} {}{}", indent, arrow, toggle, group.type_label, count_str),
+                                Style::default().fg(color),
+                            )));
+                            section_line_map.push(Some(group_key.clone()));
+                            json_click_map.push(None);
+                        }
+
+                        if count <= 10 || !group_collapsed {
+                            for &mi in &group.msg_indices {
+                                if let Some(msg) = entry.ws_messages.get(mi) {
+                                    let msg_key = format!("WS#{}", mi);
+                                    let msg_collapsed = app.network.collapsed_sections.contains(&msg_key);
+                                    let toggle = if msg_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+                                    let preview_w = inner_w.saturating_sub(indent.len() + 6);
+                                    let type_label = ws_chat::extract_type(&msg.data);
+                                    let preview = if msg_collapsed {
+                                        ws_chat::preview_message(&msg.data, preview_w.saturating_sub(type_label.len() + 3))
+                                    } else {
+                                        String::new()
+                                    };
+
+                                    all_lines.push(Line::from(vec![
+                                        Span::styled(
+                                            format!("{}{} {} {} ", indent, arrow, toggle, type_label),
+                                            Style::default().fg(color),
+                                        ),
+                                        Span::styled(preview, Style::default().fg(SUBTEXT0)),
+                                    ]));
+                                    section_line_map.push(Some(msg_key.clone()));
+                                    json_click_map.push(None);
+
+                                    if !msg_collapsed {
+                                        let display_data = if ws_chat::has_binary_content(&msg.data) {
+                                            ws_chat::preview_message(&msg.data, 0)
+                                        } else {
+                                            msg.data.clone()
+                                        };
+                                        render_json_section(
+                                            &mut all_lines,
+                                            &mut section_line_map,
+                                            &mut json_click_map,
+                                            &display_data,
+                                            &format!("ws_{}", mi),
+                                            &mut app.network.json_viewer_states,
+                                            inner_w,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // ── Raw mode (original behavior) ──
+                for (i, msg) in entry.ws_messages.iter().enumerate() {
+                    let (arrow, color) = match msg.direction {
+                        WsDirection::Send => ("\u{2192}", GREEN),
+                        WsDirection::Recv => ("\u{2190}", BLUE),
+                    };
+                    let msg_key = format!("WS#{}", i);
+                    let msg_collapsed = app.network.collapsed_sections.contains(&msg_key);
+                    let prefix = if msg_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+                    let ws_prefix_text = format!("  {} {} ", prefix, arrow);
+                    let ws_preview_w = inner_w.saturating_sub(ws_prefix_text.len() + 1);
+                    all_lines.push(Line::from(vec![
+                        Span::styled(ws_prefix_text, Style::default().fg(color)),
+                        Span::styled(
+                            if msg_collapsed {
+                                if msg.data.len() > ws_preview_w {
+                                    format!("{}...", &msg.data[..ws_preview_w.saturating_sub(3)])
+                                } else {
+                                    msg.data.clone()
+                                }
+                            } else {
+                                format!("({} bytes)", msg.size)
+                            },
+                            Style::default().fg(SUBTEXT0),
+                        ),
+                    ]));
+                    section_line_map.push(Some(msg_key.clone()));
+                    json_click_map.push(None);
+                    if !msg_collapsed {
+                        render_json_section(
+                            &mut all_lines,
+                            &mut section_line_map,
+                            &mut json_click_map,
+                            &msg.data,
+                            &format!("ws_{}", i),
+                            &mut app.network.json_viewer_states,
+                            inner_w,
+                        );
+                    }
                 }
             }
             all_lines.push(Line::raw(""));
