@@ -118,11 +118,24 @@ async fn main() -> io::Result<()> {
 
                 if let Ok((mut event_rx, handle)) = connect(&ws_url).await {
                     connected = true;
+                    let device_id = device.id.clone();
                     {
                         let mut a = app_for_connector.lock().await;
                         a.connector_handle = Some(handle.clone());
                         a.source_name = format!("{} ({})", device.name, device.id);
                     }
+
+                    // Start flutter logs for this device
+                    let app_for_logs = Arc::clone(&app_for_connector);
+                    let logs_device_id = device_id.clone();
+                    let logs_handle = tokio::spawn(async move {
+                        if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(Some(&logs_device_id)).await {
+                            while let Some(line) = logs.next_line().await {
+                                let mut a = app_for_logs.lock().await;
+                                a.add_raw_line(&line);
+                            }
+                        }
+                    });
 
                     while let Some(event) = event_rx.recv().await {
                         let mut a = app_for_connector.lock().await;
@@ -142,6 +155,7 @@ async fn main() -> io::Result<()> {
                                 a.source_name = format!("Scanning... (port {})", a.server_port);
                                 a.show_status("Disconnected".to_string());
                                 a.clear_session_data();
+                                logs_handle.abort();
                                 break;
                             }
                             ConnectorEvent::Message(msg) => {
@@ -161,6 +175,18 @@ async fn main() -> io::Result<()> {
                         let mut a = app_for_connector.lock().await;
                         a.connector_handle = Some(handle.clone());
                     }
+
+                    // Start flutter logs (default device)
+                    let app_for_logs = Arc::clone(&app_for_connector);
+                    let logs_handle = tokio::spawn(async move {
+                        if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(None).await {
+                            while let Some(line) = logs.next_line().await {
+                                let mut a = app_for_logs.lock().await;
+                                a.add_raw_line(&line);
+                            }
+                        }
+                    });
+
                     while let Some(event) = event_rx.recv().await {
                         let mut a = app_for_connector.lock().await;
                         match event {
@@ -178,6 +204,7 @@ async fn main() -> io::Result<()> {
                                 a.connector_handle = None;
                                 a.source_name = format!("Scanning... (port {})", a.server_port);
                                 a.clear_session_data();
+                                logs_handle.abort();
                                 break;
                             }
                             ConnectorEvent::Message(msg) => {

@@ -70,6 +70,7 @@ impl DeviceMonitor {
     async fn query_flutter_devices() -> Vec<FlutterDevice> {
         let output = match Command::new("flutter")
             .args(["devices", "--machine"])
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .output()
