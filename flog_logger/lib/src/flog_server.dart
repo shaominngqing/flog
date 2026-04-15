@@ -124,7 +124,22 @@ class FlogServer {
   }
 
   String _deviceName() {
-    try { return Platform.localHostname; } catch (_) { return 'flutter'; }
+    try {
+      // On iOS simulator, localHostname returns Mac's name.
+      // Use operatingSystem + version for a more useful name.
+      final os = Platform.operatingSystem;
+      final version = Platform.operatingSystemVersion;
+      if (os == 'ios') {
+        return 'iOS $version';
+      } else if (os == 'android') {
+        return 'Android $version';
+      } else if (os == 'macos') {
+        return 'macOS';
+      }
+      return Platform.localHostname;
+    } catch (_) {
+      return 'flutter';
+    }
   }
 
   String _osName() {
