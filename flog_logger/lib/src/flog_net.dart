@@ -1,7 +1,7 @@
 /// Internal helper for flog_net protocol.
 library;
 
-import 'flog_client.dart';
+import 'flog_server.dart';
 
 /// Master kill-switch.  `dart.vm.product` is true in release builds,
 /// so flogEnabled becomes false and AOT tree-shaking removes all flog code.
@@ -20,5 +20,5 @@ void emitNet(Map<String, dynamic> data) {
   if (!flogEnabled) return;
   data['type'] = 'net';
   data['ts'] = DateTime.now().millisecondsSinceEpoch;
-  FlogClient.instance.send(data);
+  FlogServer.instance.send(data);
 }

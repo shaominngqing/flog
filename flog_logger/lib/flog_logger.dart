@@ -9,11 +9,11 @@
 /// ```
 library flog_dart;
 
-import 'src/flog_client.dart';
+import 'src/flog_server.dart';
 import 'src/flog_net.dart' show flogEnabled;
 
 export 'src/flog_net.dart' show nextNetId, emitNet, flogEnabled;
-export 'src/flog_client.dart' show FlogClient;
+export 'src/flog_server.dart' show FlogServer;
 export 'src/flog_http_interceptor.dart';
 export 'src/flog_mock_interceptor.dart';
 export 'src/flog_sse_parser.dart';
@@ -71,7 +71,7 @@ class FlogLogger {
 
   void _log(String level, String msg, {Object? error, StackTrace? stackTrace}) {
     if (!flogEnabled) return;
-    FlogClient.instance.send({
+    FlogServer.instance.send({
       'type': 'log',
       'level': level,
       'tag': tag,

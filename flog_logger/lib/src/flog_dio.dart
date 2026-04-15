@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 
-import 'flog_client.dart';
+import 'flog_server.dart';
 import 'flog_http_interceptor.dart';
 import 'flog_mock_interceptor.dart';
 import 'flog_net.dart' show flogEnabled;
@@ -90,7 +90,6 @@ class FlogDio implements Dio {
     String? baseUrl,
     FlogHttpConfig? flogConfig,
     BaseOptions? options,
-    String flogHost = 'localhost',
     int flogPort = 9753,
   }) : _inner = Dio(options ?? BaseOptions(baseUrl: baseUrl ?? '')) {
     if (baseUrl != null && options == null) {
@@ -100,9 +99,8 @@ class FlogDio implements Dio {
     if (flogEnabled) {
       final config = flogConfig ?? const FlogHttpConfig();
 
-      // Start FlogClient connection to flog TUI
-      FlogClient.instance.start(
-        host: flogHost,
+      // Start FlogServer to accept connections from flog TUI
+      FlogServer.instance.start(
         port: flogPort,
         dio: _inner,
       );
