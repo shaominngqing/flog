@@ -79,6 +79,8 @@ pub fn start_discovery(port: u16) -> mpsc::UnboundedReceiver<DeviceEvent> {
 // ── Source 1: adb track-devices ──
 
 async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
+    use tokio::io::AsyncReadExt;
+
     loop {
         let child = Command::new("adb")
             .arg("track-devices")
@@ -90,59 +92,78 @@ async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
         let mut child = match child {
             Ok(c) => c,
             Err(_) => {
-                // adb not available
                 tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 continue;
             }
         };
 
-        let stdout = match child.stdout.take() {
+        let mut stdout = match child.stdout.take() {
             Some(s) => s,
             None => continue,
         };
 
-        let mut reader = BufReader::new(stdout).lines();
         let mut known: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        while let Ok(Some(line)) = reader.next_line().await {
-            let line = line.trim().to_string();
+        // adb track-devices protocol: each update is 4-char hex length + content
+        loop {
+            // Read 4-byte hex length
+            let mut hex_buf = [0u8; 4];
+            if stdout.read_exact(&mut hex_buf).await.is_err() {
+                break;
+            }
+            let hex_str = match std::str::from_utf8(&hex_buf) {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            let content_len = match usize::from_str_radix(hex_str, 16) {
+                Ok(n) => n,
+                Err(_) => break,
+            };
 
-            // Skip hex length prefix lines
-            if line.len() == 4 && line.chars().all(|c| c.is_ascii_hexdigit()) {
-                continue;
+            // Read content
+            let mut content = vec![0u8; content_len];
+            if content_len > 0 {
+                if stdout.read_exact(&mut content).await.is_err() {
+                    break;
+                }
             }
 
-            if line.is_empty() {
-                // Empty block = all devices gone
-                for id in known.drain() {
-                    let _ = tx.send(DeviceEvent::Removed(id));
+            let text = match String::from_utf8(content) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            // Parse device list — each line is SERIAL\tSTATUS
+            let mut current: std::collections::HashSet<String> = std::collections::HashSet::new();
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
                 }
-                continue;
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() >= 2 && parts[1] == "device" {
+                    current.insert(parts[0].to_string());
+                }
             }
 
-            // Parse: SERIAL\tSTATUS
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 2 {
-                let serial = parts[0].to_string();
-                let status = parts[1];
-
-                if status == "device" {
-                    if known.insert(serial.clone()) {
-                        let _ = tx.send(DeviceEvent::Added(Device {
-                            id: serial.clone(),
-                            name: serial,
-                            kind: DeviceKind::Android,
-                        }));
-                    }
-                } else if status == "offline" || status == "unauthorized" {
-                    if known.remove(&serial) {
-                        let _ = tx.send(DeviceEvent::Removed(serial));
-                    }
+            // Diff: find added and removed
+            for serial in &current {
+                if known.insert(serial.clone()) {
+                    let _ = tx.send(DeviceEvent::Added(Device {
+                        id: serial.clone(),
+                        name: serial.clone(),
+                        kind: DeviceKind::Android,
+                    }));
                 }
+            }
+            let removed: Vec<String> = known.iter().filter(|s| !current.contains(*s)).cloned().collect();
+            for serial in removed {
+                known.remove(&serial);
+                let _ = tx.send(DeviceEvent::Removed(serial));
             }
         }
 
-        // Process exited — cleanup and retry
+        // Process exited — cleanup
         for id in known.drain() {
             let _ = tx.send(DeviceEvent::Removed(id));
         }
