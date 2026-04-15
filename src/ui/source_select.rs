@@ -1,10 +1,10 @@
-//! Device picker dropdown and connection status display.
+//! Device picker and connection status display.
 
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 
@@ -21,19 +21,21 @@ const SURFACE0: Color = Color::Rgb(54, 58, 79);
 const SURFACE1: Color = Color::Rgb(73, 77, 100);
 const OVERLAY0: Color = Color::Rgb(110, 115, 141);
 const TEXT: Color = Color::Rgb(202, 211, 245);
+const SUBTEXT0: Color = Color::Rgb(165, 173, 203);
 const BLUE: Color = Color::Rgb(138, 173, 244);
 const SAPPHIRE: Color = Color::Rgb(125, 196, 228);
 const TEAL: Color = Color::Rgb(139, 213, 202);
 const GREEN: Color = Color::Rgb(166, 218, 149);
 const MAUVE: Color = Color::Rgb(198, 160, 246);
-const RED: Color = Color::Rgb(237, 135, 150);
-const YELLOW: Color = Color::Rgb(238, 212, 159);
 
 // ── Banner ASCII art ──
 
 const BANNER: &[&str] = &[" ╔═╗╦  ╔═╗╔═╗ ", " ╠╣ ║  ║ ║║ ╦ ", " ╚  ╩═╝╚═╝╚═╝ "];
 
 const BANNER_COLORS: &[Color] = &[BLUE, SAPPHIRE, TEAL, BLUE, MAUVE, SAPPHIRE];
+
+/// Lines per device card.
+const CARD_HEIGHT: u16 = 4; // name + id + type + separator
 
 /// Draw connection status when no clients are connected.
 pub fn draw_waiting_for_connection(f: &mut Frame, app: &App, area: Rect) {
@@ -42,7 +44,6 @@ pub fn draw_waiting_for_connection(f: &mut Frame, app: &App, area: Rect) {
     let w = area.width as usize;
 
     let mut lines: Vec<Line> = Vec::new();
-
     let content_h = BANNER.len() + 6;
     let top_pad = h.saturating_sub(content_h) / 3;
 
@@ -58,34 +59,23 @@ pub fn draw_waiting_for_connection(f: &mut Frame, app: &App, area: Rect) {
     lines.push(fill_line(w));
 
     let spinner = braille_spinner(tick);
-    if app.clients.is_empty() {
-        let status = format!("{} Waiting for connection on port {}...", spinner, app.server_port);
-        lines.push(centered_text_line(&status, w, TEXT));
-        lines.push(fill_line(w));
+    let status = format!("{} Waiting for connection on port {}...", spinner, app.server_port);
+    lines.push(centered_text_line(&status, w, TEXT));
+    lines.push(fill_line(w));
 
-        // Show discovered devices
-        if !app.discovered_devices.is_empty() {
-            lines.push(centered_text_line("Discovered devices:", w, OVERLAY0));
-            for dev in &app.discovered_devices {
-                let icon = device_icon(&dev.kind);
-                let info = format!("  {} {} ({})", icon, dev.name, dev.id);
-                lines.push(centered_text_line(&info, w, OVERLAY0));
-            }
-        } else {
-            lines.push(centered_text_line(
-                "Run your Flutter app with flog_dart to connect",
-                w,
-                OVERLAY0,
-            ));
+    if !app.discovered_devices.is_empty() {
+        lines.push(centered_text_line("Discovered devices:", w, OVERLAY0));
+        for dev in &app.discovered_devices {
+            let kind = kind_label(&dev.kind);
+            let info = format!("  {} ({}) — {}", dev.name, dev.id, kind);
+            lines.push(centered_text_line(&info, w, SUBTEXT0));
         }
     } else {
-        let status = format!("{} Connected", spinner);
-        lines.push(centered_text_line(&status, w, GREEN));
-        lines.push(fill_line(w));
-        for client in &app.clients {
-            let client_info = format!("  {} - {} ({})", client.device, client.app, client.os);
-            lines.push(centered_text_line(&client_info, w, TEXT));
-        }
+        lines.push(centered_text_line(
+            "Run your Flutter app with flog_dart to connect",
+            w,
+            OVERLAY0,
+        ));
     }
 
     while lines.len() < h {
@@ -95,112 +85,185 @@ pub fn draw_waiting_for_connection(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }
 
-/// Draw the device picker dropdown overlay.
-/// Positioned above the status bar, anchored to the source_info area.
+/// Draw the device picker as a centered modal with device cards.
 pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     let devices = &app.discovered_devices;
     if devices.is_empty() {
         return;
     }
 
-    let item_count = devices.len();
-
-    // Calculate width based on longest device name
-    let max_label_w = devices
-        .iter()
-        .map(|d| {
-            let kind_label = match &d.kind {
-                DeviceKind::Android => "Android",
-                DeviceKind::IosUsb { .. } => "iOS USB",
-                DeviceKind::Local => "Local",
-            };
-            // "  icon name     kind_label  "
-            3 + d.name.width() + 4 + kind_label.len() + 2
-        })
-        .max()
-        .unwrap_or(30);
-    let picker_w = (max_label_w as u16 + 2).max(30).min(area.width.saturating_sub(4)); // +2 border
-    let picker_h = (item_count as u16 + 2).min(area.height.saturating_sub(4)); // +2 border
-
-    // Position: above the status bar (bottom - 1 - picker_h), aligned to source_info_x
-    let status_bar_y = area.height.saturating_sub(1);
-    let picker_y = status_bar_y.saturating_sub(picker_h);
-    let picker_x = app.layout.source_info_x.0.min(area.width.saturating_sub(picker_w));
+    // ── Size: centered, 60% width, up to 70% height ──
+    let picker_w = (area.width * 3 / 5).max(40).min(area.width.saturating_sub(4));
+    let content_h = devices.len() as u16 * CARD_HEIGHT;
+    let picker_h = (content_h + 2).max(10).min(area.height * 7 / 10); // +2 border, min 10
+    let picker_x = (area.width.saturating_sub(picker_w)) / 2;
+    let picker_y = (area.height.saturating_sub(picker_h)) / 2;
 
     let picker_area = Rect::new(picker_x, picker_y, picker_w, picker_h);
 
-    // Clear area behind dropdown
     f.render_widget(Clear, picker_area);
 
+    let title = format!(" Devices ({}) ", devices.len());
     let block = Block::default()
-        .title(" Devices ")
+        .title(title)
         .title_style(Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(SURFACE1))
         .style(Style::default().bg(MANTLE));
 
     let inner = block.inner(picker_area);
+    let inner_w = inner.width as usize;
 
-    let mut lines: Vec<Line> = Vec::new();
-    let mut click_regions: Vec<(u16, u16, u16, usize)> = Vec::new();
+    // ── Build card lines ──
+    let mut all_lines: Vec<Line> = Vec::new();
+    // Map: for each rendered line, which device index does it belong to (for click detection)
+    let mut line_to_device: Vec<Option<usize>> = Vec::new();
 
     for (i, dev) in devices.iter().enumerate() {
-        let icon = device_icon(&dev.kind);
-        let kind_label = match &dev.kind {
-            DeviceKind::Android => "Android",
-            DeviceKind::IosUsb { .. } => "iOS USB",
-            DeviceKind::Local => "Local",
-        };
-
-        // Check if this device is currently connected
-        let connected = app.connected && app.clients.iter().any(|c| {
-            c.device.contains(&dev.name) || (dev.id == "localhost" && c.os == "ios")
-        });
-
         let is_selected = i == app.device_picker_selected;
-        let row_bg = if connected {
-            GREEN
-        } else if is_selected {
+        let is_connected = app.connected && is_device_connected(app, dev);
+
+        let card_bg = if is_connected {
             SURFACE1
+        } else if is_selected {
+            SURFACE0
         } else {
             MANTLE
         };
-        let name_fg = if connected { MANTLE } else { TEXT };
-        let kind_fg = if connected { MANTLE } else { OVERLAY0 };
-        let status_text = if connected { " \u{25cf}" } else { "" }; // ●
-        let status_fg = if connected { MANTLE } else { GREEN };
 
-        let name_part = format!(" {} {} ", icon, dev.name);
-        let name_w = name_part.width();
-        let kind_part = format!(" {}{} ", kind_label, status_text);
-        let kind_w = kind_part.width();
-        let pad = (inner.width as usize).saturating_sub(name_w + kind_w);
+        let status_indicator = if is_connected {
+            Span::styled(" ● ", Style::default().fg(GREEN).bg(card_bg).add_modifier(Modifier::BOLD))
+        } else {
+            Span::styled("   ", Style::default().bg(card_bg))
+        };
 
-        lines.push(Line::from(vec![
-            Span::styled(name_part, Style::default().fg(name_fg).bg(row_bg)),
-            Span::styled(" ".repeat(pad), Style::default().bg(row_bg)),
-            Span::styled(kind_part, Style::default().fg(kind_fg).bg(row_bg)),
+        // Line 1: icon + name + status
+        let kind = kind_label(&dev.kind);
+        let name_line = format!(" {} ", dev.name);
+        let kind_pill_style = match &dev.kind {
+            DeviceKind::Android => Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
+            DeviceKind::IosUsb { .. } => Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD),
+            DeviceKind::Local => Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD),
+        };
+        let kind_pill = format!(" {} ", kind);
+        let pad1 = inner_w.saturating_sub(3 + name_line.width() + kind_pill.width() + 1);
+        all_lines.push(Line::from(vec![
+            status_indicator.clone(),
+            Span::styled(name_line, Style::default().fg(TEXT).bg(card_bg).add_modifier(Modifier::BOLD)),
+            Span::styled(" ".repeat(pad1), Style::default().bg(card_bg)),
+            Span::styled(kind_pill, kind_pill_style),
+            Span::styled(" ", Style::default().bg(card_bg)),
         ]));
+        line_to_device.push(Some(i));
 
-        click_regions.push((
-            inner.y + i as u16,
-            inner.x,
-            inner.x + inner.width,
-            i,
-        ));
+        // Line 2: device ID
+        let id_text = format!("   ID: {}", dev.id);
+        let pad2 = inner_w.saturating_sub(id_text.width());
+        all_lines.push(Line::from(vec![
+            Span::styled(id_text, Style::default().fg(SUBTEXT0).bg(card_bg)),
+            Span::styled(" ".repeat(pad2), Style::default().bg(card_bg)),
+        ]));
+        line_to_device.push(Some(i));
+
+        // Line 3: connection info
+        let conn_text = if is_connected {
+            "   Status: Connected".to_string()
+        } else {
+            "   Status: Available".to_string()
+        };
+        let conn_fg = if is_connected { GREEN } else { OVERLAY0 };
+        let pad3 = inner_w.saturating_sub(conn_text.width());
+        all_lines.push(Line::from(vec![
+            Span::styled(conn_text, Style::default().fg(conn_fg).bg(card_bg)),
+            Span::styled(" ".repeat(pad3), Style::default().bg(card_bg)),
+        ]));
+        line_to_device.push(Some(i));
+
+        // Line 4: separator
+        if i < devices.len() - 1 {
+            let sep = "\u{2500}".repeat(inner_w);
+            all_lines.push(Line::from(Span::styled(sep, Style::default().fg(SURFACE0).bg(MANTLE))));
+            line_to_device.push(None);
+        }
     }
 
-    f.render_widget(Paragraph::new(lines).block(block), picker_area);
+    // ── Scroll handling ──
+    let visible_h = inner.height as usize;
+    let total_lines = all_lines.len();
+
+    // Ensure selected device is visible
+    let selected_start = app.device_picker_selected * CARD_HEIGHT as usize;
+    let scroll = if selected_start < app.device_picker_scroll {
+        selected_start
+    } else if selected_start + CARD_HEIGHT as usize > app.device_picker_scroll + visible_h {
+        (selected_start + CARD_HEIGHT as usize).saturating_sub(visible_h)
+    } else {
+        app.device_picker_scroll
+    };
+    app.device_picker_scroll = scroll;
+
+    let visible_lines: Vec<Line> = all_lines
+        .into_iter()
+        .skip(scroll)
+        .take(visible_h)
+        .collect();
+
+    f.render_widget(Paragraph::new(visible_lines).block(block), picker_area);
+
+    // Scrollbar
+    if total_lines > visible_h {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::default().fg(SAPPHIRE))
+            .track_style(Style::default().fg(SURFACE0));
+        let max_scroll = total_lines.saturating_sub(visible_h);
+        let mut state = ScrollbarState::new(max_scroll).position(scroll.min(max_scroll));
+        f.render_stateful_widget(scrollbar, inner, &mut state);
+    }
+
+    // ── Store click regions ──
+    // Map visible line Y → device index
+    let mut click_regions: Vec<(u16, u16, u16, usize)> = Vec::new();
+    for (vi, line_idx) in (scroll..scroll + visible_h).enumerate() {
+        if let Some(Some(dev_idx)) = line_to_device.get(line_idx) {
+            click_regions.push((
+                inner.y + vi as u16,
+                inner.x,
+                inner.x + inner.width,
+                *dev_idx,
+            ));
+        }
+    }
 
     app.layout.device_picker_items = click_regions;
     app.layout.device_picker_rect = Some((picker_area.x, picker_area.y, picker_area.width, picker_area.height));
 }
 
-fn device_icon(kind: &DeviceKind) -> &'static str {
+fn is_device_connected(app: &App, dev: &Device) -> bool {
+    // Simple heuristic: check if any connected client matches this device
+    if dev.id == "localhost" {
+        // localhost could be iOS sim or macOS — connected if we have any local client
+        app.clients.iter().any(|c| c.os == "ios" || c.os == "macos")
+    } else {
+        // Android or iOS USB — match by device name fragment
+        app.clients.iter().any(|c| c.device.contains(&dev.name) || c.device.contains(&dev.id))
+    }
+}
+
+fn kind_label(kind: &DeviceKind) -> &'static str {
     match kind {
-        DeviceKind::Android => "\u{e70e}",  // nf-dev-android — or use simple emoji
-        DeviceKind::IosUsb { .. } => "\u{f179}",  // nf-fa-apple
-        DeviceKind::Local => "\u{f108}",    // nf-fa-desktop
+        DeviceKind::Android => "Android",
+        DeviceKind::IosUsb { .. } => "iOS USB",
+        DeviceKind::Local => "Local",
+    }
+}
+
+fn device_icon(_kind: &DeviceKind) -> &'static str {
+    // Simple text icons that work in any terminal
+    match _kind {
+        DeviceKind::Android => "\u{e70e}",
+        DeviceKind::IosUsb { .. } => "\u{f179}",
+        DeviceKind::Local => "\u{f108}",
     }
 }
 
@@ -261,12 +324,13 @@ fn render_banner_line(text: &str, row: usize, tick: u64, total_w: usize) -> Line
 }
 
 fn centered_text_line(text: &str, total_w: usize, fg: Color) -> Line<'static> {
-    let pad = total_w.saturating_sub(text.len()) / 2;
+    let text_w = text.width();
+    let pad = total_w.saturating_sub(text_w) / 2;
     let mut spans = vec![
         Span::styled(" ".repeat(pad), Style::default().bg(BASE)),
         Span::styled(text.to_string(), Style::default().fg(fg).bg(BASE)),
     ];
-    let used = pad + text.len();
+    let used = pad + text_w;
     if used < total_w {
         spans.push(Span::styled(
             " ".repeat(total_w - used),

@@ -126,12 +126,25 @@ async fn main() -> io::Result<()> {
         }
     });
 
+    // Preferred device ID — set by UI device picker
+    let preferred_device: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
     // Task 1b: Handle UI "connect to device" requests
+    let preferred_device_c = Arc::clone(&preferred_device);
+    let app_for_switch = Arc::clone(&app);
     let try_connect_tx_ui = try_connect_tx.clone();
     tokio::spawn(async move {
-        while let Some(_device_id) = connect_device_rx.recv().await {
-            // For now, just trigger a reconnection attempt
-            // Future: connect to specific device by ID
+        while let Some(device_id) = connect_device_rx.recv().await {
+            // Store preferred device and force reconnection
+            *preferred_device_c.lock().await = Some(device_id);
+            // Disconnect current client to trigger reconnection
+            {
+                let mut a = app_for_switch.lock().await;
+                a.clients.clear();
+                a.connected = false;
+                a.connector_handle = None;
+                a.clear_session_data();
+            }
             let _ = try_connect_tx_ui.send(());
         }
     });
@@ -139,6 +152,7 @@ async fn main() -> io::Result<()> {
     // Task 2: Connection manager — tries to connect to discovered devices
     let app_for_connector = Arc::clone(&app);
     let discovered_c2 = Arc::clone(&discovered);
+    let preferred_device_c2 = Arc::clone(&preferred_device);
     let port = cli.port;
     tokio::spawn(async move {
         loop {
@@ -155,11 +169,19 @@ async fn main() -> io::Result<()> {
                 }
             }
 
-            // Try each discovered device
-            let devices = {
+            // Try each discovered device, preferred device first
+            let mut devices = {
                 let devs = discovered_c2.lock().await;
                 devs.clone()
             };
+            // Move preferred device to front
+            let preferred = preferred_device_c2.lock().await.clone();
+            if let Some(ref pref_id) = preferred {
+                if let Some(pos) = devices.iter().position(|d| d.id == *pref_id) {
+                    let dev = devices.remove(pos);
+                    devices.insert(0, dev);
+                }
+            }
 
             let mut did_connect = false;
             for device in &devices {

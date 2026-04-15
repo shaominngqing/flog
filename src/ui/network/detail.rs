@@ -176,6 +176,15 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         ]));
         section_line_map.push(None);
         json_click_map.push(None);
+        if !entry.timestamp.is_empty() {
+            push_kv_single(
+                &mut all_lines,
+                &mut section_line_map,
+                &mut json_click_map,
+                "Time",
+                &entry.timestamp,
+            );
+        }
         if let Some(dur) = entry.duration {
             push_kv_single(
                 &mut all_lines,

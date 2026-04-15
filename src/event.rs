@@ -35,33 +35,49 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
 // ══════════════════════════════════════
 
 fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
-    // Handle device picker overlay clicks
+    // Handle device picker overlay
     if app.show_device_picker {
-        if let crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) = mouse.kind {
-            let x = mouse.column;
-            let y = mouse.row;
+        match mouse.kind {
+            crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                let x = mouse.column;
+                let y = mouse.row;
 
-            // Check click on device picker items
-            for &(item_y, item_x_start, item_x_end, idx) in &app.layout.device_picker_items {
-                if y == item_y && x >= item_x_start && x < item_x_end {
-                    if idx < app.discovered_devices.len() {
-                        let device_id = app.discovered_devices[idx].id.clone();
-                        if let Some(ref tx) = app.connect_device_tx {
-                            let _ = tx.send(device_id);
-                        }
-                        app.show_device_picker = false;
-                    }
-                    return;
-                }
-            }
+                // First check if click is inside the picker rect
+                let inside = if let Some((px, py, pw, ph)) = app.layout.device_picker_rect {
+                    x >= px && x < px + pw && y >= py && y < py + ph
+                } else {
+                    false
+                };
 
-            // Click outside picker → close
-            if let Some((px, py, pw, ph)) = app.layout.device_picker_rect {
-                if x < px || x >= px + pw || y < py || y >= py + ph {
+                if !inside {
+                    // Click outside → close
                     app.show_device_picker = false;
                     return;
                 }
+
+                // Check click on device items
+                for &(item_y, item_x_start, item_x_end, idx) in &app.layout.device_picker_items {
+                    if y == item_y && x >= item_x_start && x < item_x_end {
+                        if idx < app.discovered_devices.len() {
+                            let device_id = app.discovered_devices[idx].id.clone();
+                            if let Some(ref tx) = app.connect_device_tx {
+                                let _ = tx.send(device_id);
+                            }
+                            app.show_device_picker = false;
+                            app.show_status(format!("Switching to {}...", app.discovered_devices[idx].name));
+                        }
+                        return;
+                    }
+                }
+                // Click inside picker but not on item (e.g. border) — do nothing
             }
+            crossterm::event::MouseEventKind::ScrollUp => {
+                app.device_picker_scroll = app.device_picker_scroll.saturating_sub(1);
+            }
+            crossterm::event::MouseEventKind::ScrollDown => {
+                app.device_picker_scroll += 1;
+            }
+            _ => {}
         }
         return;
     }

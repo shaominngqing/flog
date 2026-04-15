@@ -345,6 +345,8 @@ pub struct App {
     pub show_device_picker: bool,
     /// Selected index in device picker
     pub device_picker_selected: usize,
+    /// Scroll offset in device picker
+    pub device_picker_scroll: usize,
     /// Channel to request connection to a specific device
     pub connect_device_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 
@@ -401,6 +403,7 @@ impl App {
             discovered_devices: Vec::new(),
             show_device_picker: false,
             device_picker_selected: 0,
+            device_picker_scroll: 0,
             connect_device_tx: None,
             mock_rules: crate::domain::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
