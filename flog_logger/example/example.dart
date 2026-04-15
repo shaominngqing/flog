@@ -1,4 +1,4 @@
-import 'package:flog_logger/flog_logger.dart';
+import 'package:flog_dart/flog_logger.dart';
 
 // One logger per module — tag is fixed at creation.
 final log = FlogLogger('Network');
