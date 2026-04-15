@@ -1,5 +1,9 @@
-//! Input source abstraction.
+//! Input layer — Direct Socket server for flog_dart communication.
 
+pub mod protocol;
+// pub mod server; // Task 2
+
+// Legacy modules — kept temporarily for compilation, removed in Task 9
 pub mod adb;
 pub mod discover;
 pub mod stdin_source;
@@ -13,3 +17,5 @@ pub enum SourceEvent {
     RawLineWithTimestamp(String, String),
     ParsedEntry(LogEntry),
 }
+
+pub use protocol::{ClientId, ClientInfo, ClientMessage, ServerMessage};
