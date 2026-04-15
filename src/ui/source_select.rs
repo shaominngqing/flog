@@ -96,6 +96,7 @@ pub fn draw_waiting_for_connection(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Draw the device picker dropdown overlay.
+/// Positioned above the status bar, anchored to the source_info area.
 pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     let devices = &app.discovered_devices;
     if devices.is_empty() {
@@ -103,10 +104,28 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     let item_count = devices.len();
-    let picker_w = 50u16.min(area.width.saturating_sub(4));
-    let picker_h = (item_count as u16 + 2).min(area.height.saturating_sub(4)); // +2 for border
-    let picker_x = area.width.saturating_sub(picker_w).saturating_sub(1);
-    let picker_y = area.height.saturating_sub(picker_h).saturating_sub(1);
+
+    // Calculate width based on longest device name
+    let max_label_w = devices
+        .iter()
+        .map(|d| {
+            let kind_label = match &d.kind {
+                DeviceKind::Android => "Android",
+                DeviceKind::IosUsb { .. } => "iOS USB",
+                DeviceKind::Local => "Local",
+            };
+            // "  icon name     kind_label  "
+            3 + d.name.width() + 4 + kind_label.len() + 2
+        })
+        .max()
+        .unwrap_or(30);
+    let picker_w = (max_label_w as u16 + 2).max(30).min(area.width.saturating_sub(4)); // +2 border
+    let picker_h = (item_count as u16 + 2).min(area.height.saturating_sub(4)); // +2 border
+
+    // Position: above the status bar (bottom - 1 - picker_h), aligned to source_info_x
+    let status_bar_y = area.height.saturating_sub(1);
+    let picker_y = status_bar_y.saturating_sub(picker_h);
+    let picker_x = app.layout.source_info_x.0.min(area.width.saturating_sub(picker_w));
 
     let picker_area = Rect::new(picker_x, picker_y, picker_w, picker_h);
 
@@ -123,36 +142,44 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     let inner = block.inner(picker_area);
 
     let mut lines: Vec<Line> = Vec::new();
-    let mut click_regions: Vec<(u16, u16, u16, usize)> = Vec::new(); // (y, x_start, x_end, idx)
+    let mut click_regions: Vec<(u16, u16, u16, usize)> = Vec::new();
 
     for (i, dev) in devices.iter().enumerate() {
         let icon = device_icon(&dev.kind);
-        let connected = app.clients.iter().any(|c| {
-            // Check if this device is the currently connected one
-            c.device.contains(&dev.name) || dev.id == "localhost"
+        let kind_label = match &dev.kind {
+            DeviceKind::Android => "Android",
+            DeviceKind::IosUsb { .. } => "iOS USB",
+            DeviceKind::Local => "Local",
+        };
+
+        // Check if this device is currently connected
+        let connected = app.connected && app.clients.iter().any(|c| {
+            c.device.contains(&dev.name) || (dev.id == "localhost" && c.os == "ios")
         });
 
         let is_selected = i == app.device_picker_selected;
-        let (fg, bg) = if connected {
-            (MANTLE, GREEN)
+        let row_bg = if connected {
+            GREEN
         } else if is_selected {
-            (TEXT, SURFACE1)
+            SURFACE1
         } else {
-            (TEXT, MANTLE)
+            MANTLE
         };
+        let name_fg = if connected { MANTLE } else { TEXT };
+        let kind_fg = if connected { MANTLE } else { OVERLAY0 };
+        let status_text = if connected { " \u{25cf}" } else { "" }; // ●
+        let status_fg = if connected { MANTLE } else { GREEN };
 
-        let label = format!(" {} {} ", icon, dev.name);
-        let kind_label = match &dev.kind {
-            DeviceKind::Android => " Android",
-            DeviceKind::IosUsb { .. } => " iOS USB",
-            DeviceKind::Local => " Local",
-        };
+        let name_part = format!(" {} {} ", icon, dev.name);
+        let name_w = name_part.width();
+        let kind_part = format!(" {}{} ", kind_label, status_text);
+        let kind_w = kind_part.width();
+        let pad = (inner.width as usize).saturating_sub(name_w + kind_w);
 
-        let pad = (inner.width as usize).saturating_sub(label.width() + kind_label.len());
         lines.push(Line::from(vec![
-            Span::styled(label, Style::default().fg(fg).bg(bg)),
-            Span::styled(" ".repeat(pad), Style::default().bg(bg)),
-            Span::styled(kind_label.to_string(), Style::default().fg(OVERLAY0).bg(bg)),
+            Span::styled(name_part, Style::default().fg(name_fg).bg(row_bg)),
+            Span::styled(" ".repeat(pad), Style::default().bg(row_bg)),
+            Span::styled(kind_part, Style::default().fg(kind_fg).bg(row_bg)),
         ]));
 
         click_regions.push((
@@ -165,7 +192,6 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(Paragraph::new(lines).block(block), picker_area);
 
-    // Store click regions for event handling
     app.layout.device_picker_items = click_regions;
     app.layout.device_picker_rect = Some((picker_area.x, picker_area.y, picker_area.width, picker_area.height));
 }
