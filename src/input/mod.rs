@@ -1,7 +1,7 @@
 //! Input layer — Direct Socket server for flog_dart communication.
 
 pub mod protocol;
-// pub mod server; // Task 2
+pub mod server;
 
 // Legacy modules — kept temporarily for compilation, removed in Task 9
 pub mod adb;
@@ -19,3 +19,4 @@ pub enum SourceEvent {
 }
 
 pub use protocol::{ClientId, ClientInfo, ClientMessage, ServerMessage};
+pub use server::{FlogServer, ServerEvent, ServerHandle};
