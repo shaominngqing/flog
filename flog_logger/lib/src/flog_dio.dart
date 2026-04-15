@@ -1,8 +1,6 @@
-import 'dart:convert';
-import 'dart:developer' as developer;
-
 import 'package:dio/dio.dart';
 
+import 'flog_client.dart';
 import 'flog_http_interceptor.dart';
 import 'flog_mock_interceptor.dart';
 import 'flog_net.dart' show flogEnabled;
@@ -92,6 +90,8 @@ class FlogDio implements Dio {
     String? baseUrl,
     FlogHttpConfig? flogConfig,
     BaseOptions? options,
+    String flogHost = 'localhost',
+    int flogPort = 9753,
   }) : _inner = Dio(options ?? BaseOptions(baseUrl: baseUrl ?? '')) {
     if (baseUrl != null && options == null) {
       _inner.options.baseUrl = baseUrl;
@@ -99,6 +99,13 @@ class FlogDio implements Dio {
 
     if (flogEnabled) {
       final config = flogConfig ?? const FlogHttpConfig();
+
+      // Start FlogClient connection to flog TUI
+      FlogClient.instance.start(
+        host: flogHost,
+        port: flogPort,
+        dio: _inner,
+      );
 
       // Mock interceptor first — intercepts before real network
       _inner.interceptors.insert(0, FlogMockInterceptor());
@@ -115,22 +122,6 @@ class FlogDio implements Dio {
           filter: config.filter,
         ),
       );
-
-      // Register VM Service extension for mock rule sync
-      try {
-        developer.registerExtension('ext.flog.syncMockRules',
-            (String method, Map<String, String> params) async {
-          final rulesJson = params['rules'] ?? '[]';
-          final rules = (jsonDecode(rulesJson) as List)
-              .map((r) => FlogMockRule.fromJson(r as Map<String, dynamic>))
-              .toList();
-          FlogMockInterceptor.updateRules(rules);
-          return developer.ServiceExtensionResponse.result(
-              jsonEncode({'ok': true, 'count': rules.length}));
-        });
-      } catch (_) {
-        // Extension may already be registered
-      }
     }
   }
 
