@@ -48,11 +48,15 @@ flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它
 
 ## 通信架构
 
-flog 采用 **Direct Socket** 架构：flog TUI 启动一个 WebSocket Server（默认端口 9753），Flutter App 中的 flog_dart 自动连接。所有数据（日志、网络事件、Mock 规则、Replay 指令）通过这一个连接传输。
+flog 采用 **Direct Socket** 架构：Flutter App 中的 flog_dart 启动 WebSocket Server（端口 9753），flog TUI 自动发现设备并连接。所有数据（日志、网络事件、Mock 规则、Replay 指令）通过这一个连接传输。
 
 - 不依赖 VM Service — 日志不再通过 print/developer.log 传输
 - 不污染终端输出 — Flutter 控制台里不会有 flog_net 日志
-- 支持多设备同时连接
+- 自动设备发现 — 通过 `flutter devices` 检测已连接设备
+- 全平台支持：
+  - **macOS / iOS 模拟器** — localhost 直通
+  - **Android** — 自动 `adb forward` 端口转发
+  - **iOS 真机** — usbmuxd USB 端口转发
 
 ## Logs 功能
 

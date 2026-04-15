@@ -44,7 +44,12 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
 
 - **`input/`** — Direct Socket communication layer
   - `protocol.rs` — `ClientMessage` (Hello/Log/Net), `ServerMessage` (MockSync/Replay), `ClientInfo`, serde-tagged JSON protocol
-  - `server.rs` — `FlogServer` (tokio-tungstenite WS server on configurable port), `ServerHandle` (downstream message sender), `ServerEvent` (ClientConnected/Disconnected/Message), per-client async session management
+  - `connector.rs` — `connect()` (tokio-tungstenite WS client), `ConnectorHandle` (downstream message sender), `ConnectorEvent` (Connected/Disconnected/Message)
+
+- **`transport/`** — Device discovery and platform-specific connectivity
+  - `device_monitor.rs` — `DeviceMonitor` polls `flutter devices --machine`, `FlutterDevice`, `ConnectionMethod` (Localhost/AdbForward/Usbmuxd)
+  - `adb.rs` — `setup_forward()` / `remove_forward()` for Android adb port forwarding
+  - `usbmuxd.rs` — macOS usbmuxd protocol client for iOS real device USB connectivity (plist over Unix socket)
 
 - **`ui/`** — ratatui-based TUI with Catppuccin Macchiato theme, dual-tab architecture
   - `mod.rs` — Top-level dispatcher, shared palette constants, utility functions
@@ -79,18 +84,23 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
 
 ### Data Flow
 
-1. flog TUI starts WS server on port 9753
-2. flog_dart client connects, sends `Hello` message (device/app/os info)
-3. Client sends `Log` messages → `dispatch_client_message()` constructs `LogEntry`, calls `app.add_entry()` → `LogStore`
-4. Client sends `Net` messages → `dispatch_client_message()` calls `network_store.process_message()` → `NetworkStore`
-5. Mock system: rules created in TUI → `ServerHandle.broadcast_mock_sync()` sends to all clients → `FlogMockInterceptor` updates rules
-6. Replay: user triggers from Network detail → `ServerHandle.send_replay()` sends to client → client re-executes request
-7. SSE Merged View: user clicks [Merged] pill on SSE entry → `auto_detect_field` scans all chunks for known LLM patterns (OpenAI `choices[0].delta.content`, Claude `delta.text`, etc.) → creates `SseMergeRule` keyed by exact URL path → `merge_field` concatenates chosen field across all chunks → rule persists for same-path entries within session
-8. Renderer reads filtered indices, renders to terminal
+1. flog_dart starts WS server on port 9753 inside the Flutter App
+2. flog TUI discovers devices via `flutter devices --machine` (every 5 seconds)
+3. For each device, flog establishes connection via appropriate transport:
+   - macOS / iOS sim → `ws://localhost:9753`
+   - Android → `adb forward` then `ws://localhost:{local_port}`
+   - iOS real → usbmuxd Connect then WS upgrade over tunnel
+4. flog_dart sends `Hello` on connection → flog receives `ConnectorEvent::Connected`
+5. flog_dart sends `Log` messages → `dispatch_client_message()` → `LogStore`
+6. flog_dart sends `Net` messages → `dispatch_client_message()` → `NetworkStore`
+7. Mock system: rules created in TUI → `ConnectorHandle.send_mock_sync()` → flog_dart `FlogMockInterceptor.updateRules()`
+8. Replay: user triggers from detail → `ConnectorHandle.send_replay()` → flog_dart re-executes request
+9. SSE Merged View / WS Chat View: UI-only features, no transport involvement
+10. Renderer reads filtered indices, renders to terminal
 
 ### Concurrency Model
 
-Tokio multi-threaded runtime. WS server accept loop and per-client tasks run in background, sending `ServerEvent`s through channel to main. Server event processor task routes messages to App state. Main thread polls terminal events. App state is behind `Arc<Mutex<App>>`.
+Tokio multi-threaded runtime. Device monitor + connector loop run in background task, producing `ConnectorEvent`s. Connector reader/writer tasks handle WS communication. Main thread polls terminal events. App state is behind `Arc<Mutex<App>>`.
 
 ### Scroll Model
 
