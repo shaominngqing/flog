@@ -26,7 +26,7 @@ use tokio::sync::Mutex;
 
 use app::App;
 use cli::Cli;
-use input::{ClientMessage, ConnectorEvent, connect};
+use input::{ClientMessage, ConnectorEvent, connect, connect_stream};
 
 /// Dispatch a client message to the app.
 fn dispatch_client_message(app: &mut App, msg: ClientMessage) {
@@ -152,8 +152,65 @@ async fn main() -> io::Result<()> {
                             None => continue,
                         }
                     }
-                    transport::ConnectionMethod::Usbmuxd { .. } => {
-                        continue; // TODO
+                    transport::ConnectionMethod::Usbmuxd { device_id } => {
+                        // Connect via usbmuxd tunnel, then WS upgrade
+                        match transport::usbmuxd::connect_device(device_id, port).await {
+                            Ok(tunnel) => {
+                                let url = format!("ws://localhost:{}", port);
+                                match connect_stream(tunnel, &url).await {
+                                    Ok(result) => {
+                                        // Same handling as normal connect
+                                        did_connect = true;
+                                        let (mut event_rx, handle) = result;
+                                        {
+                                            let mut a = app_for_connector.lock().await;
+                                            a.connector_handle = Some(handle.clone());
+                                        }
+                                        let app_for_logs = Arc::clone(&app_for_connector);
+                                        let log_dev_id = device.id.clone();
+                                        let logs_handle = tokio::spawn(async move {
+                                            let dev_arg = if log_dev_id == "localhost" { None } else { Some(log_dev_id.as_str()) };
+                                            if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(dev_arg).await {
+                                                while let Some(line) = logs.next_line().await {
+                                                    let mut a = app_for_logs.lock().await;
+                                                    a.add_raw_line(&line);
+                                                }
+                                            }
+                                        });
+                                        while let Some(evt) = event_rx.recv().await {
+                                            let mut a = app_for_connector.lock().await;
+                                            match evt {
+                                                ConnectorEvent::Connected(info) => {
+                                                    a.source_name = format!("{} ({})", info.device, info.app);
+                                                    a.connected = true;
+                                                    a.clients.push(info.clone());
+                                                    a.show_status(format!("Connected: {}", info.device));
+                                                    let json = a.mock_rules.to_json_string();
+                                                    handle.send_mock_sync(json);
+                                                }
+                                                ConnectorEvent::Disconnected => {
+                                                    a.clients.clear();
+                                                    a.connected = false;
+                                                    a.connector_handle = None;
+                                                    a.source_name = "Scanning...".to_string();
+                                                    a.show_status("Disconnected".to_string());
+                                                    a.clear_session_data();
+                                                    logs_handle.abort();
+                                                    break;
+                                                }
+                                                ConnectorEvent::Message(msg) => {
+                                                    dispatch_client_message(&mut a, msg);
+                                                }
+                                            }
+                                        }
+                                        let _ = try_connect_tx.send(());
+                                        break;
+                                    }
+                                    Err(_) => continue,
+                                }
+                            }
+                            Err(_) => continue,
+                        }
                     }
                 };
 

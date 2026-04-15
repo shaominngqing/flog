@@ -1,8 +1,9 @@
 //! WebSocket client that connects to flog_dart's server on a device.
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::WebSocketStream;
 
 use super::protocol::{ClientInfo, ClientMessage, ServerMessage};
 
@@ -43,7 +44,6 @@ impl ConnectorHandle {
 }
 
 /// Connect to a flog_dart server at the given WebSocket URL.
-/// Returns a stream of events and a handle for sending commands.
 pub async fn connect(
     ws_url: &str,
 ) -> Result<
@@ -51,8 +51,38 @@ pub async fn connect(
     Box<dyn std::error::Error + Send + Sync>,
 > {
     let (ws_stream, _) = tokio_tungstenite::connect_async(ws_url).await?;
-    let (mut ws_sink, mut ws_read) = ws_stream.split();
+    let (ws_sink, ws_read) = ws_stream.split();
+    setup_connection(ws_sink, ws_read).await
+}
 
+/// Connect to a flog_dart server over an existing stream (e.g., usbmuxd tunnel).
+/// Performs WebSocket handshake over the stream, then processes messages.
+pub async fn connect_stream<S>(
+    stream: S,
+    url: &str,
+) -> Result<
+    (mpsc::UnboundedReceiver<ConnectorEvent>, ConnectorHandle),
+    Box<dyn std::error::Error + Send + Sync>,
+>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let (ws_stream, _) = tokio_tungstenite::client_async(url, stream).await?;
+    let (ws_sink, ws_read) = ws_stream.split();
+    setup_connection(ws_sink, ws_read).await
+}
+
+/// Common setup after WebSocket connection is established.
+async fn setup_connection<S>(
+    mut ws_sink: SplitSink<WebSocketStream<S>, Message>,
+    mut ws_read: SplitStream<WebSocketStream<S>>,
+) -> Result<
+    (mpsc::UnboundedReceiver<ConnectorEvent>, ConnectorHandle),
+    Box<dyn std::error::Error + Send + Sync>,
+>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<String>();
 
