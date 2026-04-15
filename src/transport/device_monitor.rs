@@ -1,4 +1,9 @@
-//! Event-driven device discovery via `adb track-devices` and usbmuxd Listen.
+//! Event-driven device discovery.
+//!
+//! Three parallel sources, all feeding into one DeviceEvent channel:
+//! 1. `adb track-devices` — persistent connection, instant Android events
+//! 2. usbmuxd `Listen` — persistent connection, instant iOS USB events
+//! 3. localhost probe — 1s poll, covers macOS + iOS simulator
 
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -15,15 +20,11 @@ pub struct Device {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeviceKind {
-    /// Android device (emulator or real) — use adb forward
     Android,
-    /// iOS real device via USB — use usbmuxd
     IosUsb { device_id: u32 },
-    /// Local (macOS, iOS simulator) — use localhost
     Local,
 }
 
-/// How to connect to a device's flog_dart server.
 pub enum ConnectionMethod {
     Localhost,
     AdbForward { serial: String },
@@ -40,51 +41,45 @@ impl Device {
     }
 }
 
-/// Device discovery event.
 #[derive(Debug)]
 pub enum DeviceEvent {
     Added(Device),
-    Removed(String), // device id
+    Removed(String),
 }
 
-/// Start all device monitors. Returns a channel that receives device events.
-/// Spawns background tasks for:
-/// - adb track-devices (Android)
-/// - usbmuxd Listen (iOS USB)
-/// - localhost probe (local/simulator)
+/// Start all device discovery sources in parallel.
+/// Returns a channel that receives device events from all sources.
 pub fn start_discovery(port: u16) -> mpsc::UnboundedReceiver<DeviceEvent> {
     let (tx, rx) = mpsc::unbounded_channel();
 
-    // Always emit a Local device — macOS / iOS simulator can connect via localhost
-    let _ = tx.send(DeviceEvent::Added(Device {
-        id: "localhost".to_string(),
-        name: "localhost".to_string(),
-        kind: DeviceKind::Local,
-    }));
-
-    // Start adb track-devices
-    let tx_adb = tx.clone();
+    // Source 1: adb track-devices (Android)
+    let tx1 = tx.clone();
     tokio::spawn(async move {
-        track_adb_devices(tx_adb).await;
+        track_adb_devices(tx1).await;
     });
 
-    // Start usbmuxd listener (macOS only)
+    // Source 2: usbmuxd Listen (iOS USB, macOS only)
     #[cfg(target_os = "macos")]
     {
-        let tx_usb = tx.clone();
+        let tx2 = tx.clone();
         tokio::spawn(async move {
-            track_usbmuxd_devices(tx_usb).await;
+            track_usbmuxd_devices(tx2).await;
         });
     }
+
+    // Source 3: localhost probe (macOS / iOS simulator)
+    let tx3 = tx.clone();
+    tokio::spawn(async move {
+        probe_localhost(tx3, port).await;
+    });
 
     rx
 }
 
-/// Track Android devices via `adb track-devices`.
-/// This is a persistent connection — adb sends updates as devices connect/disconnect.
+// ── Source 1: adb track-devices ──
+
 async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
     loop {
-        // Spawn adb track-devices
         let child = Command::new("adb")
             .arg("track-devices")
             .stdin(Stdio::null())
@@ -95,8 +90,8 @@ async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
         let mut child = match child {
             Ok(c) => c,
             Err(_) => {
-                // adb not available — wait and retry
-                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                // adb not available
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                 continue;
             }
         };
@@ -109,21 +104,16 @@ async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
         let mut reader = BufReader::new(stdout).lines();
         let mut known: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-        // adb track-devices sends a hex length prefix before each block.
-        // Each block lists all currently connected devices, one per line:
-        //   SERIAL\tSTATUS
-        // We track the delta.
         while let Ok(Some(line)) = reader.next_line().await {
             let line = line.trim().to_string();
 
-            // Skip hex length lines (4 hex chars like "001a")
+            // Skip hex length prefix lines
             if line.len() == 4 && line.chars().all(|c| c.is_ascii_hexdigit()) {
                 continue;
             }
 
-            // Skip empty lines
             if line.is_empty() {
-                // Empty block = no devices. Remove all known.
+                // Empty block = all devices gone
                 for id in known.drain() {
                     let _ = tx.send(DeviceEvent::Removed(id));
                 }
@@ -152,7 +142,7 @@ async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
             }
         }
 
-        // adb track-devices exited — clean up and retry
+        // Process exited — cleanup and retry
         for id in known.drain() {
             let _ = tx.send(DeviceEvent::Removed(id));
         }
@@ -161,7 +151,8 @@ async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
     }
 }
 
-/// Track iOS USB devices via usbmuxd Listen command.
+// ── Source 2: usbmuxd Listen (macOS only) ──
+
 #[cfg(target_os = "macos")]
 async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -196,17 +187,13 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
         let length = (HEADER_SIZE + body.len()) as u32;
         let mut header = Vec::with_capacity(HEADER_SIZE);
         header.extend_from_slice(&length.to_le_bytes());
-        header.extend_from_slice(&1u32.to_le_bytes()); // version
-        header.extend_from_slice(&8u32.to_le_bytes()); // type = plist
-        header.extend_from_slice(&1u32.to_le_bytes()); // tag
-        if write_half.write_all(&header).await.is_err() {
-            continue;
-        }
-        if write_half.write_all(&body).await.is_err() {
+        header.extend_from_slice(&1u32.to_le_bytes());
+        header.extend_from_slice(&8u32.to_le_bytes());
+        header.extend_from_slice(&1u32.to_le_bytes());
+        if write_half.write_all(&header).await.is_err() || write_half.write_all(&body).await.is_err() {
             continue;
         }
 
-        // Read events continuously
         loop {
             let mut hdr = [0u8; HEADER_SIZE];
             if read_half.read_exact(&mut hdr).await.is_err() {
@@ -230,7 +217,6 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
             };
 
             let msg_type = dict.get("MessageType").and_then(|v| v.as_string()).unwrap_or("");
-
             match msg_type {
                 "Attached" => {
                     if let Some(props) = dict.get("Properties").and_then(|v| v.as_dictionary()) {
@@ -246,8 +232,6 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
                     }
                 }
                 "Detached" => {
-                    // Detached only gives DeviceID, not serial. We need to track mapping.
-                    // For simplicity, send device_id as the removal key.
                     let device_id = dict.get("DeviceID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
                     let _ = tx.send(DeviceEvent::Removed(format!("usbmuxd:{}", device_id)));
                 }
@@ -255,7 +239,39 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
             }
         }
 
-        // Disconnected from usbmuxd — retry
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
+}
+
+// ── Source 3: localhost probe ──
+
+/// Periodically try to connect to localhost:{port} to detect
+/// macOS apps and iOS simulator apps.
+async fn probe_localhost(tx: mpsc::UnboundedSender<DeviceEvent>, port: u16) {
+    let addr = format!("127.0.0.1:{}", port);
+    let mut was_reachable = false;
+
+    loop {
+        // Quick TCP probe — just check if something is listening
+        let reachable = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            tokio::net::TcpStream::connect(&addr),
+        )
+        .await
+        .is_ok();
+
+        if reachable && !was_reachable {
+            let _ = tx.send(DeviceEvent::Added(Device {
+                id: "localhost".to_string(),
+                name: "localhost".to_string(),
+                kind: DeviceKind::Local,
+            }));
+            was_reachable = true;
+        } else if !reachable && was_reachable {
+            let _ = tx.send(DeviceEvent::Removed("localhost".to_string()));
+            was_reachable = false;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
