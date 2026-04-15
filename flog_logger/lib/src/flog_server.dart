@@ -24,10 +24,12 @@ class FlogServer {
   bool _started = false;
   Dio? _dio;
   int _port = 9753;
+  String _appName = 'flutter';
+  String _appVersion = '';
 
   bool get connected => _connected;
 
-  void start({int port = 9753, Dio? dio}) {
+  void start({int port = 9753, Dio? dio, String appName = 'flutter', String appVersion = ''}) {
     if (!flogEnabled) return;
     if (_started) return;
     _started = true;

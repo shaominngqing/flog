@@ -58,13 +58,12 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                 // Check click on device items
                 for &(item_y, item_x_start, item_x_end, idx) in &app.layout.device_picker_items {
                     if y == item_y && x >= item_x_start && x < item_x_end {
-                        if idx < app.discovered_devices.len() {
-                            let device_id = app.discovered_devices[idx].id.clone();
+                        if let Some(device_id) = app.layout.device_picker_item_ids.get(idx) {
+                            let id = device_id.clone();
                             if let Some(ref tx) = app.connect_device_tx {
-                                let _ = tx.send(device_id);
+                                let _ = tx.send(id);
                             }
                             app.show_device_picker = false;
-                            app.show_status(format!("Switching to {}...", app.discovered_devices[idx].name));
                         }
                         return;
                     }
@@ -783,7 +782,7 @@ fn replay_selected(app: &mut App) {
     if let Some(&idx) = indices.get(app.network.selected) {
         if let Some(entry) = app.network_store.get(idx).cloned() {
             if entry.protocol == crate::domain::network::Protocol::Http {
-                if let Some(ref handle) = app.connector_handle {
+                if let Some(handle) = app.get_active_handle() {
                     handle.send_replay(
                         entry.method.clone(),
                         entry.url.clone(),
@@ -958,7 +957,7 @@ fn copy_response(app: &mut App) {
 
 /// Trigger mock rule sync to connected clients.
 fn trigger_mock_sync(app: &App) {
-    if let Some(ref handle) = app.connector_handle {
+    if let Some(handle) = app.get_active_handle() {
         let json = app.mock_rules.to_json_string();
         handle.send_mock_sync(json);
     }
@@ -1107,10 +1106,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             }
             KeyCode::Enter => {
                 let idx = app.device_picker_selected;
-                if idx < app.discovered_devices.len() {
-                    let device_id = app.discovered_devices[idx].id.clone();
+                if let Some(device_id) = app.layout.device_picker_item_ids.get(idx) {
+                    let id = device_id.clone();
                     if let Some(ref tx) = app.connect_device_tx {
-                        let _ = tx.send(device_id);
+                        let _ = tx.send(id);
                     }
                     app.show_device_picker = false;
                 }

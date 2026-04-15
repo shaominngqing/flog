@@ -10,11 +10,13 @@ use tokio_tungstenite::tungstenite::Message;
 #[tokio::test]
 async fn test_connector_connects_and_receives_messages() {
     // Start a mock flog_dart server
-    let listener = TcpListener::bind("127.0.0.1:19754").await.unwrap();
+    // Use port 0 to let OS assign an available port
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
 
     // Spawn connector in background
-    let connector_task = tokio::spawn(async {
-        flog::input::connector::connect("ws://127.0.0.1:19754").await
+    let connector_task = tokio::spawn(async move {
+        flog::input::connector::connect(&format!("ws://127.0.0.1:{}", port)).await
     });
 
     // Accept the connection from connector

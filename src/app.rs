@@ -7,6 +7,7 @@ use regex::Regex;
 
 use crate::domain::{FilterState, LogEntry, LogLevel, LogStore, ParseResult};
 use crate::input::{ClientInfo, ConnectorHandle};
+use std::collections::HashMap;
 use crate::parser::MultiStrategyParser;
 
 /// Infer tag and level from unrecognized raw text content.
@@ -298,16 +299,61 @@ pub struct LayoutCache {
     pub mock_edit_body_rect: Option<(u16, u16, u16, u16)>,
     /// Clickable slowest rows in stats: (store_idx, y, x_start, x_end).
     pub stats_slowest_regions: Vec<(usize, u16, u16, u16)>,
-    /// Device picker item click regions: (y, x_start, x_end, device_index).
+    /// Device picker item click regions: (y, x_start, x_end, item_index).
     pub device_picker_items: Vec<(u16, u16, u16, usize)>,
     /// Device picker overlay rect: (x, y, w, h).
     pub device_picker_rect: Option<(u16, u16, u16, u16)>,
+    /// Device picker item IDs (parallel to device_picker_items indices).
+    pub device_picker_item_ids: Vec<String>,
 }
 
 // ── App ──
 
+/// Per-app data that gets swapped when switching between connected apps.
+pub struct AppSession {
+    pub store: LogStore,
+    pub filter: FilterState,
+    pub network_store: crate::domain::NetworkStore,
+    pub network: NetworkState,
+    pub selected: usize,
+    pub scroll_offset: usize,
+    pub bookmarks: BTreeSet<usize>,
+    pub search: SearchState,
+    pub tag_filter: TagFilterInput,
+    pub detail: DetailState,
+    pub auto_scroll: bool,
+}
+
+impl AppSession {
+    pub fn new() -> Self {
+        Self {
+            store: LogStore::new(),
+            filter: FilterState::default(),
+            network_store: crate::domain::NetworkStore::new(),
+            network: NetworkState::new(),
+            selected: 0,
+            scroll_offset: 0,
+            bookmarks: BTreeSet::new(),
+            search: SearchState::default(),
+            tag_filter: TagFilterInput::default(),
+            detail: DetailState::default(),
+            auto_scroll: true,
+        }
+    }
+}
+
+/// Info about a connected app.
+#[derive(Clone)]
+pub struct ConnectedApp {
+    pub id: String,          // unique key (e.g. "localhost", "1e0e87b2")
+    pub device_name: String, // from hello
+    pub app_name: String,    // from hello
+    pub os: String,          // from hello
+    pub handle: ConnectorHandle,
+}
+
 pub struct App {
-    // Core
+    // Active session data (points to the currently viewed app's data)
     pub store: LogStore,
     pub filter: FilterState,
     #[allow(dead_code)]
@@ -319,12 +365,11 @@ pub struct App {
     // Navigation
     pub mode: AppMode,
     pub should_quit: bool,
-    /// When true, mouse capture is disabled so the terminal handles text selection.
     pub select_mode: bool,
     pub selected: usize,
     pub scroll_offset: usize,
     pub show_detail_panel: bool,
-    pub detail_panel_pct: u16, // detail panel width percentage (20-60)
+    pub detail_panel_pct: u16,
 
     // Sub-states
     pub search: SearchState,
@@ -332,23 +377,29 @@ pub struct App {
     pub detail: DetailState,
     pub bookmarks: BTreeSet<usize>,
 
-    // Source management (Direct Socket connector)
-    pub connector_handle: Option<ConnectorHandle>,
+    // Multi-app connection management
+    /// All connected apps and their sessions.
+    pub sessions: HashMap<String, AppSession>,
+    /// All connected apps' info.
+    pub connected_apps: Vec<ConnectedApp>,
+    /// ID of the currently active (viewed) app.
+    pub active_app_id: Option<String>,
+    /// Server port for display.
     pub server_port: u16,
-    pub clients: Vec<ClientInfo>,
     pub source_name: String,
-    pub status_message: Option<(String, u64)>, // (message, expire_tick)
+    pub status_message: Option<(String, u64)>,
     pub connected: bool,
-    /// Discovered devices from device_monitor (updated by main.rs)
+    /// Discovered devices from device_monitor.
     pub discovered_devices: Vec<crate::transport::device_monitor::Device>,
-    /// Show device picker dropdown
+    /// Show device picker dropdown.
     pub show_device_picker: bool,
-    /// Selected index in device picker
     pub device_picker_selected: usize,
-    /// Scroll offset in device picker
     pub device_picker_scroll: usize,
-    /// Channel to request connection to a specific device
+    /// Channel to request connection to a specific device.
     pub connect_device_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    // Legacy fields kept for compatibility
+    pub clients: Vec<ClientInfo>,
+    pub connector_handle: Option<ConnectorHandle>,
 
     // Mock rules
     pub mock_rules: crate::domain::mock::MockRuleStore,
@@ -394,9 +445,10 @@ impl App {
             tag_filter: TagFilterInput::default(),
             detail: DetailState::default(),
             bookmarks: BTreeSet::new(),
-            connector_handle: None,
+            sessions: HashMap::new(),
+            connected_apps: Vec::new(),
+            active_app_id: None,
             server_port: 9753,
-            clients: Vec::new(),
             source_name: String::new(),
             status_message: None,
             connected: false,
@@ -405,6 +457,8 @@ impl App {
             device_picker_selected: 0,
             device_picker_scroll: 0,
             connect_device_tx: None,
+            clients: Vec::new(),
+            connector_handle: None,
             mock_rules: crate::domain::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
             mock_edit_rule_id: None,
@@ -424,7 +478,121 @@ impl App {
 
     /// Check if there is at least one connected client.
     pub fn has_connected_client(&self) -> bool {
-        !self.clients.is_empty()
+        !self.connected_apps.is_empty()
+    }
+
+    /// Save current session data to the sessions map.
+    fn save_active_session(&mut self) {
+        if let Some(ref id) = self.active_app_id {
+            let session = AppSession {
+                store: std::mem::replace(&mut self.store, LogStore::new()),
+                filter: std::mem::take(&mut self.filter),
+                network_store: std::mem::replace(&mut self.network_store, crate::domain::NetworkStore::new()),
+                network: std::mem::replace(&mut self.network, NetworkState::new()),
+                selected: self.selected,
+                scroll_offset: self.scroll_offset,
+                bookmarks: std::mem::take(&mut self.bookmarks),
+                search: std::mem::take(&mut self.search),
+                tag_filter: std::mem::take(&mut self.tag_filter),
+                detail: std::mem::take(&mut self.detail),
+                auto_scroll: self.auto_scroll,
+            };
+            self.sessions.insert(id.clone(), session);
+        }
+    }
+
+    /// Load a session's data into the active fields.
+    fn load_session(&mut self, id: &str) {
+        if let Some(session) = self.sessions.remove(id) {
+            self.store = session.store;
+            self.filter = session.filter;
+            self.network_store = session.network_store;
+            self.network = session.network;
+            self.selected = session.selected;
+            self.scroll_offset = session.scroll_offset;
+            self.bookmarks = session.bookmarks;
+            self.search = session.search;
+            self.tag_filter = session.tag_filter;
+            self.detail = session.detail;
+            self.auto_scroll = session.auto_scroll;
+            self.filter_dirty = true;
+        }
+    }
+
+    /// Register a new connected app. If it's the first, make it active.
+    pub fn add_connected_app(&mut self, app_info: ConnectedApp) {
+        let id = app_info.id.clone();
+        let is_first = self.connected_apps.is_empty();
+
+        // Remove if already exists (reconnection)
+        self.connected_apps.retain(|a| a.id != id);
+        self.connected_apps.push(app_info);
+
+        // Create a session if one doesn't exist
+        if !self.sessions.contains_key(&id) && self.active_app_id.as_deref() != Some(&id) {
+            self.sessions.insert(id.clone(), AppSession::new());
+        }
+
+        if is_first || self.active_app_id.is_none() {
+            self.switch_to_app(&id);
+        }
+
+        self.connected = true;
+    }
+
+    /// Remove a disconnected app.
+    pub fn remove_connected_app(&mut self, id: &str) {
+        self.connected_apps.retain(|a| a.id != id);
+        self.sessions.remove(id);
+
+        if self.active_app_id.as_deref() == Some(id) {
+            // Active app disconnected — switch to another if available
+            if let Some(next) = self.connected_apps.first() {
+                let next_id = next.id.clone();
+                self.switch_to_app(&next_id);
+            } else {
+                self.active_app_id = None;
+                self.connected = false;
+                self.source_name = format!("Scanning... (port {})", self.server_port);
+                // Clear active data
+                self.store = LogStore::new();
+                self.network_store = crate::domain::NetworkStore::new();
+                self.network = NetworkState::new();
+                self.filter = FilterState::default();
+                self.filter_dirty = true;
+            }
+        }
+
+        if self.connected_apps.is_empty() {
+            self.connected = false;
+        }
+    }
+
+    /// Switch the UI to view a different app's data.
+    pub fn switch_to_app(&mut self, id: &str) {
+        if self.active_app_id.as_deref() == Some(id) {
+            return; // Already active
+        }
+
+        // Save current session
+        self.save_active_session();
+
+        // Load new session
+        self.active_app_id = Some(id.to_string());
+        self.load_session(id);
+
+        // Update source name
+        if let Some(app_info) = self.connected_apps.iter().find(|a| a.id == id) {
+            self.source_name = format!("{} ({})", app_info.app_name, app_info.device_name);
+        }
+
+        self.filter_dirty = true;
+    }
+
+    /// Get the ConnectorHandle for a specific app (for sending mock/replay).
+    pub fn get_active_handle(&self) -> Option<&ConnectorHandle> {
+        let id = self.active_app_id.as_deref()?;
+        self.connected_apps.iter().find(|a| a.id == id).map(|a| &a.handle)
     }
 
     // ── Data Input ──

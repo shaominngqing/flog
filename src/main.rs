@@ -89,236 +89,157 @@ async fn main() -> io::Result<()> {
     // Start event-driven device discovery
     let mut device_rx = transport::start_discovery(cli.port);
 
-    // Shared list of discovered devices
-    let discovered: Arc<Mutex<Vec<transport::Device>>> = Arc::new(Mutex::new(Vec::new()));
-
-    // Channel for the connector to request "try connecting to available devices"
-    let (try_connect_tx, mut try_connect_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-
-    // Channel for UI to request connecting to a specific device
-    let (connect_device_tx, mut connect_device_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    // Channel for UI to request switching to a specific app
+    let (switch_app_tx, mut switch_app_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     {
         let mut a = app.lock().await;
-        a.connect_device_tx = Some(connect_device_tx.clone());
+        a.connect_device_tx = Some(switch_app_tx.clone());
     }
 
-    // Task 1: Listen for device events, maintain discovered list, sync to App, trigger connections
-    let discovered_c = Arc::clone(&discovered);
+    // Track active connection tasks per device
+    let active_tasks: Arc<Mutex<std::collections::HashMap<String, tokio::task::JoinHandle<()>>>> =
+        Arc::new(Mutex::new(std::collections::HashMap::new()));
+
+    // Task 1: Device discovery → spawn per-device connection tasks
     let app_for_discovery = Arc::clone(&app);
-    let try_connect_tx_c = try_connect_tx.clone();
-    tokio::spawn(async move {
-        while let Some(event) = device_rx.recv().await {
-            let mut devs = discovered_c.lock().await;
-            match event {
-                transport::DeviceEvent::Added(device) => {
-                    if !devs.iter().any(|d| d.id == device.id) {
-                        devs.push(device);
-                        let _ = try_connect_tx_c.send(());
-                    }
-                }
-                transport::DeviceEvent::Removed(id) => {
-                    devs.retain(|d| d.id != id);
-                }
-            }
-            // Sync discovered devices to App for UI
-            let mut a = app_for_discovery.lock().await;
-            a.discovered_devices = devs.clone();
-        }
-    });
-
-    // Preferred device ID — set by UI device picker
-    let preferred_device: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-
-    // Task 1b: Handle UI "connect to device" requests
-    let preferred_device_c = Arc::clone(&preferred_device);
-    let app_for_switch = Arc::clone(&app);
-    let try_connect_tx_ui = try_connect_tx.clone();
-    tokio::spawn(async move {
-        while let Some(device_id) = connect_device_rx.recv().await {
-            // Store preferred device and force reconnection
-            *preferred_device_c.lock().await = Some(device_id);
-            // Disconnect current client to trigger reconnection
-            {
-                let mut a = app_for_switch.lock().await;
-                a.clients.clear();
-                a.connected = false;
-                a.connector_handle = None;
-                a.clear_session_data();
-            }
-            let _ = try_connect_tx_ui.send(());
-        }
-    });
-
-    // Task 2: Connection manager — tries to connect to discovered devices
-    let app_for_connector = Arc::clone(&app);
-    let discovered_c2 = Arc::clone(&discovered);
-    let preferred_device_c2 = Arc::clone(&preferred_device);
+    let active_tasks_c = Arc::clone(&active_tasks);
     let port = cli.port;
     tokio::spawn(async move {
-        loop {
-            // Wait for a trigger (new device discovered, or reconnect after disconnect)
-            let _ = try_connect_rx.recv().await;
-            // Drain any extra triggers
-            while try_connect_rx.try_recv().is_ok() {}
-
-            // Already connected? Skip.
-            {
-                let a = app_for_connector.lock().await;
-                if a.connected {
-                    continue;
-                }
-            }
-
-            // Try each discovered device, preferred device first
-            let mut devices = {
-                let devs = discovered_c2.lock().await;
-                devs.clone()
-            };
-            // Move preferred device to front
-            let preferred = preferred_device_c2.lock().await.clone();
-            if let Some(ref pref_id) = preferred {
-                if let Some(pos) = devices.iter().position(|d| d.id == *pref_id) {
-                    let dev = devices.remove(pos);
-                    devices.insert(0, dev);
-                }
-            }
-
-            let mut did_connect = false;
-            for device in &devices {
-                let ws_url = match device.connection_method() {
-                    transport::ConnectionMethod::Localhost => {
-                        format!("ws://localhost:{}", port)
-                    }
-                    transport::ConnectionMethod::AdbForward { ref serial } => {
-                        match transport::adb::setup_forward(serial, port).await {
-                            Some(local_port) => format!("ws://localhost:{}", local_port),
-                            None => continue,
+        while let Some(event) = device_rx.recv().await {
+            match event {
+                transport::DeviceEvent::Added(device) => {
+                    // Sync to App for UI
+                    {
+                        let mut a = app_for_discovery.lock().await;
+                        if !a.discovered_devices.iter().any(|d| d.id == device.id) {
+                            a.discovered_devices.push(device.clone());
                         }
                     }
-                    transport::ConnectionMethod::Usbmuxd { device_id } => {
-                        // Connect via usbmuxd tunnel, then WS upgrade
-                        match transport::usbmuxd::connect_device(device_id, port).await {
-                            Ok(tunnel) => {
-                                let url = format!("ws://localhost:{}", port);
-                                match connect_stream(tunnel, &url).await {
-                                    Ok(result) => {
-                                        // Same handling as normal connect
-                                        did_connect = true;
-                                        let (mut event_rx, handle) = result;
-                                        {
-                                            let mut a = app_for_connector.lock().await;
-                                            a.connector_handle = Some(handle.clone());
+
+                    // Skip if we already have a task for this device
+                    {
+                        let tasks = active_tasks_c.lock().await;
+                        if tasks.contains_key(&device.id) {
+                            continue;
+                        }
+                    }
+
+                    // Spawn a persistent connection task for this device
+                    let device_id = device.id.clone();
+                    let app_c = Arc::clone(&app_for_discovery);
+                    let tasks_c = Arc::clone(&active_tasks_c);
+
+                    let task = tokio::spawn(async move {
+                        loop {
+                            // Build WS URL based on device type
+                            let ws_result = match device.connection_method() {
+                                transport::ConnectionMethod::Localhost => {
+                                    let url = format!("ws://localhost:{}", port);
+                                    connect(&url).await.map_err(|e| e.to_string())
+                                }
+                                transport::ConnectionMethod::AdbForward { ref serial } => {
+                                    match transport::adb::setup_forward(serial, port).await {
+                                        Some(local_port) => {
+                                            let url = format!("ws://localhost:{}", local_port);
+                                            connect(&url).await.map_err(|e| e.to_string())
                                         }
-                                        let app_for_logs = Arc::clone(&app_for_connector);
-                                        let log_dev_id = device.id.clone();
-                                        let logs_handle = tokio::spawn(async move {
-                                            let dev_arg = if log_dev_id == "localhost" { None } else { Some(log_dev_id.as_str()) };
-                                            if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(dev_arg).await {
-                                                while let Some(line) = logs.next_line().await {
-                                                    let mut a = app_for_logs.lock().await;
-                                                    a.add_raw_line(&line);
-                                                }
-                                            }
-                                        });
-                                        while let Some(evt) = event_rx.recv().await {
-                                            let mut a = app_for_connector.lock().await;
-                                            match evt {
-                                                ConnectorEvent::Connected(info) => {
-                                                    a.source_name = format!("{} ({})", info.device, info.app);
-                                                    a.connected = true;
-                                                    a.clients.push(info.clone());
-                                                    a.show_status(format!("Connected: {}", info.device));
-                                                    let json = a.mock_rules.to_json_string();
-                                                    handle.send_mock_sync(json);
-                                                }
-                                                ConnectorEvent::Disconnected => {
-                                                    a.clients.clear();
-                                                    a.connected = false;
-                                                    a.connector_handle = None;
-                                                    a.source_name = "Scanning...".to_string();
-                                                    a.show_status("Disconnected".to_string());
-                                                    a.clear_session_data();
-                                                    logs_handle.abort();
-                                                    break;
-                                                }
-                                                ConnectorEvent::Message(msg) => {
-                                                    dispatch_client_message(&mut a, msg);
-                                                }
-                                            }
-                                        }
-                                        let _ = try_connect_tx.send(());
-                                        break;
+                                        None => Err("adb forward failed".to_string()),
                                     }
-                                    Err(_) => continue,
+                                }
+                                transport::ConnectionMethod::Usbmuxd { device_id: uid } => {
+                                    match transport::usbmuxd::connect_device(uid, port).await {
+                                        Ok(tunnel) => {
+                                            let url = format!("ws://localhost:{}", port);
+                                            connect_stream(tunnel, &url).await.map_err(|e| e.to_string())
+                                        }
+                                        Err(e) => Err(e.to_string()),
+                                    }
+                                }
+                            };
+
+                            if let Ok((mut event_rx, handle)) = ws_result {
+                                // Start flutter logs for this device
+                                let app_for_logs = Arc::clone(&app_c);
+                                let log_dev_id = device.id.clone();
+                                let logs_handle = tokio::spawn(async move {
+                                    let dev_arg = if log_dev_id == "localhost" { None } else { Some(log_dev_id.as_str()) };
+                                    if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(dev_arg).await {
+                                        while let Some(line) = logs.next_line().await {
+                                            let mut a = app_for_logs.lock().await;
+                                            // Only add to active app
+                                            if a.active_app_id.as_deref() == Some(&log_dev_id) {
+                                                a.add_raw_line(&line);
+                                            }
+                                        }
+                                    }
+                                });
+
+                                // Process events
+                                while let Some(evt) = event_rx.recv().await {
+                                    let mut a = app_c.lock().await;
+                                    match evt {
+                                        ConnectorEvent::Connected(info) => {
+                                            let app_info = app::ConnectedApp {
+                                                id: device.id.clone(),
+                                                device_name: info.device.clone(),
+                                                app_name: info.app.clone(),
+                                                os: info.os.clone(),
+                                                handle: handle.clone(),
+                                            };
+                                            a.add_connected_app(app_info);
+                                            a.show_status(format!("Connected: {}", info.device));
+                                            // Sync mock rules
+                                            let json = a.mock_rules.to_json_string();
+                                            handle.send_mock_sync(json);
+                                        }
+                                        ConnectorEvent::Disconnected => {
+                                            a.remove_connected_app(&device.id);
+                                            a.show_status(format!("Disconnected: {}", device.name));
+                                            logs_handle.abort();
+                                            break;
+                                        }
+                                        ConnectorEvent::Message(msg) => {
+                                            // Only process messages for the active app
+                                            if a.active_app_id.as_deref() == Some(&device.id) {
+                                                dispatch_client_message(&mut a, msg);
+                                            }
+                                            // For non-active apps, messages are dropped
+                                            // (their session will be populated when they become active)
+                                        }
+                                    }
                                 }
                             }
-                            Err(_) => continue,
-                        }
-                    }
-                };
 
-                if let Ok((mut event_rx, handle)) = connect(&ws_url).await {
-                    did_connect = true;
-                    {
-                        let mut a = app_for_connector.lock().await;
-                        a.connector_handle = Some(handle.clone());
-                    }
-
-                    // Start flutter logs
-                    let app_for_logs = Arc::clone(&app_for_connector);
-                    let log_dev_id = device.id.clone();
-                    let logs_handle = tokio::spawn(async move {
-                        let dev_arg = if log_dev_id == "localhost" { None } else { Some(log_dev_id.as_str()) };
-                        if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(dev_arg).await {
-                            while let Some(line) = logs.next_line().await {
-                                let mut a = app_for_logs.lock().await;
-                                a.add_raw_line(&line);
-                            }
+                            // Retry after delay
+                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                         }
                     });
 
-                    // Process events until disconnect
-                    while let Some(evt) = event_rx.recv().await {
-                        let mut a = app_for_connector.lock().await;
-                        match evt {
-                            ConnectorEvent::Connected(info) => {
-                                a.source_name = format!("{} ({})", info.device, info.app);
-                                a.connected = true;
-                                a.clients.push(info.clone());
-                                a.show_status(format!("Connected: {}", info.device));
-                                let json = a.mock_rules.to_json_string();
-                                handle.send_mock_sync(json);
-                            }
-                            ConnectorEvent::Disconnected => {
-                                a.clients.clear();
-                                a.connected = false;
-                                a.connector_handle = None;
-                                a.source_name = "Scanning...".to_string();
-                                a.show_status("Disconnected".to_string());
-                                a.clear_session_data();
-                                logs_handle.abort();
-                                break;
-                            }
-                            ConnectorEvent::Message(msg) => {
-                                dispatch_client_message(&mut a, msg);
-                            }
-                        }
+                    active_tasks_c.lock().await.insert(device_id, task);
+                }
+                transport::DeviceEvent::Removed(id) => {
+                    // Sync to App
+                    {
+                        let mut a = app_for_discovery.lock().await;
+                        a.discovered_devices.retain(|d| d.id != id);
                     }
-
-                    // Disconnected — trigger reconnection to try other devices
-                    let _ = try_connect_tx.send(());
-                    break; // Exit device loop, wait for trigger
+                    // Cancel connection task
+                    if let Some(task) = active_tasks_c.lock().await.remove(&id) {
+                        task.abort();
+                    }
                 }
             }
+        }
+    });
 
-            // If no device connected, schedule a retry (App may not be running yet)
-            if !did_connect && !devices.is_empty() {
-                let tx = try_connect_tx.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    let _ = tx.send(());
-                });
-            }
+    // Task 2: Handle UI "switch to app" requests
+    let app_for_switch = Arc::clone(&app);
+    tokio::spawn(async move {
+        while let Some(app_id) = switch_app_rx.recv().await {
+            let mut a = app_for_switch.lock().await;
+            a.switch_to_app(&app_id);
+            let name = a.source_name.clone();
+            a.show_status(format!("Switched to {}", name));
         }
     });
 
