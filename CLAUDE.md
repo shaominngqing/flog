@@ -42,12 +42,9 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   4. `network.rs` — Parses `[INFO][flog_net]` tagged lines as `FlogNetMessage` JSON
   - Unrecognized lines get SYSTEM level (never dropped)
 
-- **`input/`** — Async input source abstraction
-  - `discover.rs` — Auto-discovers Flutter VM Service via `ps aux` scanning
-  - `vm_service.rs` — WebSocket connection to Dart VM Service (Logging + Stdout streams)
-  - `adb.rs` — ADB logcat integration
-  - `stdin_source.rs` — Pipe mode (`flutter run | flog --stdin`)
-  - All sources emit `SourceEvent` (RawLine, RawLineWithTimestamp, ParsedEntry)
+- **`input/`** — Direct Socket communication layer
+  - `protocol.rs` — `ClientMessage` (Hello/Log/Net), `ServerMessage` (MockSync/Replay), `ClientInfo`, serde-tagged JSON protocol
+  - `server.rs` — `FlogServer` (tokio-tungstenite WS server on configurable port), `ServerHandle` (downstream message sender), `ServerEvent` (ClientConnected/Disconnected/Message), per-client async session management
 
 - **`ui/`** — ratatui-based TUI with Catppuccin Macchiato theme, dual-tab architecture
   - `mod.rs` — Top-level dispatcher, shared palette constants, utility functions
@@ -64,7 +61,7 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `network/stats.rs` — Network statistics overlay (latency percentiles, top-5 slowest, status distribution, per-domain breakdown)
   - `network/mock_rules.rs` — Mock rules side panel + edit overlay (create/edit/toggle/delete rules, JSON body editor)
   - `text_editor.rs` — Multi-line text editor component (cursor, editing, viewport scroll) — used by mock rule body editor
-  - `source_select.rs` — Source picker UI
+  - `source_select.rs` — Connection status display
   - `help.rs` — Comprehensive help overlay
 
 ### Key Top-Level Modules
@@ -76,25 +73,24 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
   - `NetworkState`: selected, scroll_offset, auto_scroll, filter, collapsed_sections, json_viewer_states, sse_merge_rules, sse_merged_mode, sse_merged_field_idx, ws_chat_mode
   - `DetailState`: scroll, header_lines, viewer_state (JsonViewerState)
 - `event.rs` — Keyboard/mouse event dispatch (tab bar clicks, detail panel scroll, filter pill clicks)
-- `cli.rs` — CLI argument parsing (clap)
+- `cli.rs` — CLI argument parsing (clap): `--port`, `--level`, `--tag`
 - `session.rs` — Session persistence (active_tab, filters, bookmarks)
-- `main.rs` — Tokio async entry point, terminal setup, event loop, select mode (mouse capture toggle)
+- `main.rs` — Tokio async entry point, starts WS server, spawns server event processor, runs TUI render loop
 
 ### Data Flow
 
-1. Source task receives log line
-2. Parser chain recognizes format → `LogEntry`
-3. `app.add_entry()` checks if tag == `flog_net`:
-   - Yes → parse JSON, route to `NetworkStore` (marks `source: App`)
-   - No → add to `LogStore`
-4. Mock system: rules created in TUI → synced to Dart via VM Service extension (`ext.flog.syncMockRules`) → `FlogMockInterceptor` intercepts matching requests before network → logged with `source: Mocked`
-5. Replay: user triggers replay from Network detail → re-sends request via Dart VM Service → new entry with `source: Replay`
-6. SSE Merged View: user clicks [Merged] pill on SSE entry → `auto_detect_field` scans all chunks for known LLM patterns (OpenAI `choices[0].delta.content`, Claude `delta.text`, etc.) → creates `SseMergeRule` keyed by exact URL path → `merge_field` concatenates chosen field across all chunks → rule persists for same-path entries within session
-7. Renderer reads filtered indices, renders to terminal
+1. flog TUI starts WS server on port 9753
+2. flog_dart client connects, sends `Hello` message (device/app/os info)
+3. Client sends `Log` messages → `dispatch_client_message()` constructs `LogEntry`, calls `app.add_entry()` → `LogStore`
+4. Client sends `Net` messages → `dispatch_client_message()` calls `network_store.process_message()` → `NetworkStore`
+5. Mock system: rules created in TUI → `ServerHandle.broadcast_mock_sync()` sends to all clients → `FlogMockInterceptor` updates rules
+6. Replay: user triggers from Network detail → `ServerHandle.send_replay()` sends to client → client re-executes request
+7. SSE Merged View: user clicks [Merged] pill on SSE entry → `auto_detect_field` scans all chunks for known LLM patterns (OpenAI `choices[0].delta.content`, Claude `delta.text`, etc.) → creates `SseMergeRule` keyed by exact URL path → `merge_field` concatenates chosen field across all chunks → rule persists for same-path entries within session
+8. Renderer reads filtered indices, renders to terminal
 
 ### Concurrency Model
 
-Tokio multi-threaded runtime. Source tasks run in background, sending `SourceEvent`s through channels. Main thread polls terminal events and source events in a unified loop. App state is behind `Arc<Mutex<App>>`.
+Tokio multi-threaded runtime. WS server accept loop and per-client tasks run in background, sending `ServerEvent`s through channel to main. Server event processor task routes messages to App state. Main thread polls terminal events. App state is behind `Arc<Mutex<App>>`.
 
 ### Scroll Model
 

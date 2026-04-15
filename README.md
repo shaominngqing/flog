@@ -37,20 +37,22 @@ Flutter 开发中看日志有两个烦的点：
 
 ## flog 做了什么
 
-flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它开在一个终端窗口里，它自动连接你运行中的 Flutter 应用，实时显示结构化的日志和网络请求。
+flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它开在一个终端窗口里，Flutter 应用通过 flog_dart 自动连接进来，实时显示结构化的日志和网络请求。
 
 **两个标签页：**
 
 - **▤ Logs** — 实时日志流，级别颜色区分，Tag 对齐，系统噪音过滤掉，JSON 可折叠展开
 - **⇄ Network** — Flipper 风格的网络检查器，支持 HTTP/SSE/WebSocket，请求详情、Headers、Body 全部可查看
 
-**不用重新打开** — flog 常驻运行，`flutter run` 重启后自动重连，不需要手动操作。
+**不用重新打开** — flog 常驻运行，Flutter App 重启后 flog_dart 自动重连，不需要手动操作。先开 flog 或先开 App 都行。
 
-## 数据源
+## 通信架构
 
-- **VM Service** — 通过 WebSocket 连接 Flutter VM，自动发现运行中的实例，通过 DDS 代理连接不影响 `flutter run`
-- **ADB** — 通过 `adb logcat` 读取 Android 设备/模拟器日志，自动过滤 Flutter 相关 tag
-- **stdin** — 管道模式，支持 `flutter run 2>&1 | flog --stdin`
+flog 采用 **Direct Socket** 架构：flog TUI 启动一个 WebSocket Server（默认端口 9753），Flutter App 中的 flog_dart 自动连接。所有数据（日志、网络事件、Mock 规则、Replay 指令）通过这一个连接传输。
+
+- 不依赖 VM Service — 日志不再通过 print/developer.log 传输
+- 不污染终端输出 — Flutter 控制台里不会有 flog_net 日志
+- 支持多设备同时连接
 
 ## Logs 功能
 
@@ -80,9 +82,9 @@ flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它
 - URL 搜索
 - Copy as cURL（一键复制为 curl 命令）
 - Copy Response（复制响应体；SSE Merged 模式下复制拼接后的完整文本）
-- **Replay** — 重放请求（从详情面板触发，通过 VM Service 重新发送）
+- **Replay** — 重放请求（从详情面板触发，通过 Direct Socket 下发给 App 重新发送）
 - **Performance Stats** — 统计面板（延迟百分位、Top 5 慢请求、状态码分布、按域名统计）
-- **Mock** — 在 TUI 中创建 Mock 规则（URL 匹配、Method 过滤、自定义 Status/Body/Delay），通过 VM Service 同步到 Dart 应用，拦截匹配请求返回预设响应（仅 HTTP）
+- **Mock** — 在 TUI 中创建 Mock 规则（URL 匹配、Method 过滤、自定义 Status/Body/Delay），通过 Direct Socket 同步到 Dart 应用，拦截匹配请求返回预设响应（仅 HTTP）
 - **SSE Merged View** — 将 SSE 流式响应中的多个 chunk 按指定 JSON 字段拼接为完整文本。自动识别 OpenAI / Claude 等 LLM streaming 格式，也支持手动切换字段。设置后同一 URL 的后续请求自动继承
 - 自动滚动 + LIVE 指示器
 - 1 万条请求缓冲
@@ -90,18 +92,11 @@ flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它
 ## 用法
 
 ```bash
-# 自动发现模式（推荐）— 先开 flog，再 flutter run
+# 启动 flog（默认端口 9753）
 flog
 
-# ADB 模式
-flog --adb
-flog --adb -s emulator-5554
-
-# 指定 VM Service 地址
-flog --uri ws://127.0.0.1:8181/TOKEN=/ws
-
-# 管道模式
-flutter run 2>&1 | flog --stdin
+# 指定端口
+flog --port 9754
 
 # 启动时指定过滤
 flog --level w
