@@ -6,7 +6,7 @@ use std::time::Instant;
 use regex::Regex;
 
 use crate::domain::{FilterState, LogEntry, LogLevel, LogStore, ParseResult};
-use crate::input::{ClientInfo, ServerHandle};
+use crate::input::{ClientInfo, ConnectorHandle};
 use crate::parser::MultiStrategyParser;
 
 /// Infer tag and level from unrecognized raw text content.
@@ -328,8 +328,8 @@ pub struct App {
     pub detail: DetailState,
     pub bookmarks: BTreeSet<usize>,
 
-    // Source management (Direct Socket server)
-    pub server_handle: Option<ServerHandle>,
+    // Source management (Direct Socket connector)
+    pub connector_handle: Option<ConnectorHandle>,
     pub server_port: u16,
     pub clients: Vec<ClientInfo>,
     pub source_name: String,
@@ -380,7 +380,7 @@ impl App {
             tag_filter: TagFilterInput::default(),
             detail: DetailState::default(),
             bookmarks: BTreeSet::new(),
-            server_handle: None,
+            connector_handle: None,
             server_port: 9753,
             clients: Vec::new(),
             source_name: String::new(),

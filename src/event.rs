@@ -730,7 +730,7 @@ fn replay_selected(app: &mut App) {
     if let Some(&idx) = indices.get(app.network.selected) {
         if let Some(entry) = app.network_store.get(idx).cloned() {
             if entry.protocol == crate::domain::network::Protocol::Http {
-                if let Some(ref handle) = app.server_handle {
+                if let Some(ref handle) = app.connector_handle {
                     handle.send_replay(
                         entry.method.clone(),
                         entry.url.clone(),
@@ -905,9 +905,9 @@ fn copy_response(app: &mut App) {
 
 /// Trigger mock rule sync to connected clients.
 fn trigger_mock_sync(app: &App) {
-    if let Some(ref handle) = app.server_handle {
+    if let Some(ref handle) = app.connector_handle {
         let json = app.mock_rules.to_json_string();
-        handle.broadcast_mock_sync(json);
+        handle.send_mock_sync(json);
     }
 }
 

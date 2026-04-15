@@ -1,7 +1,7 @@
-//! Input layer — Direct Socket server for flog_dart communication.
+//! Input layer — Direct Socket connector for flog_dart communication.
 
 pub mod protocol;
-pub mod server;
+pub mod connector;
 
 pub use protocol::{ClientId, ClientInfo, ClientMessage, ServerMessage};
-pub use server::{FlogServer, ServerEvent, ServerHandle};
+pub use connector::{ConnectorEvent, ConnectorHandle, connect};

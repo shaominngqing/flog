@@ -25,7 +25,7 @@ use tokio::sync::Mutex;
 
 use app::App;
 use cli::Cli;
-use input::{ClientMessage, FlogServer, ServerEvent};
+use input::{ClientMessage, ConnectorEvent, connect};
 
 /// Dispatch a client message to the app.
 fn dispatch_client_message(app: &mut App, msg: ClientMessage) {
@@ -82,60 +82,56 @@ async fn main() -> io::Result<()> {
             a.filter.parse_tag_filter(tag);
         }
         a.invalidate_filter();
-        a.source_name = format!("Listening on port {}", cli.port);
+        a.source_name = format!("Scanning... (port {})", cli.port);
     }
 
-    // Start the WebSocket server
-    let mut server = match FlogServer::start(cli.port).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to start server on port {}: {}", cli.port, e);
-            return Err(io::Error::new(io::ErrorKind::AddrInUse, e.to_string()));
-        }
-    };
-
-    // Store the server handle for downstream communication
-    {
-        let mut a = app.lock().await;
-        a.server_handle = Some(server.handle());
-    }
-
-    // Spawn task to process server events
-    let app_for_server = Arc::clone(&app);
+    // Spawn connector task — connects to device and retries on disconnect
+    let app_for_connector = Arc::clone(&app);
+    let port = cli.port;
     tokio::spawn(async move {
-        while let Some(event) = server.next_event().await {
-            let mut a = app_for_server.lock().await;
-            match event {
-                ServerEvent::ClientConnected(info) => {
-                    a.source_name = format!("{} ({})", info.device, info.app);
-                    a.connected = true;
-                    a.clients.push(info.clone());
-                    a.show_status(format!("Connected: {} - {}", info.device, info.app));
-                    // Sync mock rules to newly connected client
-                    if let Some(ref handle) = a.server_handle {
-                        let json = a.mock_rules.to_json_string();
-                        handle.broadcast_mock_sync(json);
+        loop {
+            let url = format!("ws://localhost:{}", port);
+            match connect(&url).await {
+                Ok((mut event_rx, handle)) => {
+                    // Store handle
+                    {
+                        let mut a = app_for_connector.lock().await;
+                        a.connector_handle = Some(handle.clone());
                     }
-                }
-                ServerEvent::ClientDisconnected(id) => {
-                    a.clients.retain(|c| c.id != id);
-                    if a.clients.is_empty() {
-                        a.connected = false;
-                        a.source_name = format!("Listening on port {}", a.server_port);
-                        a.show_status("Client disconnected".to_string());
-                        // Clear session data when all clients disconnect
-                        a.clear_session_data();
-                    } else {
-                        // Update source name to show remaining client
-                        if let Some(c) = a.clients.first() {
-                            a.source_name = format!("{} ({})", c.device, c.app);
+
+                    // Process events until disconnect
+                    while let Some(event) = event_rx.recv().await {
+                        let mut a = app_for_connector.lock().await;
+                        match event {
+                            ConnectorEvent::Connected(info) => {
+                                a.source_name = format!("{} ({})", info.device, info.app);
+                                a.connected = true;
+                                a.clients.push(info.clone());
+                                a.show_status(format!("Connected: {} - {}", info.device, info.app));
+                                // Sync mock rules to newly connected device
+                                let json = a.mock_rules.to_json_string();
+                                handle.send_mock_sync(json);
+                            }
+                            ConnectorEvent::Disconnected => {
+                                a.clients.clear();
+                                a.connected = false;
+                                a.connector_handle = None;
+                                a.source_name = format!("Scanning... (port {})", a.server_port);
+                                a.show_status("Disconnected".to_string());
+                                a.clear_session_data();
+                                break;
+                            }
+                            ConnectorEvent::Message(msg) => {
+                                dispatch_client_message(&mut a, msg);
+                            }
                         }
                     }
                 }
-                ServerEvent::Message(_, msg) => {
-                    dispatch_client_message(&mut a, msg);
+                Err(_) => {
+                    // Connection failed, will retry
                 }
             }
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         }
     });
 
