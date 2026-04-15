@@ -97,6 +97,9 @@ impl NetworkStore {
         if let Some(size) = msg.size {
             entry.request_size = Some(size);
         }
+        if let Some(ts) = msg.ts {
+            entry.timestamp = format_ts(ts);
+        }
 
         self.entries.push(entry);
     }
@@ -177,6 +180,15 @@ impl NetworkStore {
             entry.duration = msg.duration;
         }
     }
+}
+
+fn format_ts(millis: u64) -> String {
+    let secs = millis / 1000;
+    let ms = millis % 1000;
+    let h = (secs / 3600) % 24;
+    let m = (secs / 60) % 60;
+    let s = secs % 60;
+    format!("{:02}:{:02}:{:02}.{:03}", h, m, s, ms)
 }
 
 #[cfg(test)]

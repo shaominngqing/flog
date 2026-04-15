@@ -210,6 +210,8 @@ pub struct FlogNetMessage {
     pub reason: Option<String>,
     pub error: Option<String>,
     pub mocked: Option<bool>,
+    /// Timestamp in milliseconds since epoch (from Dart client).
+    pub ts: Option<u64>,
 }
 
 #[cfg(test)]
