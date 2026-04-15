@@ -35,6 +35,37 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
 // ══════════════════════════════════════
 
 fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
+    // Handle device picker overlay clicks
+    if app.show_device_picker {
+        if let crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) = mouse.kind {
+            let x = mouse.column;
+            let y = mouse.row;
+
+            // Check click on device picker items
+            for &(item_y, item_x_start, item_x_end, idx) in &app.layout.device_picker_items {
+                if y == item_y && x >= item_x_start && x < item_x_end {
+                    if idx < app.discovered_devices.len() {
+                        let device_id = app.discovered_devices[idx].id.clone();
+                        if let Some(ref tx) = app.connect_device_tx {
+                            let _ = tx.send(device_id);
+                        }
+                        app.show_device_picker = false;
+                    }
+                    return;
+                }
+            }
+
+            // Click outside picker → close
+            if let Some((px, py, pw, ph)) = app.layout.device_picker_rect {
+                if x < px || x >= px + pw || y < py || y >= py + ph {
+                    app.show_device_picker = false;
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
     // Check if click is in the detail side panel (Logs view only)
     if app.active_tab == ViewTab::Logs && app.show_detail_panel {
         let panel_start =
@@ -599,6 +630,12 @@ fn handle_bottom_click(app: &mut App, x: u16) {
         return;
     }
 
+    // Click source info area → toggle device picker
+    if x >= app.layout.source_info_x.0 && x < app.layout.source_info_x.1 {
+        app.show_device_picker = !app.show_device_picker;
+        return;
+    }
+
     // Check right-side buttons
     for &(name, start, end) in &app.layout.bottom_buttons {
         if x >= start && x < end {
@@ -1038,6 +1075,34 @@ fn handle_overlay_mouse(app: &mut App, mouse: MouseEvent) {
 
 fn handle_normal_key(app: &mut App, key: KeyEvent) {
     app.status_message = None;
+
+    // Device picker open — handle keys
+    if app.show_device_picker {
+        match key.code {
+            KeyCode::Esc => {
+                app.show_device_picker = false;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.device_picker_selected = app.device_picker_selected.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let max = app.discovered_devices.len().saturating_sub(1);
+                app.device_picker_selected = (app.device_picker_selected + 1).min(max);
+            }
+            KeyCode::Enter => {
+                let idx = app.device_picker_selected;
+                if idx < app.discovered_devices.len() {
+                    let device_id = app.discovered_devices[idx].id.clone();
+                    if let Some(ref tx) = app.connect_device_tx {
+                        let _ = tx.send(device_id);
+                    }
+                    app.show_device_picker = false;
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
 
     // Exit select mode on any key press
     if app.select_mode {

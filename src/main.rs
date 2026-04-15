@@ -95,8 +95,16 @@ async fn main() -> io::Result<()> {
     // Channel for the connector to request "try connecting to available devices"
     let (try_connect_tx, mut try_connect_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
-    // Task 1: Listen for device events, maintain discovered list, trigger connection attempts
+    // Channel for UI to request connecting to a specific device
+    let (connect_device_tx, mut connect_device_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    {
+        let mut a = app.lock().await;
+        a.connect_device_tx = Some(connect_device_tx.clone());
+    }
+
+    // Task 1: Listen for device events, maintain discovered list, sync to App, trigger connections
     let discovered_c = Arc::clone(&discovered);
+    let app_for_discovery = Arc::clone(&app);
     let try_connect_tx_c = try_connect_tx.clone();
     tokio::spawn(async move {
         while let Some(event) = device_rx.recv().await {
@@ -112,6 +120,19 @@ async fn main() -> io::Result<()> {
                     devs.retain(|d| d.id != id);
                 }
             }
+            // Sync discovered devices to App for UI
+            let mut a = app_for_discovery.lock().await;
+            a.discovered_devices = devs.clone();
+        }
+    });
+
+    // Task 1b: Handle UI "connect to device" requests
+    let try_connect_tx_ui = try_connect_tx.clone();
+    tokio::spawn(async move {
+        while let Some(_device_id) = connect_device_rx.recv().await {
+            // For now, just trigger a reconnection attempt
+            // Future: connect to specific device by ID
+            let _ = try_connect_tx_ui.send(());
         }
     });
 
@@ -331,20 +352,25 @@ async fn run_loop(
                 mouse_captured = true;
             }
 
-            terminal.draw(|f| match app_guard.mode {
-                app::AppMode::Help => ui::help::draw_help(f),
-                app::AppMode::Stats => match app_guard.active_stats_tab {
-                    app::ViewTab::Logs => ui::logs::stats::draw_stats(f, &mut app_guard),
-                    app::ViewTab::Network => {
-                        ui::network::stats::draw_network_stats(f, &mut app_guard)
+            terminal.draw(|f| {
+                match app_guard.mode {
+                    app::AppMode::Help => ui::help::draw_help(f),
+                    app::AppMode::Stats => match app_guard.active_stats_tab {
+                        app::ViewTab::Logs => ui::logs::stats::draw_stats(f, &mut app_guard),
+                        app::ViewTab::Network => {
+                            ui::network::stats::draw_network_stats(f, &mut app_guard)
+                        }
+                    },
+                    app::AppMode::MockRuleEdit => {
+                        ui::draw(f, &mut app_guard);
+                        ui::network::mock_rules::draw_mock_rule_edit(f, &mut app_guard);
                     }
-                },
-                app::AppMode::MockRuleEdit => {
-                    // Draw normal Network view underneath, then editor overlay on top
-                    ui::draw(f, &mut app_guard);
-                    ui::network::mock_rules::draw_mock_rule_edit(f, &mut app_guard);
+                    _ => ui::draw(f, &mut app_guard),
                 }
-                _ => ui::draw(f, &mut app_guard),
+                // Device picker overlay
+                if app_guard.show_device_picker {
+                    ui::source_select::draw_device_picker(f, &mut app_guard, f.area());
+                }
             })?;
             if app_guard.should_quit {
                 return Ok(());

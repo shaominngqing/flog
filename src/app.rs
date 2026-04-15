@@ -298,6 +298,10 @@ pub struct LayoutCache {
     pub mock_edit_body_rect: Option<(u16, u16, u16, u16)>,
     /// Clickable slowest rows in stats: (store_idx, y, x_start, x_end).
     pub stats_slowest_regions: Vec<(usize, u16, u16, u16)>,
+    /// Device picker item click regions: (y, x_start, x_end, device_index).
+    pub device_picker_items: Vec<(u16, u16, u16, usize)>,
+    /// Device picker overlay rect: (x, y, w, h).
+    pub device_picker_rect: Option<(u16, u16, u16, u16)>,
 }
 
 // ── App ──
@@ -335,6 +339,14 @@ pub struct App {
     pub source_name: String,
     pub status_message: Option<(String, u64)>, // (message, expire_tick)
     pub connected: bool,
+    /// Discovered devices from device_monitor (updated by main.rs)
+    pub discovered_devices: Vec<crate::transport::device_monitor::Device>,
+    /// Show device picker dropdown
+    pub show_device_picker: bool,
+    /// Selected index in device picker
+    pub device_picker_selected: usize,
+    /// Channel to request connection to a specific device
+    pub connect_device_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 
     // Mock rules
     pub mock_rules: crate::domain::mock::MockRuleStore,
@@ -386,6 +398,10 @@ impl App {
             source_name: String::new(),
             status_message: None,
             connected: false,
+            discovered_devices: Vec::new(),
+            show_device_picker: false,
+            device_picker_selected: 0,
+            connect_device_tx: None,
             mock_rules: crate::domain::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
             mock_edit_rule_id: None,
