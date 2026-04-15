@@ -86,136 +86,110 @@ async fn main() -> io::Result<()> {
         a.source_name = format!("Scanning... (port {})", cli.port);
     }
 
-    // Spawn device-aware connector task
+    // Start event-driven device discovery
+    let mut device_rx = transport::start_discovery(cli.port);
+
+    // Spawn connector task — reacts to device events
     let app_for_connector = Arc::clone(&app);
     let port = cli.port;
     tokio::spawn(async move {
-        let mut monitor = transport::DeviceMonitor::new();
+        // Track active connection task so we can cancel on new device
+        let mut active_task: Option<tokio::task::JoinHandle<()>> = None;
 
-        loop {
-            // Try flutter devices discovery first
-            let (_new_devices, _removed) = monitor.scan().await;
-
-            let mut connected = false;
-
-            for device in monitor.devices() {
-                let ws_url = match device.connection_method() {
-                    transport::ConnectionMethod::Localhost => {
-                        format!("ws://localhost:{}", port)
-                    }
-                    transport::ConnectionMethod::AdbForward { ref serial } => {
-                        match transport::adb::setup_forward(serial, port).await {
-                            Some(local_port) => format!("ws://localhost:{}", local_port),
-                            None => continue,
+        while let Some(event) = device_rx.recv().await {
+            match event {
+                transport::DeviceEvent::Added(device) => {
+                    // Build WS URL based on device type
+                    let ws_url = match device.connection_method() {
+                        transport::ConnectionMethod::Localhost => {
+                            format!("ws://localhost:{}", port)
                         }
-                    }
-                    transport::ConnectionMethod::Usbmuxd { .. } => {
-                        // usbmuxd needs special handling — connect returns a UnixStream
-                        // For now, skip and handle in a separate branch below
-                        continue;
-                    }
-                };
+                        transport::ConnectionMethod::AdbForward { ref serial } => {
+                            match transport::adb::setup_forward(serial, port).await {
+                                Some(local_port) => format!("ws://localhost:{}", local_port),
+                                None => continue,
+                            }
+                        }
+                        transport::ConnectionMethod::Usbmuxd { .. } => {
+                            // TODO: connect via usbmuxd tunnel
+                            continue;
+                        }
+                    };
 
-                if let Ok((mut event_rx, handle)) = connect(&ws_url).await {
-                    connected = true;
+                    let device_name = device.name.clone();
                     let device_id = device.id.clone();
-                    {
-                        let mut a = app_for_connector.lock().await;
-                        a.connector_handle = Some(handle.clone());
-                        a.source_name = format!("{} ({})", device.name, device.id);
-                    }
+                    let app_c = Arc::clone(&app_for_connector);
 
-                    // Start flutter logs for this device
-                    let app_for_logs = Arc::clone(&app_for_connector);
-                    let logs_device_id = device_id.clone();
-                    let logs_handle = tokio::spawn(async move {
-                        if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(Some(&logs_device_id)).await {
-                            while let Some(line) = logs.next_line().await {
-                                let mut a = app_for_logs.lock().await;
-                                a.add_raw_line(&line);
+                    // Spawn a connection attempt task for this device
+                    let task = tokio::spawn(async move {
+                        // Retry connecting until success
+                        loop {
+                            if let Ok((mut event_rx, handle)) = connect(&ws_url).await {
+                                {
+                                    let mut a = app_c.lock().await;
+                                    a.connector_handle = Some(handle.clone());
+                                }
+
+                                // Start flutter logs
+                                let app_for_logs = Arc::clone(&app_c);
+                                let log_dev_id = device_id.clone();
+                                let logs_handle = tokio::spawn(async move {
+                                    let dev_arg = if log_dev_id == "localhost" { None } else { Some(log_dev_id.as_str()) };
+                                    if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(dev_arg).await {
+                                        while let Some(line) = logs.next_line().await {
+                                            let mut a = app_for_logs.lock().await;
+                                            a.add_raw_line(&line);
+                                        }
+                                    }
+                                });
+
+                                // Process events
+                                while let Some(evt) = event_rx.recv().await {
+                                    let mut a = app_c.lock().await;
+                                    match evt {
+                                        ConnectorEvent::Connected(info) => {
+                                            a.source_name = format!("{} ({})", info.device, info.app);
+                                            a.connected = true;
+                                            a.clients.push(info.clone());
+                                            a.show_status(format!("Connected: {}", info.device));
+                                            let json = a.mock_rules.to_json_string();
+                                            handle.send_mock_sync(json);
+                                        }
+                                        ConnectorEvent::Disconnected => {
+                                            a.clients.clear();
+                                            a.connected = false;
+                                            a.connector_handle = None;
+                                            a.source_name = "Scanning...".to_string();
+                                            a.show_status("Disconnected".to_string());
+                                            a.clear_session_data();
+                                            logs_handle.abort();
+                                            break;
+                                        }
+                                        ConnectorEvent::Message(msg) => {
+                                            dispatch_client_message(&mut a, msg);
+                                        }
+                                    }
+                                }
+                                return; // Disconnected — task ends
                             }
+                            // Connection failed — App may not be running yet, retry
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }
                     });
 
-                    while let Some(event) = event_rx.recv().await {
-                        let mut a = app_for_connector.lock().await;
-                        match event {
-                            ConnectorEvent::Connected(info) => {
-                                a.source_name = format!("{} ({})", info.device, info.app);
-                                a.connected = true;
-                                a.clients.push(info.clone());
-                                a.show_status(format!("Connected: {}", info.device));
-                                let json = a.mock_rules.to_json_string();
-                                handle.send_mock_sync(json);
-                            }
-                            ConnectorEvent::Disconnected => {
-                                a.clients.clear();
-                                a.connected = false;
-                                a.connector_handle = None;
-                                a.source_name = format!("Scanning... (port {})", a.server_port);
-                                a.show_status("Disconnected".to_string());
-                                a.clear_session_data();
-                                logs_handle.abort();
-                                break;
-                            }
-                            ConnectorEvent::Message(msg) => {
-                                dispatch_client_message(&mut a, msg);
-                            }
-                        }
+                    // Cancel previous connection task if any
+                    if let Some(old) = active_task.take() {
+                        old.abort();
                     }
-                    break; // Connected and then disconnected — restart scan
+                    active_task = Some(task);
                 }
-            }
-
-            // If no devices found via flutter, try localhost directly
-            if !connected {
-                let url = format!("ws://localhost:{}", port);
-                if let Ok((mut event_rx, handle)) = connect(&url).await {
-                    {
-                        let mut a = app_for_connector.lock().await;
-                        a.connector_handle = Some(handle.clone());
-                    }
-
-                    // Start flutter logs (default device)
-                    let app_for_logs = Arc::clone(&app_for_connector);
-                    let logs_handle = tokio::spawn(async move {
-                        if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(None).await {
-                            while let Some(line) = logs.next_line().await {
-                                let mut a = app_for_logs.lock().await;
-                                a.add_raw_line(&line);
-                            }
-                        }
-                    });
-
-                    while let Some(event) = event_rx.recv().await {
-                        let mut a = app_for_connector.lock().await;
-                        match event {
-                            ConnectorEvent::Connected(info) => {
-                                a.source_name = format!("{} ({})", info.device, info.app);
-                                a.connected = true;
-                                a.clients.push(info.clone());
-                                a.show_status(format!("Connected: {}", info.device));
-                                let json = a.mock_rules.to_json_string();
-                                handle.send_mock_sync(json);
-                            }
-                            ConnectorEvent::Disconnected => {
-                                a.clients.clear();
-                                a.connected = false;
-                                a.connector_handle = None;
-                                a.source_name = format!("Scanning... (port {})", a.server_port);
-                                a.clear_session_data();
-                                logs_handle.abort();
-                                break;
-                            }
-                            ConnectorEvent::Message(msg) => {
-                                dispatch_client_message(&mut a, msg);
-                            }
-                        }
+                transport::DeviceEvent::Removed(id) => {
+                    let mut a = app_for_connector.lock().await;
+                    if a.clients.iter().any(|c| c.device == id || c.id.to_string() == id) {
+                        // Will be handled by ConnectorEvent::Disconnected
                     }
                 }
             }
-
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         }
     });
 

@@ -5,4 +5,4 @@ pub mod adb;
 pub mod flutter_logs;
 pub mod usbmuxd;
 
-pub use device_monitor::{DeviceMonitor, FlutterDevice, ConnectionMethod};
+pub use device_monitor::{Device, DeviceKind, DeviceEvent, ConnectionMethod, start_discovery};
