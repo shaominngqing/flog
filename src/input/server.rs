@@ -24,6 +24,7 @@ struct ClientSender {
 }
 
 /// Events produced by the server for the main event loop.
+#[derive(Debug)]
 pub enum ServerEvent {
     /// A new client connected and sent Hello.
     ClientConnected(ClientInfo),
