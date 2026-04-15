@@ -140,6 +140,7 @@ async fn main() -> io::Result<()> {
                 devs.clone()
             };
 
+            let mut did_connect = false;
             for device in &devices {
                 let ws_url = match device.connection_method() {
                     transport::ConnectionMethod::Localhost => {
@@ -157,6 +158,7 @@ async fn main() -> io::Result<()> {
                 };
 
                 if let Ok((mut event_rx, handle)) = connect(&ws_url).await {
+                    did_connect = true;
                     {
                         let mut a = app_for_connector.lock().await;
                         a.connector_handle = Some(handle.clone());
@@ -207,6 +209,15 @@ async fn main() -> io::Result<()> {
                     let _ = try_connect_tx.send(());
                     break; // Exit device loop, wait for trigger
                 }
+            }
+
+            // If no device connected, schedule a retry (App may not be running yet)
+            if !did_connect && !devices.is_empty() {
+                let tx = try_connect_tx.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    let _ = tx.send(());
+                });
             }
         }
     });
