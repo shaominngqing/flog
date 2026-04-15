@@ -24,7 +24,7 @@ impl LogLevel {
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
-        match s.trim() {
+        match s.trim().to_uppercase().as_str() {
             "VERBOSE" | "V" => Some(Self::Verbose),
             "DEBUG" | "D" => Some(Self::Debug),
             "INFO" | "I" => Some(Self::Info),
@@ -33,25 +33,12 @@ impl LogLevel {
             _ => None,
         }
     }
-
-    /// Convert a VM Service level integer (0-2000) to LogLevel.
-    pub fn from_vm_service_level(level: i64) -> Self {
-        match level {
-            0..=499 => Self::Verbose,
-            500..=799 => Self::Debug,
-            800..=899 => Self::Info,
-            900..=999 => Self::Warning,
-            _ => Self::Error,
-        }
-    }
 }
 
 /// Where the log entry came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputSource {
-    Adb,
-    VmService,
-    Stdin,
+    DirectSocket,
 }
 
 /// A single parsed log entry.
@@ -78,7 +65,7 @@ impl LogEntry {
             message: message.into(),
             extra_lines: Vec::new(),
             repeat_count: 1,
-            source: InputSource::Adb,
+            source: InputSource::DirectSocket,
             error: None,
             stacktrace: None,
         }

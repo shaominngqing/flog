@@ -60,7 +60,7 @@ pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     x += 1;
 
     // Mock status indicator (right side of line 1)
-    let mock_text = if app.is_vm_service_connected() {
+    let mock_text = if app.has_connected_client() {
         let rule_count = app.mock_rules.enabled_count();
         if rule_count > 0 {
             format!("{} mock rules active ", rule_count)

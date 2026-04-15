@@ -2,27 +2,15 @@
 
 use clap::Parser;
 
-/// flog — Flutter Log Viewer. See your logs, finally.
+/// flog — Flutter Log Viewer & Network Inspector.
 ///
-/// Default: auto-scan for a running Flutter VM Service.
+/// Starts a WebSocket server and waits for flog_dart clients to connect.
 #[derive(Parser, Debug)]
 #[command(name = "flog", version, about)]
 pub struct Cli {
-    /// Connect to VM Service WebSocket URL directly
-    #[arg(long)]
-    pub uri: Option<String>,
-
-    /// Use ADB logcat (Android)
-    #[arg(long)]
-    pub adb: bool,
-
-    /// Specify Android device serial (implies --adb)
-    #[arg(short = 's', long = "device")]
-    pub device: Option<String>,
-
-    /// Read from stdin pipe
-    #[arg(long)]
-    pub stdin: bool,
+    /// Server port for flog_dart connections
+    #[arg(long, default_value = "9753")]
+    pub port: u16,
 
     /// Initial minimum log level (v/d/i/w/e)
     #[arg(long, value_parser = parse_level)]
@@ -42,26 +30,4 @@ fn parse_level(s: &str) -> Result<crate::domain::LogLevel, String> {
         "e" | "error" => Ok(crate::domain::LogLevel::Error),
         _ => Err(format!("unknown level '{}', use v/d/i/w/e", s)),
     }
-}
-
-impl Cli {
-    pub fn input_mode(&self) -> InputMode {
-        if self.stdin {
-            InputMode::Stdin
-        } else if let Some(ref uri) = self.uri {
-            InputMode::VmService(uri.clone())
-        } else if self.adb || self.device.is_some() {
-            InputMode::Adb(self.device.clone())
-        } else {
-            InputMode::Auto
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum InputMode {
-    Auto,
-    Adb(Option<String>),
-    VmService(String),
-    Stdin,
 }

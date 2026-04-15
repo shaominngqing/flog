@@ -55,7 +55,7 @@ impl LogLineParser for KeywordParser {
             message: trimmed.to_string(),
             extra_lines: Vec::new(),
             repeat_count: 1,
-            source: InputSource::Stdin,
+            source: InputSource::DirectSocket,
             error: None,
             stacktrace: None,
         })

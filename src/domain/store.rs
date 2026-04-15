@@ -46,6 +46,7 @@ impl LogStore {
     }
 
     /// Append a continuation line to the most recent entry.
+    #[allow(dead_code)]
     pub fn append_continuation(&mut self, content: String) {
         if let Some(last) = self.entries.last_mut() {
             last.extra_lines.push(content);

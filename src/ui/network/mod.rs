@@ -628,7 +628,7 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
             .add_modifier(Modifier::BOLD),
     ));
 
-    if selected_is_http && app.is_vm_service_connected() {
+    if selected_is_http && app.has_connected_client() {
         buttons.push((
             "mock",
             " Mock ",

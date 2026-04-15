@@ -189,15 +189,6 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
 
     timeline::draw_timeline(f, app, rows[2]);
     draw_status_bar(f, app, rows[3]);
-
-    // Source dropdown overlay (rendered last, on top of everything)
-    if app.show_source_dropdown {
-        super::source_select::draw_source_dropdown(f, app, rows[3].y);
-    } else {
-        app.layout.dropdown_rect = None;
-        app.layout.dropdown_items.clear();
-        app.layout.dropdown_tab_row = None;
-    }
 }
 
 // ══════════════════════════════════════

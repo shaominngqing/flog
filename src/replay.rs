@@ -1,4 +1,10 @@
 //! HTTP request replay — resends a captured NetworkEntry via reqwest.
+//!
+//! Note: With the Direct Socket architecture, replay is handled by the flog_dart
+//! client via ServerMessage::Replay. This module is preserved for potential
+//! server-side replay functionality in the future.
+
+#![allow(dead_code)]
 
 use std::sync::Arc;
 use std::time::Instant;

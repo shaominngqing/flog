@@ -54,6 +54,7 @@ impl NetworkStore {
     }
 
     /// Add a pre-built entry directly (used by Replay and Mock).
+    #[allow(dead_code)]
     pub fn push_entry(&mut self, entry: NetworkEntry) {
         self.ensure_capacity();
         self.entries.push(entry);

@@ -6,11 +6,11 @@ use std::time::Instant;
 use regex::Regex;
 
 use crate::domain::{FilterState, LogEntry, LogLevel, LogStore, ParseResult};
-use crate::input::adb::AdbDevice;
-use crate::input::discover::DiscoveredService;
+use crate::input::{ClientInfo, ServerHandle};
 use crate::parser::MultiStrategyParser;
 
 /// Infer tag and level from unrecognized raw text content.
+#[allow(dead_code)]
 fn infer_system_tag(text: &str) -> (LogLevel, &'static str) {
     static EXCEPTION_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(r"(?i)══.*exception|exception caught|thrown").unwrap()
@@ -54,7 +54,6 @@ pub enum AppMode {
     TagFilter,
     Help,
     Stats,
-    SourceSelect,
     MockRuleEdit,
 }
 
@@ -80,55 +79,12 @@ pub struct TagFilterInput {
     pub input: String,
 }
 
-/// Source selection state.
-#[derive(Clone)]
-pub enum SourceSelectPhase {
-    ChooseType,
-    ScanningVm,
-    PickVmService(Vec<DiscoveredService>),
-    ScanningAdb,
-    PickAdbDevice(Vec<AdbDevice>),
-}
-
-#[derive(Default)]
-pub struct SourceSelectState {
-    pub phase: Option<SourceSelectPhase>,
-    pub selected_idx: usize,
-    pub items_count: usize,
-}
-
-/// Command sent from UI to the source manager task.
-pub enum SourceCommand {
-    ConnectVm(String),
-    ConnectAdb(Option<String>),
-    AutoDiscover,
-    ShowSourceSelect,
-}
-
-/// Tracks the type of source so we know which scanning phase to return to.
-#[derive(Clone)]
-pub enum LastSourceType {
-    Vm,
-    Adb,
-}
-
 /// Snapshot of statistics data (computed once on Stats entry).
 pub struct StatsSnapshot {
     pub level_counts: Vec<(LogLevel, u64)>,
     pub tag_ranking: Vec<(String, usize)>,
     pub total: usize,
     pub filtered: usize,
-}
-
-/// Source dropdown state (WiFi-like picker while connected).
-#[derive(Default)]
-pub struct SourceDropdownState {
-    pub tab: usize, // 0=VM, 1=ADB
-    pub selected: usize,
-    pub scroll_offset: usize,
-    pub discovered_vm: Vec<DiscoveredService>,
-    pub discovered_adb: Vec<AdbDevice>,
-    pub scanning: bool,
 }
 
 /// Detail view state.
@@ -308,14 +264,6 @@ pub struct LayoutCache {
     /// Number of unique filtered entries that were actually visible in the last render.
     /// Accounts for variable-height entries (wrap, separators, extra_lines).
     pub visible_entry_count: usize,
-    /// Clickable item regions in the source select UI: (y, x_start, x_end, item_index).
-    pub source_select_items: Vec<(u16, u16, u16, usize)>,
-    /// The bounding rect of the source dropdown overlay (for click-outside-to-close).
-    pub dropdown_rect: Option<(u16, u16, u16, u16)>, // (x, y, w, h)
-    /// Clickable item regions in the dropdown: (y, x_start, x_end, item_index).
-    pub dropdown_items: Vec<(u16, u16, u16, usize)>,
-    /// Y position of the tab row in the dropdown (for click-to-switch-tab).
-    pub dropdown_tab_row: Option<(u16, u16, u16, u16)>, // (y, vm_x_end, adb_x_start, adb_x_end)
     /// Clickable region of the Logs tab label: (x_start, x_end).
     pub tab_logs_x: (u16, u16),
     /// Clickable region of the Network tab label: (x_start, x_end).
@@ -358,6 +306,7 @@ pub struct App {
     // Core
     pub store: LogStore,
     pub filter: FilterState,
+    #[allow(dead_code)]
     parser: MultiStrategyParser,
     pub active_tab: ViewTab,
     pub network_store: crate::domain::NetworkStore,
@@ -371,9 +320,6 @@ pub struct App {
     pub selected: usize,
     pub scroll_offset: usize,
     pub show_detail_panel: bool,
-    pub show_source_dropdown: bool,
-    pub dropdown_scan_requested: bool,
-    pub dropdown: SourceDropdownState,
     pub detail_panel_pct: u16, // detail panel width percentage (20-60)
 
     // Sub-states
@@ -381,17 +327,14 @@ pub struct App {
     pub tag_filter: TagFilterInput,
     pub detail: DetailState,
     pub bookmarks: BTreeSet<usize>,
-    pub source_select: SourceSelectState,
 
-    // Source management
+    // Source management (Direct Socket server)
+    pub server_handle: Option<ServerHandle>,
+    pub server_port: u16,
+    pub clients: Vec<ClientInfo>,
     pub source_name: String,
     pub status_message: Option<(String, u64)>, // (message, expire_tick)
     pub connected: bool,
-    pub source_command_tx: Option<tokio::sync::mpsc::UnboundedSender<SourceCommand>>,
-    pub replay_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::domain::network::NetworkEntry>>,
-    /// Tracks how the current/last connection was established, so we can
-    /// return to the correct scanning phase on disconnect.
-    pub last_source_type: Option<LastSourceType>,
 
     // Mock rules
     pub mock_rules: crate::domain::mock::MockRuleStore,
@@ -400,8 +343,6 @@ pub struct App {
     pub mock_edit_field: usize,
     pub mock_edit_top_values: Vec<String>,
     pub mock_edit_body: crate::ui::text_editor::TextEditor,
-    /// Channel to sync mock rules to Dart via VM Service extension.
-    pub mock_sync_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 
     // UI
     pub layout: LayoutCache,
@@ -434,28 +375,23 @@ impl App {
             selected: 0,
             scroll_offset: 0,
             show_detail_panel: false,
-            show_source_dropdown: false,
-            dropdown_scan_requested: false,
-            dropdown: SourceDropdownState::default(),
             detail_panel_pct: 35,
             search: SearchState::default(),
             tag_filter: TagFilterInput::default(),
             detail: DetailState::default(),
             bookmarks: BTreeSet::new(),
-            source_select: SourceSelectState::default(),
+            server_handle: None,
+            server_port: 9753,
+            clients: Vec::new(),
             source_name: String::new(),
             status_message: None,
             connected: false,
-            source_command_tx: None,
-            replay_tx: None,
-            last_source_type: None,
             mock_rules: crate::domain::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
             mock_edit_rule_id: None,
             mock_edit_field: 0,
             mock_edit_top_values: Vec::new(),
             mock_edit_body: crate::ui::text_editor::TextEditor::new(""),
-            mock_sync_tx: None,
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
@@ -467,12 +403,19 @@ impl App {
         }
     }
 
+    /// Check if there is at least one connected client.
+    pub fn has_connected_client(&self) -> bool {
+        !self.clients.is_empty()
+    }
+
     // ── Data Input ──
 
+    #[allow(dead_code)]
     pub fn add_raw_line(&mut self, raw: &str) {
         self.add_raw_line_with_timestamp(raw, "");
     }
 
+    #[allow(dead_code)]
     pub fn add_raw_line_with_timestamp(&mut self, raw: &str, timestamp: &str) {
         match self.parser.parse(raw) {
             ParseResult::NewEntry(mut entry) => {
@@ -859,8 +802,8 @@ impl App {
     }
 
     pub fn enter_mock_rules(&mut self) {
-        if !self.is_vm_service_connected() {
-            self.show_status("Mock unavailable — VM Service not connected".to_string());
+        if !self.has_connected_client() {
+            self.show_status("Mock unavailable — no client connected".to_string());
             return;
         }
         // Toggle mock rules panel in the right side (like detail panel)
@@ -914,13 +857,7 @@ impl App {
         self.mode = AppMode::Normal;
     }
 
-    pub fn exit_source_select(&mut self) {
-        self.mode = AppMode::Normal;
-        self.source_select.phase = None;
-        self.show_source_dropdown = false;
-    }
-
-    /// Clear all session data when switching devices/sources.
+    /// Clear all session data when a client disconnects.
     /// Ensures data from one device doesn't leak into another.
     pub fn clear_session_data(&mut self) {
         self.store = LogStore::new();
@@ -938,53 +875,6 @@ impl App {
         self.selected = 0;
         self.auto_scroll = true;
         self.new_logs_since_pause = 0;
-    }
-
-    /// Enter SourceSelect scanning phase after a disconnect.
-    /// Returns to the correct scanning animation (radar for VM, phone for ADB)
-    /// based on the last connection type.
-    pub fn enter_scanning_on_disconnect(&mut self) {
-        self.connected = false;
-        self.mock_sync_tx = None;
-        self.show_source_dropdown = false;
-        self.mode = AppMode::SourceSelect;
-        self.source_select.selected_idx = 0;
-        match &self.last_source_type {
-            Some(LastSourceType::Vm) => {
-                self.source_select.phase = Some(SourceSelectPhase::ScanningVm);
-            }
-            Some(LastSourceType::Adb) => {
-                self.source_select.phase = Some(SourceSelectPhase::ScanningAdb);
-            }
-            None => {
-                // Fallback to choose type
-                self.source_select.phase = Some(SourceSelectPhase::ChooseType);
-                self.source_select.items_count = 2;
-            }
-        }
-    }
-
-    /// Toggle the source dropdown overlay (used while connected).
-    pub fn toggle_source_dropdown(&mut self) {
-        self.show_source_dropdown = !self.show_source_dropdown;
-        if self.show_source_dropdown {
-            self.dropdown.selected = 0;
-            self.dropdown.scroll_offset = 0;
-            self.dropdown.scanning = true;
-            self.dropdown.discovered_vm.clear();
-            self.dropdown.discovered_adb.clear();
-        }
-    }
-
-    pub fn send_source_command(&self, cmd: SourceCommand) {
-        if let Some(tx) = &self.source_command_tx {
-            let _ = tx.send(cmd);
-        }
-    }
-
-    /// Whether the app is currently connected via VM Service (WebSocket).
-    pub fn is_vm_service_connected(&self) -> bool {
-        self.connected && matches!(self.last_source_type, Some(LastSourceType::Vm))
     }
 
     // ── Clear & Separator ──
@@ -1011,7 +901,7 @@ impl App {
             message: format!("──────────────────────── {} ────────────────────────", now),
             extra_lines: Vec::new(),
             repeat_count: 1,
-            source: crate::domain::InputSource::Stdin,
+            source: crate::domain::InputSource::DirectSocket,
             error: None,
             stacktrace: None,
         };

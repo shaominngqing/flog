@@ -54,7 +54,7 @@ impl LogLineParser for GenericParser {
                 message: clean.to_string(),
                 extra_lines: Vec::new(),
                 repeat_count: 1,
-                source: InputSource::Adb,
+                source: InputSource::DirectSocket,
                 error: None,
                 stacktrace: None,
             });
@@ -78,7 +78,7 @@ impl LogLineParser for GenericParser {
                     message: clean.to_string(),
                     extra_lines: Vec::new(),
                     repeat_count: 1,
-                    source: InputSource::Adb,
+                    source: InputSource::DirectSocket,
                     error: None,
                     stacktrace: None,
                 });
@@ -106,7 +106,7 @@ impl LogLineParser for GenericParser {
                         message,
                         extra_lines: Vec::new(),
                         repeat_count: 1,
-                        source: InputSource::Adb,
+                        source: InputSource::DirectSocket,
                         error: None,
                         stacktrace: None,
                     });
@@ -121,7 +121,7 @@ impl LogLineParser for GenericParser {
                 message: content,
                 extra_lines: Vec::new(),
                 repeat_count: 1,
-                source: InputSource::Adb,
+                source: InputSource::DirectSocket,
                 error: None,
                 stacktrace: None,
             });
@@ -151,7 +151,7 @@ impl LogLineParser for GenericParser {
                     message: content,
                     extra_lines: Vec::new(),
                     repeat_count: 1,
-                    source: InputSource::Adb,
+                    source: InputSource::DirectSocket,
                     error: None,
                     stacktrace: None,
                 });

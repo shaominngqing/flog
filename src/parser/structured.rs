@@ -61,7 +61,7 @@ impl LogLineParser for StructuredParser {
                 message,
                 extra_lines: Vec::new(),
                 repeat_count: 1,
-                source: InputSource::Adb,
+                source: InputSource::DirectSocket,
                 error: None,
                 stacktrace: None,
             });
@@ -80,7 +80,7 @@ impl LogLineParser for StructuredParser {
                 message,
                 extra_lines: Vec::new(),
                 repeat_count: 1,
-                source: InputSource::Adb,
+                source: InputSource::DirectSocket,
                 error: None,
                 stacktrace: None,
             });

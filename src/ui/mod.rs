@@ -16,7 +16,7 @@ pub mod source_select;
 mod tab_bar;
 pub mod text_editor;
 
-use crate::app::{App, AppMode, ViewTab};
+use crate::app::{App, ViewTab};
 
 // ══════════════════════════════════════
 //  Shared Catppuccin Macchiato Palette
@@ -152,16 +152,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let full = f.area();
     f.render_widget(Block::default().style(Style::default().bg(BASE)), full);
 
-    // In SourceSelect mode, use full screen for the selection UI
-    if app.mode == AppMode::SourceSelect {
-        app.layout.list_y = full.y;
-        app.layout.list_height = full.height;
-        app.layout.bottom_y = full.y + full.height;
-        app.layout.width = full.width;
-        app.layout.bottom_buttons.clear();
-        source_select::draw_source_select(f, app, full);
-        return;
-    }
 
     // Layout: tab bar (2 rows) + view content
     let rows = Layout::default()

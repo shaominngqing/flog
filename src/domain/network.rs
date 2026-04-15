@@ -37,6 +37,7 @@ pub enum WsDirection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntrySource {
     App,
+    #[allow(dead_code)]
     Replay,
     Mocked,
 }

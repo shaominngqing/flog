@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
-use crate::app::{App, AppMode, SourceSelectPhase, ViewTab};
+use crate::app::{App, AppMode, ViewTab};
 use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 use crate::domain::LogLevel;
 
@@ -17,7 +17,6 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         AppMode::Search => handle_search_key(app, key),
         AppMode::TagFilter => handle_filter_key(app, key),
         AppMode::Help | AppMode::Stats => handle_overlay_key(app, key),
-        AppMode::SourceSelect => handle_source_select_key(app, key),
         AppMode::MockRuleEdit => handle_mock_edit_key(app, key),
     }
 }
@@ -27,7 +26,6 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
         AppMode::Normal => handle_normal_mouse(app, mouse),
         AppMode::Search | AppMode::TagFilter => handle_input_mouse(app, mouse),
         AppMode::Help | AppMode::Stats => handle_overlay_mouse(app, mouse),
-        AppMode::SourceSelect => handle_source_select_mouse(app, mouse),
         AppMode::MockRuleEdit => handle_mock_edit_mouse(app, mouse),
     }
 }
@@ -37,12 +35,6 @@ pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
 // ══════════════════════════════════════
 
 fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
-    // When source dropdown is open, intercept all mouse events
-    if app.show_source_dropdown {
-        handle_dropdown_mouse(app, &mouse);
-        return;
-    }
-
     // Check if click is in the detail side panel (Logs view only)
     if app.active_tab == ViewTab::Logs && app.show_detail_panel {
         let panel_start =
@@ -534,126 +526,6 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
     }
 }
 
-/// How many selectable (non-current) items in the active dropdown tab.
-fn dropdown_selectable_count(app: &App) -> usize {
-    if app.dropdown.tab == 0 {
-        app.dropdown
-            .discovered_vm
-            .iter()
-            .filter(|s| !(app.connected && app.source_name.contains(&extract_vm_port(&s.ws_url))))
-            .count()
-    } else {
-        app.dropdown
-            .discovered_adb
-            .iter()
-            .filter(|d| !(app.connected && app.source_name.contains(&d.model)))
-            .count()
-    }
-}
-
-/// Confirm the currently selected dropdown item — connect to it.
-fn dropdown_confirm(app: &mut App) {
-    let sel = app.dropdown.selected;
-    if app.dropdown.tab == 0 {
-        let selectable: Vec<&crate::input::discover::DiscoveredService> = app
-            .dropdown
-            .discovered_vm
-            .iter()
-            .filter(|s| !(app.connected && app.source_name.contains(&extract_vm_port(&s.ws_url))))
-            .collect();
-        if let Some(svc) = selectable.get(sel) {
-            let url = svc.ws_url.clone();
-            app.show_source_dropdown = false;
-            app.send_source_command(crate::app::SourceCommand::ConnectVm(url));
-        }
-    } else {
-        let selectable: Vec<&crate::input::adb::AdbDevice> = app
-            .dropdown
-            .discovered_adb
-            .iter()
-            .filter(|d| !(app.connected && app.source_name.contains(&d.model)))
-            .collect();
-        if let Some(dev) = selectable.get(sel) {
-            let serial = dev.serial.clone();
-            app.show_source_dropdown = false;
-            app.send_source_command(crate::app::SourceCommand::ConnectAdb(Some(serial)));
-        }
-    }
-}
-
-fn extract_vm_port(ws_url: &str) -> String {
-    ws_url
-        .split(':')
-        .nth(2)
-        .and_then(|s| s.split('/').next())
-        .unwrap_or("?")
-        .to_string()
-}
-
-/// Handle mouse events when the source dropdown overlay is open.
-fn handle_dropdown_mouse(app: &mut App, mouse: &MouseEvent) {
-    let x = mouse.column;
-    let y = mouse.row;
-
-    match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left) => {
-            let inside = if let Some((px, py, pw, ph)) = app.layout.dropdown_rect {
-                x >= px && x < px + pw && y >= py && y < py + ph
-            } else {
-                false
-            };
-
-            if !inside {
-                app.show_source_dropdown = false;
-                return;
-            }
-
-            // Click on tab row
-            if let Some((tab_y, vm_end, adb_start, adb_end)) = app.layout.dropdown_tab_row {
-                if y == tab_y {
-                    if x < vm_end {
-                        app.dropdown.tab = 0;
-                        app.dropdown.selected = 0;
-                        app.dropdown.scroll_offset = 0;
-                    } else if x >= adb_start && x < adb_end {
-                        app.dropdown.tab = 1;
-                        app.dropdown.selected = 0;
-                        app.dropdown.scroll_offset = 0;
-                    }
-                    return;
-                }
-            }
-
-            // Click on a device item — select and connect
-            for &(item_y, x_start, x_end, selectable_idx) in &app.layout.dropdown_items {
-                if y == item_y && x >= x_start && x < x_end {
-                    app.dropdown.selected = selectable_idx;
-                    dropdown_confirm(app);
-                    return;
-                }
-            }
-
-            // Click inside panel but not on an item — absorb
-        }
-
-        MouseEventKind::Down(MouseButton::Right) => {
-            app.show_source_dropdown = false;
-        }
-
-        MouseEventKind::ScrollUp => {
-            app.dropdown.selected = app.dropdown.selected.saturating_sub(1);
-        }
-        MouseEventKind::ScrollDown => {
-            let max = dropdown_selectable_count(app);
-            if app.dropdown.selected + 1 < max {
-                app.dropdown.selected += 1;
-            }
-        }
-
-        _ => {}
-    }
-}
-
 fn handle_toolbar_click(app: &mut App, x: u16) {
     if x >= app.layout.search_x.0 && x < app.layout.search_x.1 {
         app.enter_search();
@@ -721,23 +593,13 @@ fn handle_list_right_click(app: &mut App, y: u16) {
 }
 
 fn handle_bottom_click(app: &mut App, x: u16) {
-    // Click source info area → toggle source dropdown
-    if x >= app.layout.source_info_x.0 && x < app.layout.source_info_x.1 {
-        app.toggle_source_dropdown();
-        // Start background scanning for dropdown (doesn't affect current source)
-        if app.show_source_dropdown {
-            app.dropdown_scan_requested = true;
-        }
-        return;
-    }
-
     // Click Live/Paused indicator → jump to bottom
     if x < app.layout.source_info_x.0 {
         app.go_bottom();
         return;
     }
 
-    // 检查右侧按钮
+    // Check right-side buttons
     for &(name, start, end) in &app.layout.bottom_buttons {
         if x >= start && x < end {
             match name {
@@ -859,12 +721,22 @@ fn copy_to_clipboard(text: &str) -> String {
 
 /// Replay the currently selected HTTP request.
 fn replay_selected(app: &mut App) {
+    if !app.has_connected_client() {
+        app.show_status("Replay unavailable — no client connected".to_string());
+        return;
+    }
+
     let indices = app.network.filtered_indices(&app.network_store).to_vec();
     if let Some(&idx) = indices.get(app.network.selected) {
         if let Some(entry) = app.network_store.get(idx).cloned() {
             if entry.protocol == crate::domain::network::Protocol::Http {
-                if let Some(tx) = &app.replay_tx {
-                    let _ = tx.send(entry);
+                if let Some(ref handle) = app.server_handle {
+                    handle.send_replay(
+                        entry.method.clone(),
+                        entry.url.clone(),
+                        entry.request_headers.clone(),
+                        entry.request_body.clone(),
+                    );
                     app.show_status("Replaying request...".to_string());
                 }
             } else {
@@ -1031,18 +903,18 @@ fn copy_response(app: &mut App) {
     app.show_status(format!("Response {}", msg));
 }
 
-/// Trigger mock rule sync to Dart via VM Service extension.
+/// Trigger mock rule sync to connected clients.
 fn trigger_mock_sync(app: &App) {
-    if let Some(tx) = &app.mock_sync_tx {
+    if let Some(ref handle) = app.server_handle {
         let json = app.mock_rules.to_json_string();
-        let _ = tx.send(json);
+        handle.broadcast_mock_sync(json);
     }
 }
 
 /// Create a mock rule from the currently selected network request and open editor.
 fn mock_from_selected(app: &mut App) {
-    if !app.is_vm_service_connected() {
-        app.show_status("Mock unavailable — VM Service not connected".to_string());
+    if !app.has_connected_client() {
+        app.show_status("Mock unavailable — no client connected".to_string());
         return;
     }
 
@@ -1171,34 +1043,6 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
     if app.select_mode {
         app.select_mode = false;
         app.show_status("Select mode off".to_string());
-        return;
-    }
-
-    // Handle source dropdown if open
-    if app.show_source_dropdown {
-        match key.code {
-            KeyCode::Esc => {
-                app.show_source_dropdown = false;
-            }
-            KeyCode::Tab | KeyCode::BackTab => {
-                app.dropdown.tab = 1 - app.dropdown.tab;
-                app.dropdown.selected = 0;
-                app.dropdown.scroll_offset = 0;
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                app.dropdown.selected = app.dropdown.selected.saturating_sub(1);
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                let max = dropdown_selectable_count(app);
-                if app.dropdown.selected + 1 < max {
-                    app.dropdown.selected += 1;
-                }
-            }
-            KeyCode::Enter => {
-                dropdown_confirm(app);
-            }
-            _ => {}
-        }
         return;
     }
 
@@ -1526,148 +1370,3 @@ fn handle_mock_edit_mouse(app: &mut App, mouse: MouseEvent) {
     }
 }
 
-// ══════════════════════════════════════
-//  Source Select mode
-// ══════════════════════════════════════
-
-fn handle_source_select_key(app: &mut App, key: KeyEvent) {
-    use crate::app::{SourceCommand, SourceSelectPhase};
-    match key.code {
-        KeyCode::Char('q') => app.should_quit = true,
-        KeyCode::Esc => {
-            match &app.source_select.phase {
-                Some(SourceSelectPhase::ChooseType) => {
-                    // Exit selection, start auto-discover as fallback
-                    app.exit_source_select();
-                    app.send_source_command(SourceCommand::AutoDiscover);
-                }
-                Some(SourceSelectPhase::ScanningVm)
-                | Some(SourceSelectPhase::ScanningAdb)
-                | Some(SourceSelectPhase::PickVmService(_))
-                | Some(SourceSelectPhase::PickAdbDevice(_)) => {
-                    // Back to choose type
-                    app.source_select.phase = Some(SourceSelectPhase::ChooseType);
-                    app.source_select.selected_idx = 0;
-                    app.source_select.items_count = 2;
-                }
-                None => {}
-            }
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.source_select.selected_idx = app.source_select.selected_idx.saturating_sub(1);
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.source_select.selected_idx + 1 < app.source_select.items_count {
-                app.source_select.selected_idx += 1;
-            }
-        }
-        KeyCode::Enter => {
-            confirm_source_select(app);
-        }
-        _ => {}
-    }
-}
-
-fn handle_source_select_mouse(app: &mut App, mouse: MouseEvent) {
-    match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left) => {
-            let y = mouse.row;
-            let x = mouse.column;
-
-            // Check against the source_select_items regions recorded by the renderer
-            for &(item_y, x_start, x_end, idx) in &app.layout.source_select_items {
-                if y == item_y && x >= x_start && x < x_end {
-                    app.source_select.selected_idx = idx;
-                    confirm_source_select(app);
-                    return;
-                }
-            }
-
-            // During scanning phases, clicking anywhere acts as "back" (Esc)
-            match &app.source_select.phase {
-                Some(SourceSelectPhase::ScanningVm) | Some(SourceSelectPhase::ScanningAdb) => {
-                    // Right-click or click in lower area = go back
-                    // Only trigger if click is in the lower hint area
-                    let area_h = app.layout.list_height;
-                    if y > app.layout.list_y + area_h.saturating_sub(3) {
-                        app.source_select.phase = Some(SourceSelectPhase::ChooseType);
-                        app.source_select.selected_idx = 0;
-                        app.source_select.items_count = 2;
-                    }
-                }
-                _ => {}
-            }
-        }
-        MouseEventKind::Down(MouseButton::Right) => {
-            // Right-click during scanning = go back
-            match &app.source_select.phase {
-                Some(SourceSelectPhase::ScanningVm) | Some(SourceSelectPhase::ScanningAdb) => {
-                    app.source_select.phase = Some(SourceSelectPhase::ChooseType);
-                    app.source_select.selected_idx = 0;
-                    app.source_select.items_count = 2;
-                }
-                _ => {}
-            }
-        }
-        _ => {}
-    }
-}
-
-fn confirm_source_select(app: &mut App) {
-    use crate::app::{SourceCommand, SourceSelectPhase};
-    let idx = app.source_select.selected_idx;
-
-    // First check the phase by reference, only consume (take) when needed
-    let action = match &app.source_select.phase {
-        Some(SourceSelectPhase::ChooseType) => match idx {
-            0 => Some("vm"),
-            1 => Some("adb"),
-            _ => None,
-        },
-        Some(SourceSelectPhase::PickVmService(services)) => {
-            if services.get(idx).is_some() {
-                Some("pick_vm")
-            } else {
-                None
-            }
-        }
-        Some(SourceSelectPhase::PickAdbDevice(devices)) => {
-            if devices.get(idx).is_some() {
-                Some("pick_adb")
-            } else {
-                None
-            }
-        }
-        _ => None,
-    };
-
-    match action {
-        Some("vm") => {
-            app.source_select.phase = Some(SourceSelectPhase::ScanningVm);
-        }
-        Some("adb") => {
-            app.source_select.phase = Some(SourceSelectPhase::ScanningAdb);
-        }
-        Some("pick_vm") => {
-            if let Some(SourceSelectPhase::PickVmService(services)) = app.source_select.phase.take()
-            {
-                if let Some(svc) = services.get(idx) {
-                    let url = svc.ws_url.clone();
-                    app.exit_source_select();
-                    app.send_source_command(SourceCommand::ConnectVm(url));
-                }
-            }
-        }
-        Some("pick_adb") => {
-            if let Some(SourceSelectPhase::PickAdbDevice(devices)) = app.source_select.phase.take()
-            {
-                if let Some(dev) = devices.get(idx) {
-                    let serial = dev.serial.clone();
-                    app.exit_source_select();
-                    app.send_source_command(SourceCommand::ConnectAdb(Some(serial)));
-                }
-            }
-        }
-        _ => {}
-    }
-}
