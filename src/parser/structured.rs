@@ -25,10 +25,36 @@ static FLUTTER_PREFIX_RE: LazyLock<Regex> =
 static BRACKET_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\[(\w+)\]\[([^\]]+)\]\s?(.*)$").unwrap());
 
+/// Bracket format with epoch timestamp: `[1776241660875][LEVEL][Tag] message`
+static BRACKET_TS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\[(\d{10,13})\]\[(\w+)\]\[([^\]]+)\]\s?(.*)$").unwrap());
+
 /// Pipe format: `HH:MM:SS.mmm │ LEVEL │ Tag │ message`
 static PIPE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(\d{2}:\d{2}:\d{2}\.\d{3})\s*│\s*(\w+)\s*│\s*(\S.*?)\s*│\s?(.*)$").unwrap()
 });
+
+/// Pipe format with epoch timestamp: `1776241660875|LEVEL|Tag|message` (with optional spaces)
+static PIPE_TS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(\d{10,13})\s*\|\s*(\w+)\s*\|\s*(\S.*?)\s*\|\s?(.*)$").unwrap()
+});
+
+/// Convert epoch milliseconds to HH:MM:SS.mmm format.
+fn epoch_ms_to_timestamp(ms_str: &str) -> String {
+    if let Ok(ms) = ms_str.parse::<u64>() {
+        let secs = ms / 1000;
+        let millis = ms % 1000;
+        format!(
+            "{:02}:{:02}:{:02}.{:03}",
+            (secs / 3600) % 24,
+            (secs / 60) % 60,
+            secs % 60,
+            millis
+        )
+    } else {
+        String::new()
+    }
+}
 
 /// Extracts the Flutter payload from a logcat line, stripping ANSI codes.
 fn extract_content(line: &str) -> String {
@@ -49,7 +75,45 @@ impl LogLineParser for StructuredParser {
     fn try_parse(&self, line: &str) -> Option<LogEntry> {
         let content = extract_content(line);
 
-        // Try bracket format first: [LEVEL][Tag] message
+        // Try bracket format with epoch timestamp: [1776241660875][LEVEL][Tag] message
+        if let Some(caps) = BRACKET_TS_RE.captures(&content) {
+            let timestamp = epoch_ms_to_timestamp(caps.get(1)?.as_str());
+            let level = LogLevel::from_str(caps.get(2)?.as_str()).unwrap_or(LogLevel::Debug);
+            let tag = caps.get(3)?.as_str().trim().to_string();
+            let message = caps.get(4)?.as_str().to_string();
+            return Some(LogEntry {
+                timestamp,
+                level,
+                tag,
+                message,
+                extra_lines: Vec::new(),
+                repeat_count: 1,
+                source: InputSource::DirectSocket,
+                error: None,
+                stacktrace: None,
+            });
+        }
+
+        // Try pipe format with epoch timestamp: 1776241660875|LEVEL|Tag|message
+        if let Some(caps) = PIPE_TS_RE.captures(&content) {
+            let timestamp = epoch_ms_to_timestamp(caps.get(1)?.as_str());
+            let level = LogLevel::from_str(caps.get(2)?.as_str()).unwrap_or(LogLevel::Debug);
+            let tag = caps.get(3)?.as_str().trim().to_string();
+            let message = caps.get(4)?.as_str().to_string();
+            return Some(LogEntry {
+                timestamp,
+                level,
+                tag,
+                message,
+                extra_lines: Vec::new(),
+                repeat_count: 1,
+                source: InputSource::DirectSocket,
+                error: None,
+                stacktrace: None,
+            });
+        }
+
+        // Try bracket format: [LEVEL][Tag] message
         if let Some(caps) = BRACKET_RE.captures(&content) {
             let level = LogLevel::from_str(caps.get(1)?.as_str()).unwrap_or(LogLevel::Debug);
             let tag = caps.get(2)?.as_str().trim().to_string();
@@ -151,6 +215,38 @@ mod tests {
         let p = StructuredParser;
         let line = "I/flutter (14114): \x1b[34m[INFO][Network] test\x1b[0m";
         let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.tag, "Network");
+    }
+
+    #[test]
+    fn parse_bracket_with_epoch_timestamp() {
+        let p = StructuredParser;
+        let line = "I/flutter (29942): [1776241660875][INFO][Network] → GET /api/users";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Info);
+        assert_eq!(entry.tag, "Network");
+        assert!(entry.message.contains("GET"));
+        assert!(!entry.timestamp.is_empty());
+        assert!(entry.timestamp.contains(":"));
+    }
+
+    #[test]
+    fn parse_pipe_with_epoch_timestamp() {
+        let p = StructuredParser;
+        let line = "1776241660875|INFO|Network|→ GET /api/users";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Info);
+        assert_eq!(entry.tag, "Network");
+        assert!(entry.message.contains("GET"));
+        assert!(!entry.timestamp.is_empty());
+    }
+
+    #[test]
+    fn parse_pipe_with_epoch_timestamp_spaces() {
+        let p = StructuredParser;
+        let line = "1776241660875 | INFO | Network | → GET /api/users";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Info);
         assert_eq!(entry.tag, "Network");
     }
 }

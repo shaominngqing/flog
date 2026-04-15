@@ -154,7 +154,10 @@ impl NetworkStore {
         self.ensure_capacity();
 
         let url = msg.url.unwrap_or_default();
-        let entry = NetworkEntry::new_ws(msg.id, url, String::new());
+        let mut entry = NetworkEntry::new_ws(msg.id, url, String::new());
+        if let Some(ts) = msg.ts {
+            entry.timestamp = format_ts(ts);
+        }
         self.entries.push(entry);
     }
 
