@@ -8,4 +8,5 @@ pub mod input;
 pub mod parser;
 pub mod replay;
 pub mod session;
+pub mod transport;
 pub mod ui;

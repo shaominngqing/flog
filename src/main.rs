@@ -8,6 +8,7 @@ pub mod input;
 pub mod parser;
 mod replay;
 mod session;
+mod transport;
 mod ui;
 
 use std::io;
@@ -85,21 +86,44 @@ async fn main() -> io::Result<()> {
         a.source_name = format!("Scanning... (port {})", cli.port);
     }
 
-    // Spawn connector task — connects to device and retries on disconnect
+    // Spawn device-aware connector task
     let app_for_connector = Arc::clone(&app);
     let port = cli.port;
     tokio::spawn(async move {
+        let mut monitor = transport::DeviceMonitor::new();
+
         loop {
-            let url = format!("ws://localhost:{}", port);
-            match connect(&url).await {
-                Ok((mut event_rx, handle)) => {
-                    // Store handle
+            // Try flutter devices discovery first
+            let (_new_devices, _removed) = monitor.scan().await;
+
+            let mut connected = false;
+
+            for device in monitor.devices() {
+                let ws_url = match device.connection_method() {
+                    transport::ConnectionMethod::Localhost => {
+                        format!("ws://localhost:{}", port)
+                    }
+                    transport::ConnectionMethod::AdbForward { ref serial } => {
+                        match transport::adb::setup_forward(serial, port).await {
+                            Some(local_port) => format!("ws://localhost:{}", local_port),
+                            None => continue,
+                        }
+                    }
+                    transport::ConnectionMethod::Usbmuxd { .. } => {
+                        // usbmuxd needs special handling — connect returns a UnixStream
+                        // For now, skip and handle in a separate branch below
+                        continue;
+                    }
+                };
+
+                if let Ok((mut event_rx, handle)) = connect(&ws_url).await {
+                    connected = true;
                     {
                         let mut a = app_for_connector.lock().await;
                         a.connector_handle = Some(handle.clone());
+                        a.source_name = format!("{} ({})", device.name, device.id);
                     }
 
-                    // Process events until disconnect
                     while let Some(event) = event_rx.recv().await {
                         let mut a = app_for_connector.lock().await;
                         match event {
@@ -107,8 +131,7 @@ async fn main() -> io::Result<()> {
                                 a.source_name = format!("{} ({})", info.device, info.app);
                                 a.connected = true;
                                 a.clients.push(info.clone());
-                                a.show_status(format!("Connected: {} - {}", info.device, info.app));
-                                // Sync mock rules to newly connected device
+                                a.show_status(format!("Connected: {}", info.device));
                                 let json = a.mock_rules.to_json_string();
                                 handle.send_mock_sync(json);
                             }
@@ -126,11 +149,45 @@ async fn main() -> io::Result<()> {
                             }
                         }
                     }
-                }
-                Err(_) => {
-                    // Connection failed, will retry
+                    break; // Connected and then disconnected — restart scan
                 }
             }
+
+            // If no devices found via flutter, try localhost directly
+            if !connected {
+                let url = format!("ws://localhost:{}", port);
+                if let Ok((mut event_rx, handle)) = connect(&url).await {
+                    {
+                        let mut a = app_for_connector.lock().await;
+                        a.connector_handle = Some(handle.clone());
+                    }
+                    while let Some(event) = event_rx.recv().await {
+                        let mut a = app_for_connector.lock().await;
+                        match event {
+                            ConnectorEvent::Connected(info) => {
+                                a.source_name = format!("{} ({})", info.device, info.app);
+                                a.connected = true;
+                                a.clients.push(info.clone());
+                                a.show_status(format!("Connected: {}", info.device));
+                                let json = a.mock_rules.to_json_string();
+                                handle.send_mock_sync(json);
+                            }
+                            ConnectorEvent::Disconnected => {
+                                a.clients.clear();
+                                a.connected = false;
+                                a.connector_handle = None;
+                                a.source_name = format!("Scanning... (port {})", a.server_port);
+                                a.clear_session_data();
+                                break;
+                            }
+                            ConnectorEvent::Message(msg) => {
+                                dispatch_client_message(&mut a, msg);
+                            }
+                        }
+                    }
+                }
+            }
+
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         }
     });

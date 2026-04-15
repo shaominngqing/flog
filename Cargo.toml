@@ -21,3 +21,4 @@ clap = { version = "4", features = ["derive"] }
 tokio-tungstenite = { version = "0.26", features = ["connect"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+plist = "1"
