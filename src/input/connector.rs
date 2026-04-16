@@ -90,10 +90,11 @@ where
     let client_info = match ws_read.next().await {
         Some(Ok(Message::Text(text))) => {
             match serde_json::from_str::<ClientMessage>(&text) {
-                Ok(ClientMessage::Hello { device, app, os }) => ClientInfo {
+                Ok(ClientMessage::Hello { device, app, app_version, os }) => ClientInfo {
                     id: 1,
                     device,
                     app,
+                    app_version: app_version.unwrap_or_default(),
                     os,
                     connected_at: std::time::Instant::now(),
                 },

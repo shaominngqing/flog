@@ -11,6 +11,7 @@ pub struct ClientInfo {
     pub id: ClientId,
     pub device: String,
     pub app: String,
+    pub app_version: String,
     pub os: String,
     pub connected_at: std::time::Instant,
 }
@@ -23,6 +24,9 @@ pub enum ClientMessage {
     Hello {
         device: String,
         app: String,
+        #[serde(default)]
+        #[serde(rename = "appVersion")]
+        app_version: Option<String>,
         os: String,
     },
     #[serde(rename = "log")]
@@ -66,12 +70,13 @@ mod tests {
 
     #[test]
     fn test_deserialize_hello() {
-        let json = r#"{"type":"hello","device":"iPhone 15","app":"com.test","os":"ios"}"#;
+        let json = r#"{"type":"hello","device":"iPhone 15","app":"com.test","appVersion":"1.0.0","os":"ios"}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::Hello { device, app, os } => {
+            ClientMessage::Hello { device, app, app_version, os } => {
                 assert_eq!(device, "iPhone 15");
                 assert_eq!(app, "com.test");
+                assert_eq!(app_version, Some("1.0.0".to_string()));
                 assert_eq!(os, "ios");
             }
             _ => panic!("expected Hello"),

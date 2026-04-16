@@ -345,10 +345,11 @@ impl AppSession {
 /// Info about a connected app.
 #[derive(Clone)]
 pub struct ConnectedApp {
-    pub id: String,          // unique key (e.g. "localhost", "1e0e87b2")
-    pub device_name: String, // from hello
-    pub app_name: String,    // from hello
-    pub os: String,          // from hello
+    pub id: String,           // unique key (e.g. "localhost", "1e0e87b2")
+    pub device_name: String,  // from hello
+    pub app_name: String,     // from hello
+    pub app_version: String,  // from hello
+    pub os: String,           // from hello
     pub handle: ConnectorHandle,
 }
 
@@ -583,7 +584,11 @@ impl App {
 
         // Update source name
         if let Some(app_info) = self.connected_apps.iter().find(|a| a.id == id) {
-            self.source_name = format!("{} ({})", app_info.app_name, app_info.device_name);
+            if app_info.app_version.is_empty() {
+                self.source_name = format!("{} ({})", app_info.app_name, app_info.device_name);
+            } else {
+                self.source_name = format!("{} v{} ({})", app_info.app_name, app_info.app_version, app_info.device_name);
+            }
         }
 
         self.filter_dirty = true;

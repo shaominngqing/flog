@@ -648,6 +648,15 @@ fn handle_bottom_click(app: &mut App, x: u16) {
     // Click source info area → toggle device picker
     if x >= app.layout.source_info_x.0 && x < app.layout.source_info_x.1 {
         app.show_device_picker = !app.show_device_picker;
+        if app.show_device_picker {
+            // Set picker selection to current active app
+            if let Some(ref active_id) = app.active_app_id {
+                // Find the index in the merged list (connected_apps first, then discovered)
+                if let Some(pos) = app.connected_apps.iter().position(|a| a.id == *active_id) {
+                    app.device_picker_selected = pos;
+                }
+            }
+        }
         return;
     }
 

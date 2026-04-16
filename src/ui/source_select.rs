@@ -126,6 +126,7 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
         id: String,
         display_name: String,
         app_name: Option<String>,
+        app_version: Option<String>,
         os: String,
         kind: DeviceKind,
         is_connected: bool,
@@ -142,6 +143,7 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
             id: ca.id.clone(),
             display_name: ca.device_name.clone(),
             app_name: Some(ca.app_name.clone()),
+            app_version: if ca.app_version.is_empty() { None } else { Some(ca.app_version.clone()) },
             os: ca.os.clone(),
             kind,
             is_connected: true,
@@ -156,6 +158,7 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
                 id: dev.id.clone(),
                 display_name: dev.name.clone(),
                 app_name: None,
+                app_version: None,
                 os: kind_label(&dev.kind).to_string(),
                 kind: dev.kind.clone(),
                 is_connected: false,
@@ -212,7 +215,12 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
 
         // Line 2: app info or device ID
         let info_text = if let Some(ref app_name) = item.app_name {
-            format!("   App: {}  \u{2502}  OS: {}", app_name, item.os)
+            let version_str = item.app_version.as_deref().unwrap_or("");
+            if version_str.is_empty() {
+                format!("   App: {}  \u{2502}  OS: {}", app_name, item.os)
+            } else {
+                format!("   App: {} v{}  \u{2502}  OS: {}", app_name, version_str, item.os)
+            }
         } else {
             format!("   ID: {}  \u{2502}  Waiting for app...", item.id)
         };

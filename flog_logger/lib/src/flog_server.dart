@@ -35,6 +35,8 @@ class FlogServer {
     _started = true;
     _port = port;
     _dio = dio;
+    _appName = appName;
+    _appVersion = appVersion;
     _startServer();
   }
 
@@ -70,11 +72,12 @@ class FlogServer {
     _ws = ws;
     _connected = true;
 
-    // Send hello
+    // Send hello with app info
     ws.add(jsonEncode({
       'type': 'hello',
       'device': _deviceName(),
-      'app': 'flutter',
+      'app': _appName,
+      'appVersion': _appVersion,
       'os': _osName(),
     }));
 
@@ -127,20 +130,23 @@ class FlogServer {
 
   String _deviceName() {
     try {
-      // On iOS simulator, localHostname returns Mac's name.
-      // Use operatingSystem + version for a more useful name.
       final os = Platform.operatingSystem;
-      final version = Platform.operatingSystemVersion;
-      if (os == 'ios') {
-        return 'iOS $version';
-      } else if (os == 'android') {
-        return 'Android $version';
+      if (os == 'android') {
+        // On Android, localHostname gives the device name (e.g., "23127PN0CC")
+        return Platform.localHostname;
+      } else if (os == 'ios') {
+        // On iOS simulator, localHostname is Mac's name. Use "iOS Simulator" instead.
+        return 'iOS Simulator';
       } else if (os == 'macos') {
         return 'macOS';
+      } else if (os == 'windows') {
+        return 'Windows';
+      } else if (os == 'linux') {
+        return 'Linux';
       }
       return Platform.localHostname;
     } catch (_) {
-      return 'flutter';
+      return 'unknown';
     }
   }
 

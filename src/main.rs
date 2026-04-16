@@ -183,6 +183,7 @@ async fn main() -> io::Result<()> {
                                                 id: device.id.clone(),
                                                 device_name: info.device.clone(),
                                                 app_name: info.app.clone(),
+                                                app_version: info.app_version.clone(),
                                                 os: info.os.clone(),
                                                 handle: handle.clone(),
                                             };
