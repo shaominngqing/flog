@@ -9,10 +9,12 @@ pub type ClientId = u64;
 #[derive(Debug, Clone)]
 pub struct ClientInfo {
     pub id: ClientId,
-    pub device: String,
     pub app: String,
     pub app_version: String,
     pub os: String,
+    pub package_name: String,
+    pub port: u16,
+    pub build_mode: String,
     pub connected_at: std::time::Instant,
 }
 
@@ -22,12 +24,21 @@ pub struct ClientInfo {
 pub enum ClientMessage {
     #[serde(rename = "hello")]
     Hello {
-        device: String,
+        #[serde(default)]
+        device: Option<String>,
         app: String,
         #[serde(default)]
         #[serde(rename = "appVersion")]
         app_version: Option<String>,
         os: String,
+        #[serde(default)]
+        #[serde(rename = "packageName")]
+        package_name: Option<String>,
+        #[serde(default)]
+        port: Option<u16>,
+        #[serde(default)]
+        #[serde(rename = "buildMode")]
+        build_mode: Option<String>,
     },
     #[serde(rename = "log")]
     Log {
@@ -69,15 +80,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_deserialize_hello() {
-        let json = r#"{"type":"hello","device":"iPhone 15","app":"com.test","appVersion":"1.0.0","os":"ios"}"#;
+    fn test_deserialize_hello_new_format() {
+        let json = r#"{"type":"hello","app":"com.test","appVersion":"1.0.0","os":"ios","packageName":"com.example.test","port":9753}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::Hello { device, app, app_version, os } => {
-                assert_eq!(device, "iPhone 15");
+            ClientMessage::Hello { device, app, app_version, os, package_name, port, .. } => {
+                assert_eq!(device, None);
                 assert_eq!(app, "com.test");
                 assert_eq!(app_version, Some("1.0.0".to_string()));
                 assert_eq!(os, "ios");
+                assert_eq!(package_name, Some("com.example.test".to_string()));
+                assert_eq!(port, Some(9753));
+            }
+            _ => panic!("expected Hello"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_hello_legacy_format() {
+        // Old Dart clients still send `device` and no `packageName`/`port`
+        let json = r#"{"type":"hello","device":"iPhone 15","app":"com.test","appVersion":"1.0.0","os":"ios"}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::Hello { device, app, package_name, port, .. } => {
+                assert_eq!(device, Some("iPhone 15".to_string()));
+                assert_eq!(app, "com.test");
+                assert_eq!(package_name, None);
+                assert_eq!(port, None);
             }
             _ => panic!("expected Hello"),
         }

@@ -55,11 +55,11 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                     return;
                 }
 
-                // Check click on device items
+                // Check click on app items (device headers are not clickable)
                 for &(item_y, item_x_start, item_x_end, idx) in &app.layout.device_picker_items {
                     if y == item_y && x >= item_x_start && x < item_x_end {
-                        if let Some(device_id) = app.layout.device_picker_item_ids.get(idx) {
-                            let id = device_id.clone();
+                        if let Some(app_id) = app.layout.device_picker_item_ids.get(idx) {
+                            let id = app_id.clone();
                             if let Some(ref tx) = app.connect_device_tx {
                                 let _ = tx.send(id);
                             }
@@ -421,8 +421,24 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                 let y = mouse.row;
                 let x = mouse.column;
 
-                // Click on status bar buttons
+                // Click on status bar
                 if y == app.layout.bottom_y {
+                    // Click source info → toggle device picker
+                    if x >= app.layout.source_info_x.0
+                        && x < app.layout.source_info_x.1
+                    {
+                        app.show_device_picker = !app.show_device_picker;
+                        if app.show_device_picker {
+                            if let Some(ref active_id) = app.active_app_id {
+                                if let Some(pos) = app.layout.device_picker_item_ids.iter().position(|id| id == active_id) {
+                                    app.device_picker_selected = pos;
+                                }
+                            }
+                        }
+                        return;
+                    }
+
+                    // Click on buttons
                     for (name, x_start, x_end) in &app.layout.net_buttons {
                         if x >= *x_start && x < *x_end {
                             match name.as_str() {
@@ -430,7 +446,6 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                 "curl" => copy_as_curl(app),
                                 "response" => copy_response(app),
                                 "mock" => app.enter_mock_rules(),
-                                // mockrules removed — rules show in side panel via Mock button
                                 "stats" => app.enter_network_stats(),
                                 "clear" => {
                                     app.network_store.clear();
@@ -651,8 +666,7 @@ fn handle_bottom_click(app: &mut App, x: u16) {
         if app.show_device_picker {
             // Set picker selection to current active app
             if let Some(ref active_id) = app.active_app_id {
-                // Find the index in the merged list (connected_apps first, then discovered)
-                if let Some(pos) = app.connected_apps.iter().position(|a| a.id == *active_id) {
+                if let Some(pos) = app.layout.device_picker_item_ids.iter().position(|id| id == active_id) {
                     app.device_picker_selected = pos;
                 }
             }
@@ -1110,13 +1124,13 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 app.device_picker_selected = app.device_picker_selected.saturating_sub(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let max = app.discovered_devices.len().saturating_sub(1);
+                let max = app.layout.device_picker_item_ids.len().saturating_sub(1);
                 app.device_picker_selected = (app.device_picker_selected + 1).min(max);
             }
             KeyCode::Enter => {
                 let idx = app.device_picker_selected;
-                if let Some(device_id) = app.layout.device_picker_item_ids.get(idx) {
-                    let id = device_id.clone();
+                if let Some(app_id) = app.layout.device_picker_item_ids.get(idx) {
+                    let id = app_id.clone();
                     if let Some(ref tx) = app.connect_device_tx {
                         let _ = tx.send(id);
                     }

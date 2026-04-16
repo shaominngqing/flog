@@ -6,12 +6,11 @@ use std::time::Instant;
 use regex::Regex;
 
 use crate::domain::{FilterState, LogEntry, LogLevel, LogStore, ParseResult};
-use crate::input::{ClientInfo, ConnectorHandle};
+use crate::input::ConnectorHandle;
 use std::collections::HashMap;
 use crate::parser::MultiStrategyParser;
 
 /// Infer tag and level from unrecognized raw text content.
-#[allow(dead_code)]
 fn infer_system_tag(text: &str) -> (LogLevel, &'static str) {
     static EXCEPTION_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(r"(?i)══.*exception|exception caught|thrown").unwrap()
@@ -345,11 +344,15 @@ impl AppSession {
 /// Info about a connected app.
 #[derive(Clone)]
 pub struct ConnectedApp {
-    pub id: String,           // unique key (e.g. "localhost", "1e0e87b2")
-    pub device_name: String,  // from hello
+    pub id: String,           // unique key: "device_id:port" (e.g. "localhost:9753")
+    pub device_id: String,    // original device ID for grouping (e.g. "localhost", "1e0e87b2")
+    pub port: u16,            // port this app is listening on
+    pub device_name: String,  // from device discovery (not hello)
     pub app_name: String,     // from hello
     pub app_version: String,  // from hello
     pub os: String,           // from hello
+    pub package_name: String, // from hello
+    pub build_mode: String,   // from hello: "debug" / "profile" / "release"
     pub handle: ConnectorHandle,
 }
 
@@ -357,7 +360,6 @@ pub struct App {
     // Active session data (points to the currently viewed app's data)
     pub store: LogStore,
     pub filter: FilterState,
-    #[allow(dead_code)]
     parser: MultiStrategyParser,
     pub active_tab: ViewTab,
     pub network_store: crate::domain::NetworkStore,
@@ -390,17 +392,14 @@ pub struct App {
     pub source_name: String,
     pub status_message: Option<(String, u64)>,
     pub connected: bool,
-    /// Discovered devices from device_monitor.
-    pub discovered_devices: Vec<crate::transport::device_monitor::Device>,
+    /// Discovered devices from device_monitor, keyed by device ID.
+    pub discovered_devices: HashMap<String, crate::transport::device_monitor::Device>,
     /// Show device picker dropdown.
     pub show_device_picker: bool,
     pub device_picker_selected: usize,
     pub device_picker_scroll: usize,
     /// Channel to request connection to a specific device.
     pub connect_device_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
-    // Legacy fields kept for compatibility
-    pub clients: Vec<ClientInfo>,
-    pub connector_handle: Option<ConnectorHandle>,
 
     // Mock rules
     pub mock_rules: crate::domain::mock::MockRuleStore,
@@ -453,13 +452,11 @@ impl App {
             source_name: String::new(),
             status_message: None,
             connected: false,
-            discovered_devices: Vec::new(),
+            discovered_devices: HashMap::new(),
             show_device_picker: false,
             device_picker_selected: 0,
             device_picker_scroll: 0,
             connect_device_tx: None,
-            clients: Vec::new(),
-            connector_handle: None,
             mock_rules: crate::domain::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
             mock_edit_rule_id: None,
@@ -582,12 +579,16 @@ impl App {
         self.active_app_id = Some(id.to_string());
         self.load_session(id);
 
-        // Update source name
+        // Update source name — prefer device name from discovery layer
         if let Some(app_info) = self.connected_apps.iter().find(|a| a.id == id) {
+            let dev_name = self.discovered_devices
+                .get(&app_info.device_id)
+                .map(|d| d.name.as_str())
+                .unwrap_or(&app_info.device_name);
             if app_info.app_version.is_empty() {
-                self.source_name = format!("{} ({})", app_info.app_name, app_info.device_name);
+                self.source_name = format!("{} ({})", app_info.app_name, dev_name);
             } else {
-                self.source_name = format!("{} v{} ({})", app_info.app_name, app_info.app_version, app_info.device_name);
+                self.source_name = format!("{} v{} ({})", app_info.app_name, app_info.app_version, dev_name);
             }
         }
 
@@ -602,12 +603,10 @@ impl App {
 
     // ── Data Input ──
 
-    #[allow(dead_code)]
     pub fn add_raw_line(&mut self, raw: &str) {
         self.add_raw_line_with_timestamp(raw, "");
     }
 
-    #[allow(dead_code)]
     pub fn add_raw_line_with_timestamp(&mut self, raw: &str, timestamp: &str) {
         match self.parser.parse(raw) {
             ParseResult::NewEntry(mut entry) => {

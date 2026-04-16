@@ -6,7 +6,6 @@
 //! 3. localhost probe — 1s poll, covers macOS + iOS simulator
 
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 
@@ -149,9 +148,10 @@ async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
             // Diff: find added and removed
             for serial in &current {
                 if known.insert(serial.clone()) {
+                    let name = adb_device_name(serial).await;
                     let _ = tx.send(DeviceEvent::Added(Device {
                         id: serial.clone(),
-                        name: serial.clone(),
+                        name,
                         kind: DeviceKind::Android,
                     }));
                 }
@@ -169,6 +169,49 @@ async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
         }
         let _ = child.kill().await;
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
+}
+
+/// Query Android device model via adb shell getprop.
+async fn adb_device_name(serial: &str) -> String {
+    let model = adb_getprop(serial, "ro.product.model").await;
+    let brand = adb_getprop(serial, "ro.product.brand").await;
+    match (brand, model) {
+        (Some(b), Some(m)) => {
+            // Capitalize brand first letter
+            let brand_cap = capitalize_first(&b);
+            // Avoid duplication like "Samsung Samsung Galaxy S24"
+            if m.to_lowercase().starts_with(&b.to_lowercase()) {
+                m
+            } else {
+                format!("{} {}", brand_cap, m)
+            }
+        }
+        (None, Some(m)) => m,
+        (Some(b), None) => capitalize_first(&b),
+        (None, None) => serial.to_string(),
+    }
+}
+
+async fn adb_getprop(serial: &str, prop: &str) -> Option<String> {
+    let output = Command::new("adb")
+        .args(["-s", serial, "shell", "getprop", prop])
+        .output()
+        .await
+        .ok()?;
+    if output.status.success() {
+        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if val.is_empty() { None } else { Some(val) }
+    } else {
+        None
+    }
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
     }
 }
 
@@ -243,10 +286,16 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
                     if let Some(props) = dict.get("Properties").and_then(|v| v.as_dictionary()) {
                         let device_id = props.get("DeviceID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
                         let serial = props.get("SerialNumber").and_then(|v| v.as_string()).unwrap_or("").to_string();
+                        let device_name = props.get("DeviceName").and_then(|v| v.as_string()).unwrap_or("").to_string();
                         if !serial.is_empty() {
+                            let name = if device_name.is_empty() {
+                                format!("iOS ({})", &serial[..8.min(serial.len())])
+                            } else {
+                                device_name
+                            };
                             let _ = tx.send(DeviceEvent::Added(Device {
                                 id: serial.clone(),
-                                name: format!("iOS ({})", &serial[..8.min(serial.len())]),
+                                name,
                                 kind: DeviceKind::IosUsb { device_id },
                             }));
                         }
@@ -282,9 +331,10 @@ async fn probe_localhost(tx: mpsc::UnboundedSender<DeviceEvent>, port: u16) {
         .is_ok();
 
         if reachable && !was_reachable {
+            let name = detect_local_device_name().await;
             let _ = tx.send(DeviceEvent::Added(Device {
                 id: "localhost".to_string(),
-                name: "localhost".to_string(),
+                name,
                 kind: DeviceKind::Local,
             }));
             was_reachable = true;
@@ -295,4 +345,40 @@ async fn probe_localhost(tx: mpsc::UnboundedSender<DeviceEvent>, port: u16) {
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
+}
+
+/// Detect the name of the local device (booted simulator or macOS).
+async fn detect_local_device_name() -> String {
+    // Try to find a booted iOS simulator
+    if let Some(name) = booted_simulator_name().await {
+        return name;
+    }
+    "macOS".to_string()
+}
+
+/// Query `xcrun simctl list devices booted` for the booted simulator name.
+async fn booted_simulator_name() -> Option<String> {
+    let output = Command::new("xcrun")
+        .args(["simctl", "list", "devices", "booted", "--json"])
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let devices = json.get("devices")?.as_object()?;
+    // Find first booted device across all runtimes
+    for (_runtime, device_list) in devices {
+        if let Some(arr) = device_list.as_array() {
+            for dev in arr {
+                if dev.get("state").and_then(|s| s.as_str()) == Some("Booted") {
+                    if let Some(name) = dev.get("name").and_then(|n| n.as_str()) {
+                        return Some(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }

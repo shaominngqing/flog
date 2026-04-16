@@ -90,12 +90,14 @@ where
     let client_info = match ws_read.next().await {
         Some(Ok(Message::Text(text))) => {
             match serde_json::from_str::<ClientMessage>(&text) {
-                Ok(ClientMessage::Hello { device, app, app_version, os }) => ClientInfo {
+                Ok(ClientMessage::Hello { app, app_version, os, package_name, port, build_mode, .. }) => ClientInfo {
                     id: 1,
-                    device,
                     app,
                     app_version: app_version.unwrap_or_default(),
                     os,
+                    package_name: package_name.unwrap_or_default(),
+                    port: port.unwrap_or(0),
+                    build_mode: build_mode.unwrap_or_default(),
                     connected_at: std::time::Instant::now(),
                 },
                 _ => return Err("First message was not Hello".into()),

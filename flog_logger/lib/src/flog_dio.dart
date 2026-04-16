@@ -93,6 +93,7 @@ class FlogDio implements Dio {
     int flogPort = 9753,
     String flogAppName = 'flutter',
     String flogAppVersion = '',
+    String flogPackageName = '',
   }) : _inner = Dio(options ?? BaseOptions(baseUrl: baseUrl ?? '')) {
     if (baseUrl != null && options == null) {
       _inner.options.baseUrl = baseUrl;
@@ -107,6 +108,7 @@ class FlogDio implements Dio {
         dio: _inner,
         appName: flogAppName,
         appVersion: flogAppVersion,
+        packageName: flogPackageName,
       );
 
       // Mock interceptor first — intercepts before real network

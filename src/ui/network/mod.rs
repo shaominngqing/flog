@@ -509,83 +509,110 @@ mod tests {
 fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
 
-    // Left side: toast OR normal info
-    let (left_spans, left_width) = if let Some(msg) = app.active_status().map(|s| s.to_string()) {
-        let ok_text = " OK ";
-        let msg_text = format!(" {} ", msg);
-        let w = ok_text.width() + msg_text.width();
-        (
-            vec![
-                Span::styled(
-                    ok_text,
+    // Left side: toast OR normal info (with source_name for device switching)
+    let (left_spans, left_width, source_x) =
+        if let Some(msg) = app.active_status().map(|s| s.to_string()) {
+            let ok_text = " OK ";
+            let msg_text = format!(" {} ", msg);
+            let w = ok_text.width() + msg_text.width();
+            (
+                vec![
+                    Span::styled(
+                        ok_text,
+                        Style::default()
+                            .fg(MANTLE)
+                            .bg(GREEN)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(msg_text, Style::default().fg(TEXT).bg(bg)),
+                ],
+                w as u16,
+                (0u16, 0u16),
+            )
+        } else {
+            // Count stats
+            let total = app.network_store.len();
+            let filtered = app.network.filtered_indices(&app.network_store).len();
+            let failed_count = app
+                .network_store
+                .iter()
+                .filter(|e| {
+                    e.status == NetworkStatus::Failed
+                        || e.http_status.map(|c| c >= 400).unwrap_or(false)
+                })
+                .count();
+
+            let (live_text, live_style) = if app.network.auto_scroll {
+                let dot = match (app.tick / 8) % 4 {
+                    0 => "\u{25cf}",
+                    1 => "\u{25c9}",
+                    2 => "\u{25cf}",
+                    _ => "\u{25cb}",
+                };
+                (
+                    format!(" {} LIVE ", dot),
                     Style::default()
                         .fg(MANTLE)
                         .bg(GREEN)
                         .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(msg_text, Style::default().fg(TEXT).bg(bg)),
-            ],
-            w as u16,
-        )
-    } else {
-        // Count stats
-        let total = app.network_store.len();
-        let filtered = app.network.filtered_indices(&app.network_store).len();
-        let failed_count = app
-            .network_store
-            .iter()
-            .filter(|e| {
-                e.status == NetworkStatus::Failed
-                    || e.http_status.map(|c| c >= 400).unwrap_or(false)
-            })
-            .count();
-
-        let (live_text, live_style) = if app.network.auto_scroll {
-            let dot = match (app.tick / 8) % 4 {
-                0 => "\u{25cf}",
-                1 => "\u{25c9}",
-                2 => "\u{25cf}",
-                _ => "\u{25cb}",
-            };
-            (
-                format!(" {} LIVE ", dot),
-                Style::default()
-                    .fg(MANTLE)
-                    .bg(GREEN)
-                    .add_modifier(Modifier::BOLD),
-            )
-        } else {
-            let pct = if filtered > 0 {
-                ((app.network.selected + 1) * 100) / filtered
+                )
             } else {
-                100
+                let pct = if filtered > 0 {
+                    ((app.network.selected + 1) * 100) / filtered
+                } else {
+                    100
+                };
+                (
+                    format!(" {}% ", pct.min(100)),
+                    Style::default().fg(TEXT).bg(SURFACE0),
+                )
             };
-            (
-                format!(" {}% ", pct.min(100)),
-                Style::default().fg(TEXT).bg(SURFACE0),
-            )
+
+            let info = format!(" {}/{} requests", filtered, total);
+            let failed_info = if failed_count > 0 {
+                format!("  {} failed", failed_count)
+            } else {
+                String::new()
+            };
+
+            // Source name (device info, clickable for device picker)
+            let device = if app.source_name.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", app.source_name)
+            };
+
+            let lw = live_text.width();
+            let iw = info.width() + failed_info.width();
+            let dw = device.width();
+            let sx_start = (lw + iw) as u16;
+            let sx_end = sx_start + dw as u16;
+
+            let mut spans = vec![
+                Span::styled(live_text, live_style),
+                Span::styled(info, Style::default().fg(SUBTEXT0).bg(bg)),
+            ];
+            if !failed_info.is_empty() {
+                spans.push(Span::styled(
+                    failed_info,
+                    Style::default().fg(RED).bg(bg),
+                ));
+            }
+            if !device.is_empty() {
+                spans.push(Span::styled(
+                    device,
+                    Style::default()
+                        .fg(SUBTEXT0)
+                        .bg(bg)
+                        .add_modifier(Modifier::UNDERLINED),
+                ));
+            }
+
+            let w = lw + iw + dw;
+            (spans, w as u16, (sx_start, sx_end))
         };
 
-        let info = format!(" {}/{} requests", filtered, total);
-        let failed_info = if failed_count > 0 {
-            format!("  {} failed", failed_count)
-        } else {
-            String::new()
-        };
-
-        let w = live_text.width() + info.width() + failed_info.width();
-        let mut spans = vec![
-            Span::styled(live_text, live_style),
-            Span::styled(info, Style::default().fg(SUBTEXT0).bg(bg)),
-        ];
-        if !failed_info.is_empty() {
-            spans.push(Span::styled(
-                failed_info,
-                Style::default().fg(RED).bg(bg),
-            ));
-        }
-        (spans, w as u16)
-    };
+    app.layout.source_info_x = source_x;
 
     // Check if selected entry is HTTP (some buttons are HTTP-only)
     let selected_is_http = {

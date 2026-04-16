@@ -26,10 +26,11 @@ class FlogServer {
   int _port = 9753;
   String _appName = 'flutter';
   String _appVersion = '';
+  String _packageName = '';
 
   bool get connected => _connected;
 
-  void start({int port = 9753, Dio? dio, String appName = 'flutter', String appVersion = ''}) {
+  void start({int port = 9753, Dio? dio, String appName = 'flutter', String appVersion = '', String packageName = ''}) {
     if (!flogEnabled) return;
     if (_started) return;
     _started = true;
@@ -37,6 +38,7 @@ class FlogServer {
     _dio = dio;
     _appName = appName;
     _appVersion = appVersion;
+    _packageName = packageName;
     _startServer();
   }
 
@@ -48,11 +50,19 @@ class FlogServer {
   }
 
   Future<void> _startServer() async {
-    try {
-      _httpServer = await HttpServer.bind('0.0.0.0', _port);
-      _httpServer!.listen(_handleRequest);
-    } catch (_) {
-      // Port in use — flog features unavailable but app runs fine
+    // Try binding to _port, then _port+1, ... up to _port+9.
+    // This allows multiple apps on the same device to coexist.
+    final basePort = _port;
+    for (int offset = 0; offset < 10; offset++) {
+      try {
+        final tryPort = basePort + offset;
+        _httpServer = await HttpServer.bind('0.0.0.0', tryPort);
+        _port = tryPort;
+        _httpServer!.listen(_handleRequest);
+        return;
+      } catch (_) {
+        // Port in use — try next
+      }
     }
   }
 
@@ -75,10 +85,12 @@ class FlogServer {
     // Send hello with app info
     ws.add(jsonEncode({
       'type': 'hello',
-      'device': _deviceName(),
       'app': _appName,
       'appVersion': _appVersion,
       'os': _osName(),
+      'packageName': _packageName,
+      'port': _port,
+      'buildMode': _buildMode(),
     }));
 
     ws.listen(
@@ -128,29 +140,15 @@ class FlogServer {
     _ws = null;
   }
 
-  String _deviceName() {
-    try {
-      final os = Platform.operatingSystem;
-      if (os == 'android') {
-        // On Android, localHostname gives the device name (e.g., "23127PN0CC")
-        return Platform.localHostname;
-      } else if (os == 'ios') {
-        // On iOS simulator, localHostname is Mac's name. Use "iOS Simulator" instead.
-        return 'iOS Simulator';
-      } else if (os == 'macos') {
-        return 'macOS';
-      } else if (os == 'windows') {
-        return 'Windows';
-      } else if (os == 'linux') {
-        return 'Linux';
-      }
-      return Platform.localHostname;
-    } catch (_) {
-      return 'unknown';
-    }
-  }
-
   String _osName() {
     try { return Platform.operatingSystem; } catch (_) { return 'unknown'; }
+  }
+
+  static String _buildMode() {
+    const isProduct = bool.fromEnvironment('dart.vm.product');
+    const isProfile = bool.fromEnvironment('dart.vm.profile');
+    if (isProduct) return 'release';
+    if (isProfile) return 'profile';
+    return 'debug';
   }
 }
