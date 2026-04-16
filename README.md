@@ -48,7 +48,13 @@ flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它
 
 ## 通信架构
 
-flog 采用 **Direct Socket** 架构：Flutter App 中的 flog_dart 启动 WebSocket Server（端口 9753），flog TUI 自动发现设备并连接。所有数据（日志、网络事件、Mock 规则、Replay 指令）通过这一个连接传输。
+flog 采用 **Direct Socket + Data Source** 架构：
+
+**Dart 端 = 数据源** — `FlogStore` 环形缓冲区（50K 条 FIFO）存储所有日志和网络消息。App 启动后即开始记录，不依赖 flog 是否连接。
+
+**flog TUI = 纯渲染器** — 连接时 Dart 自动回放全部历史数据，之后无缝接收实时消息。断连不丢数据，切换 Session 即时重建。
+
+**系统日志自动捕获** — `Flog.init()` 自动注册 `debugPrint` / `FlutterError.onError` / `PlatformDispatcher.onError` 三个 hook，框架异常、渲染溢出等系统输出自动进入 FlogStore，无需 `flutter logs`。
 
 - 不依赖 VM Service — 日志不再通过 print/developer.log 传输
 - 不污染终端输出 — Flutter 控制台里不会有 flog_net 日志
@@ -114,15 +120,29 @@ flog 能识别任何 Flutter 日志输出。搭配 [flog_dart](https://pub.dev/p
 ```bash
 # pubspec.yaml
 dependencies:
-  flog_dart: ^0.3.0
+  flog_dart: ^0.6.4
 ```
 
-### 快速接入（推荐）
+### 初始化
+
+在 App 启动时尽早调用一次 `Flog.init()`，同步执行、零阻塞：
+
+```dart
+import 'package:flog_dart/flog_dart.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  Flog.init();  // 自动注册 hook + 启动 server + 后台获取 app info
+  runApp(MyApp());
+}
+```
+
+### 快速接入 Network Inspector（推荐）
 
 用 `FlogDio` 替换 `Dio`，零配置自动接入 Network Inspector + Mock：
 
 ```dart
-import 'package:flog_dart/flog_logger.dart';
+import 'package:flog_dart/flog_dart.dart';
 
 // 替换 Dio() → FlogDio()，自动注入 HTTP 日志 + Mock 拦截器
 final dio = FlogDio(baseUrl: 'https://api.example.com');
@@ -145,7 +165,7 @@ await for (final event in sse.stream) {
 ### 日志
 
 ```dart
-import 'package:flog_dart/flog_logger.dart';
+import 'package:flog_dart/flog_dart.dart';
 
 final log = FlogLogger('Network');
 log.i('-> GET /api/users');
