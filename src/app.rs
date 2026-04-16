@@ -3,47 +3,9 @@
 use std::collections::BTreeSet;
 use std::time::Instant;
 
-use regex::Regex;
-
-use crate::domain::{FilterState, LogEntry, LogLevel, LogStore, ParseResult};
+use crate::domain::{FilterState, LogEntry, LogLevel, LogStore};
 use crate::input::ConnectorHandle;
 use std::collections::HashMap;
-use crate::parser::MultiStrategyParser;
-
-/// Infer tag and level from unrecognized raw text content.
-fn infer_system_tag(text: &str) -> (LogLevel, &'static str) {
-    static EXCEPTION_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-        Regex::new(r"(?i)══.*exception|exception caught|thrown").unwrap()
-    });
-    static STACKTRACE_RE: std::sync::LazyLock<Regex> =
-        std::sync::LazyLock::new(|| Regex::new(r"^#\d+\s+").unwrap());
-
-    let trimmed = text.trim_start();
-
-    // Flutter framework exception output
-    if trimmed.starts_with('═')
-        || EXCEPTION_RE.is_match(trimmed)
-        || trimmed.starts_with("Handler:")
-        || trimmed.starts_with("Recognizer:")
-        || trimmed.starts_with("The following")
-        || trimmed.starts_with("When the exception")
-    {
-        return (LogLevel::Error, "Flutter");
-    }
-
-    // Dart stacktrace
-    if STACKTRACE_RE.is_match(trimmed) || trimmed.starts_with("(elided") {
-        return (LogLevel::Error, "Stacktrace");
-    }
-
-    // Dart/Flutter assertion
-    if trimmed.starts_with("Failed assertion") || trimmed.starts_with("'package:") {
-        return (LogLevel::Error, "Assert");
-    }
-
-    // General stdout — likely print() or debugPrint()
-    (LogLevel::System, "stdout")
-}
 
 // ── Mode ──
 
@@ -309,37 +271,6 @@ pub struct LayoutCache {
 // ── App ──
 
 /// Per-app data that gets swapped when switching between connected apps.
-pub struct AppSession {
-    pub store: LogStore,
-    pub filter: FilterState,
-    pub network_store: crate::domain::NetworkStore,
-    pub network: NetworkState,
-    pub selected: usize,
-    pub scroll_offset: usize,
-    pub bookmarks: BTreeSet<usize>,
-    pub search: SearchState,
-    pub tag_filter: TagFilterInput,
-    pub detail: DetailState,
-    pub auto_scroll: bool,
-}
-
-impl AppSession {
-    pub fn new() -> Self {
-        Self {
-            store: LogStore::new(),
-            filter: FilterState::default(),
-            network_store: crate::domain::NetworkStore::new(),
-            network: NetworkState::new(),
-            selected: 0,
-            scroll_offset: 0,
-            bookmarks: BTreeSet::new(),
-            search: SearchState::default(),
-            tag_filter: TagFilterInput::default(),
-            detail: DetailState::default(),
-            auto_scroll: true,
-        }
-    }
-}
 
 /// Info about a connected app.
 #[derive(Clone)]
@@ -360,7 +291,6 @@ pub struct App {
     // Active session data (points to the currently viewed app's data)
     pub store: LogStore,
     pub filter: FilterState,
-    parser: MultiStrategyParser,
     pub active_tab: ViewTab,
     pub network_store: crate::domain::NetworkStore,
     pub network: NetworkState,
@@ -381,8 +311,6 @@ pub struct App {
     pub bookmarks: BTreeSet<usize>,
 
     // Multi-app connection management
-    /// All connected apps and their sessions.
-    pub sessions: HashMap<String, AppSession>,
     /// All connected apps' info.
     pub connected_apps: Vec<ConnectedApp>,
     /// ID of the currently active (viewed) app.
@@ -430,7 +358,6 @@ impl App {
         Self {
             store: LogStore::new(),
             filter: FilterState::default(),
-            parser: MultiStrategyParser::default_chain(),
             active_tab: ViewTab::Logs,
             network_store: crate::domain::NetworkStore::new(),
             network: NetworkState::new(),
@@ -445,7 +372,6 @@ impl App {
             tag_filter: TagFilterInput::default(),
             detail: DetailState::default(),
             bookmarks: BTreeSet::new(),
-            sessions: HashMap::new(),
             connected_apps: Vec::new(),
             active_app_id: None,
             server_port: 9753,
@@ -479,60 +405,51 @@ impl App {
         !self.connected_apps.is_empty()
     }
 
-    /// Save current session data to the sessions map.
-    fn save_active_session(&mut self) {
-        if let Some(ref id) = self.active_app_id {
-            let session = AppSession {
-                store: std::mem::replace(&mut self.store, LogStore::new()),
-                filter: std::mem::take(&mut self.filter),
-                network_store: std::mem::replace(&mut self.network_store, crate::domain::NetworkStore::new()),
-                network: std::mem::replace(&mut self.network, NetworkState::new()),
-                selected: self.selected,
-                scroll_offset: self.scroll_offset,
-                bookmarks: std::mem::take(&mut self.bookmarks),
-                search: std::mem::take(&mut self.search),
-                tag_filter: std::mem::take(&mut self.tag_filter),
-                detail: std::mem::take(&mut self.detail),
-                auto_scroll: self.auto_scroll,
-            };
-            self.sessions.insert(id.clone(), session);
-        }
-    }
-
-    /// Load a session's data into the active fields.
-    fn load_session(&mut self, id: &str) {
-        if let Some(session) = self.sessions.remove(id) {
-            self.store = session.store;
-            self.filter = session.filter;
-            self.network_store = session.network_store;
-            self.network = session.network;
-            self.selected = session.selected;
-            self.scroll_offset = session.scroll_offset;
-            self.bookmarks = session.bookmarks;
-            self.search = session.search;
-            self.tag_filter = session.tag_filter;
-            self.detail = session.detail;
-            self.auto_scroll = session.auto_scroll;
-            self.filter_dirty = true;
-        }
+    /// Reset all data and UI state to a clean slate.
+    ///
+    /// Used when switching apps or when the active app disconnects.
+    /// Data will be re-delivered by the Dart side's FlogStore on subscribe.
+    fn reset_session(&mut self) {
+        self.store = LogStore::new();
+        self.network_store = crate::domain::NetworkStore::new();
+        self.network = NetworkState::new();
+        self.filter = FilterState::default();
+        self.selected = 0;
+        self.scroll_offset = 0;
+        self.detail = DetailState::default();
+        self.search = SearchState::default();
+        self.tag_filter = TagFilterInput::default();
+        self.bookmarks.clear();
+        self.auto_scroll = true;
+        self.filter_dirty = true;
     }
 
     /// Register a new connected app. If it's the first, make it active.
+    ///
+    /// The Dart side automatically replays its buffer on new WebSocket
+    /// connections, so no explicit subscribe is needed for the first app.
     pub fn add_connected_app(&mut self, app_info: ConnectedApp) {
         let id = app_info.id.clone();
         let is_first = self.connected_apps.is_empty();
 
         // Remove if already exists (reconnection)
+        let is_reconnect = self.active_app_id.as_deref() == Some(&id);
         self.connected_apps.retain(|a| a.id != id);
         self.connected_apps.push(app_info);
 
-        // Create a session if one doesn't exist
-        if !self.sessions.contains_key(&id) && self.active_app_id.as_deref() != Some(&id) {
-            self.sessions.insert(id.clone(), AppSession::new());
-        }
-
-        if is_first || self.active_app_id.is_none() {
-            self.switch_to_app(&id);
+        if is_reconnect {
+            // Reconnecting to active app — clear and let Dart replay fill us.
+            self.reset_session();
+        } else if is_first || self.active_app_id.is_none() {
+            // First app or no active app — activate directly without subscribe.
+            // Dart already auto-replays its buffer on new WebSocket connections,
+            // so sending subscribe would cause a redundant double-replay.
+            self.reset_session();
+            self.active_app_id = Some(id.clone());
+            self.update_source_name(&id);
+        } else {
+            // Another app connected while we already have an active one — no-op,
+            // just register. User can switch to it manually.
         }
 
         self.connected = true;
@@ -541,7 +458,6 @@ impl App {
     /// Remove a disconnected app.
     pub fn remove_connected_app(&mut self, id: &str) {
         self.connected_apps.retain(|a| a.id != id);
-        self.sessions.remove(id);
 
         if self.active_app_id.as_deref() == Some(id) {
             // Active app disconnected — switch to another if available
@@ -552,12 +468,7 @@ impl App {
                 self.active_app_id = None;
                 self.connected = false;
                 self.source_name = format!("Scanning... (port {})", self.server_port);
-                // Clear active data
-                self.store = LogStore::new();
-                self.network_store = crate::domain::NetworkStore::new();
-                self.network = NetworkState::new();
-                self.filter = FilterState::default();
-                self.filter_dirty = true;
+                self.reset_session();
             }
         }
 
@@ -567,19 +478,32 @@ impl App {
     }
 
     /// Switch the UI to view a different app's data.
+    ///
+    /// Clears all local data and sends a `subscribe` message to the target
+    /// app's Dart server, which triggers a full buffer replay. The replayed
+    /// messages use the same format as live messages — the TUI cannot and
+    /// does not need to distinguish them.
     pub fn switch_to_app(&mut self, id: &str) {
         if self.active_app_id.as_deref() == Some(id) {
             return; // Already active
         }
 
-        // Save current session
-        self.save_active_session();
+        // Clear everything — data will come from Dart's FlogStore
+        self.reset_session();
 
-        // Load new session
+        // Switch active app
         self.active_app_id = Some(id.to_string());
-        self.load_session(id);
 
-        // Update source name — prefer device name from discovery layer
+        // Request Dart to replay its buffer
+        if let Some(handle) = self.get_active_handle() {
+            handle.send_subscribe();
+        }
+
+        self.update_source_name(id);
+    }
+
+    /// Update the source_name display for the given app ID.
+    fn update_source_name(&mut self, id: &str) {
         if let Some(app_info) = self.connected_apps.iter().find(|a| a.id == id) {
             let dev_name = self.discovered_devices
                 .get(&app_info.device_id)
@@ -591,8 +515,6 @@ impl App {
                 self.source_name = format!("{} v{} ({})", app_info.app_name, app_info.app_version, dev_name);
             }
         }
-
-        self.filter_dirty = true;
     }
 
     /// Get the ConnectorHandle for a specific app (for sending mock/replay).
@@ -602,37 +524,6 @@ impl App {
     }
 
     // ── Data Input ──
-
-    pub fn add_raw_line(&mut self, raw: &str) {
-        self.add_raw_line_with_timestamp(raw, "");
-    }
-
-    pub fn add_raw_line_with_timestamp(&mut self, raw: &str, timestamp: &str) {
-        match self.parser.parse(raw) {
-            ParseResult::NewEntry(mut entry) => {
-                if entry.timestamp.is_empty() && !timestamp.is_empty() {
-                    entry.timestamp = timestamp.to_string();
-                }
-                self.add_entry(entry);
-            }
-            ParseResult::Continuation(content) => {
-                self.store.append_continuation(content);
-                self.filter_dirty = true;
-            }
-            ParseResult::Ignored => {
-                // Never drop a line — show as SYSTEM with tag inferred from content
-                let trimmed = raw.trim();
-                if !trimmed.is_empty() {
-                    let (level, tag) = infer_system_tag(trimmed);
-                    let mut entry = LogEntry::new(level, tag, trimmed);
-                    if !timestamp.is_empty() {
-                        entry.timestamp = timestamp.to_string();
-                    }
-                    self.add_entry(entry);
-                }
-            }
-        }
-    }
 
     pub fn add_entry(&mut self, entry: LogEntry) {
         self.connected = true;
@@ -1046,26 +937,6 @@ impl App {
     pub fn cancel_mock_edit(&mut self) {
         self.mock_edit_rule_id = None;
         self.mode = AppMode::Normal;
-    }
-
-    /// Clear all session data when a client disconnects.
-    /// Ensures data from one device doesn't leak into another.
-    pub fn clear_session_data(&mut self) {
-        self.store = LogStore::new();
-        self.network_store = crate::domain::NetworkStore::new();
-        self.network = NetworkState::new();
-        self.mock_rules = crate::domain::mock::MockRuleStore::new();
-        self.mock_rule_selected = 0;
-        self.mock_edit_rule_id = None;
-        self.mock_edit_field = 0;
-        self.mock_edit_top_values = Vec::new();
-        self.mock_edit_body = crate::ui::text_editor::TextEditor::new("");
-        self.bookmarks.clear();
-        self.filter_dirty = true;
-        self.scroll_offset = 0;
-        self.selected = 0;
-        self.auto_scroll = true;
-        self.new_logs_since_pause = 0;
     }
 
     // ── Clear & Separator ──

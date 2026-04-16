@@ -28,6 +28,25 @@ use app::App;
 use cli::Cli;
 use input::{ClientMessage, ConnectorEvent, connect, connect_stream};
 
+/// Pattern: `[LEVEL][Tag] message` — used to parse raw log text.
+/// Optionally preceded by `[epoch_ms]` which is ignored (timestamp comes from the message field).
+static RAW_LOG_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"^(?:\[\d{10,13}\])?\[(\w+)\]\[([^\]]+)\]\s?(.*)$").unwrap()
+});
+
+/// Convert epoch milliseconds to HH:MM:SS.mmm.
+fn format_ts(ms: u64) -> String {
+    let secs = ms / 1000;
+    let millis = ms % 1000;
+    format!(
+        "{:02}:{:02}:{:02}.{:03}",
+        (secs % 86400) / 3600,
+        (secs % 3600) / 60,
+        secs % 60,
+        millis
+    )
+}
+
 /// Dispatch a client message to the app.
 fn dispatch_client_message(app: &mut App, msg: ClientMessage) {
     match msg {
@@ -42,22 +61,35 @@ fn dispatch_client_message(app: &mut App, msg: ClientMessage) {
             stack_trace,
             timestamp,
         } => {
-            let log_level = domain::LogLevel::from_str(&level).unwrap_or(domain::LogLevel::Info);
-            let mut entry = domain::LogEntry::new(log_level, tag, message);
-            entry.error = error;
-            entry.stacktrace = stack_trace;
-            if let Some(ts) = timestamp {
-                // Convert milliseconds to readable timestamp
-                let secs = ts / 1000;
-                let millis = ts % 1000;
-                entry.timestamp = format!(
-                    "{:02}:{:02}:{:02}.{:03}",
-                    (secs % 86400) / 3600,
-                    (secs % 3600) / 60,
-                    secs % 60,
-                    millis
-                );
-            }
+            let entry = if let (Some(level), Some(tag)) = (level, tag) {
+                // Structured log from FlogLogger — level/tag provided explicitly.
+                let log_level = domain::LogLevel::from_str(&level).unwrap_or(domain::LogLevel::Info);
+                let mut e = domain::LogEntry::new(log_level, tag, message);
+                e.error = error;
+                e.stacktrace = stack_trace;
+                if let Some(ts) = timestamp {
+                    e.timestamp = format_ts(ts);
+                }
+                e
+            } else if let Some(caps) = RAW_LOG_RE.captures(&message) {
+                // Raw text matching [LEVEL][Tag] format (e.g. AuraLogger via debugPrint).
+                let level_str = caps.get(1).unwrap().as_str();
+                let tag_str = caps.get(2).unwrap().as_str();
+                let msg_str = caps.get(3).unwrap().as_str();
+                let log_level = domain::LogLevel::from_str(level_str).unwrap_or(domain::LogLevel::Debug);
+                let mut e = domain::LogEntry::new(log_level, tag_str, msg_str);
+                if let Some(ts) = timestamp {
+                    e.timestamp = format_ts(ts);
+                }
+                e
+            } else {
+                // Unstructured raw text (e.g. Flutter framework output via debugPrint).
+                let mut e = domain::LogEntry::new(domain::LogLevel::Debug, "debugPrint", &message);
+                if let Some(ts) = timestamp {
+                    e.timestamp = format_ts(ts);
+                }
+                e
+            };
             app.add_entry(entry);
         }
         ClientMessage::Net { msg } => {
@@ -166,22 +198,6 @@ async fn main() -> io::Result<()> {
                                 };
 
                                 if let Ok((mut event_rx, handle)) = ws_result {
-                                    // Start flutter logs for this device (shared across apps on same device)
-                                    let app_for_logs = Arc::clone(&app_c);
-                                    let log_app_id = task_key_c.clone();
-                                    let log_dev_id = device.id.clone();
-                                    let logs_handle = tokio::spawn(async move {
-                                        let dev_arg = if log_dev_id == "localhost" { None } else { Some(log_dev_id.as_str()) };
-                                        if let Ok(mut logs) = transport::flutter_logs::FlutterLogs::start(dev_arg).await {
-                                            while let Some(line) = logs.next_line().await {
-                                                let mut a = app_for_logs.lock().await;
-                                                if a.active_app_id.as_deref() == Some(log_app_id.as_str()) {
-                                                    a.add_raw_line(&line);
-                                                }
-                                            }
-                                        }
-                                    });
-
                                     while let Some(evt) = event_rx.recv().await {
                                         let mut a = app_c.lock().await;
                                         match evt {
@@ -213,7 +229,6 @@ async fn main() -> io::Result<()> {
                                                 }
                                                 a.remove_connected_app(&task_key_c);
                                                 a.show_status(format!("Disconnected: {}", device.name));
-                                                logs_handle.abort();
                                                 break;
                                             }
                                             ConnectorEvent::Message(msg) => {

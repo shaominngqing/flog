@@ -42,8 +42,10 @@ pub enum ClientMessage {
     },
     #[serde(rename = "log")]
     Log {
-        level: String,
-        tag: String,
+        #[serde(default)]
+        level: Option<String>,
+        #[serde(default)]
+        tag: Option<String>,
         message: String,
         #[serde(default)]
         error: Option<String>,
@@ -73,6 +75,12 @@ pub enum ServerMessage {
         headers: Option<String>,
         body: Option<String>,
     },
+    /// Request Dart to replay its entire message buffer.
+    ///
+    /// Sent when the TUI switches to a different app's session. Dart responds
+    /// by iterating its FlogStore buffer and re-sending all stored messages.
+    #[serde(rename = "subscribe")]
+    Subscribe {},
 }
 
 #[cfg(test)]
@@ -118,9 +126,24 @@ mod tests {
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
             ClientMessage::Log { level, tag, message, .. } => {
-                assert_eq!(level, "info");
-                assert_eq!(tag, "Net");
+                assert_eq!(level, Some("info".to_string()));
+                assert_eq!(tag, Some("Net".to_string()));
                 assert_eq!(message, "hello");
+            }
+            _ => panic!("expected Log"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_raw_log() {
+        let json = r#"{"type":"log","message":"[INFO][Network] → GET /api/scene-types","timestamp":1776324216539}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::Log { level, tag, message, timestamp, .. } => {
+                assert_eq!(level, None);
+                assert_eq!(tag, None);
+                assert!(message.contains("[INFO][Network]"));
+                assert_eq!(timestamp, Some(1776324216539));
             }
             _ => panic!("expected Log"),
         }
@@ -166,6 +189,13 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("replay"));
         assert!(json.contains("GET"));
+    }
+
+    #[test]
+    fn test_serialize_subscribe() {
+        let msg = ServerMessage::Subscribe {};
+        let json = serde_json::to_string(&msg).unwrap();
+        assert_eq!(json, r#"{"type":"subscribe"}"#);
     }
 
     #[test]

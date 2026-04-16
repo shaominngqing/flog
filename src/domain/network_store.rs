@@ -1,20 +1,21 @@
 //! Ring-buffer storage for network entries with message processing.
 
+use std::collections::VecDeque;
+
 use crate::domain::network::{
     FlogNetMessage, NetworkEntry, NetworkStatus, Protocol, SseChunk, WsDirection, WsMessage,
 };
 
 const MAX_ENTRIES: usize = 10_000;
-const DRAIN_COUNT: usize = 1_000;
 
 pub struct NetworkStore {
-    entries: Vec<NetworkEntry>,
+    entries: VecDeque<NetworkEntry>,
 }
 
 impl NetworkStore {
     pub fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: VecDeque::new(),
         }
     }
 
@@ -57,12 +58,12 @@ impl NetworkStore {
     #[allow(dead_code)]
     pub fn push_entry(&mut self, entry: NetworkEntry) {
         self.ensure_capacity();
-        self.entries.push(entry);
+        self.entries.push_back(entry);
     }
 
     fn ensure_capacity(&mut self) {
         if self.entries.len() >= MAX_ENTRIES {
-            self.entries.drain(..DRAIN_COUNT);
+            self.entries.pop_front();
         }
     }
 
@@ -101,7 +102,7 @@ impl NetworkStore {
             entry.timestamp = format_ts(ts);
         }
 
-        self.entries.push(entry);
+        self.entries.push_back(entry);
     }
 
     fn handle_res(&mut self, msg: FlogNetMessage) {
@@ -158,7 +159,7 @@ impl NetworkStore {
         if let Some(ts) = msg.ts {
             entry.timestamp = format_ts(ts);
         }
-        self.entries.push(entry);
+        self.entries.push_back(entry);
     }
 
     fn handle_ws_msg(&mut self, msg: FlogNetMessage, direction: WsDirection) {

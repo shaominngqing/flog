@@ -41,6 +41,17 @@ impl ConnectorHandle {
             let _ = self.tx.send(json);
         }
     }
+
+    /// Request the Dart app to replay its entire message buffer.
+    ///
+    /// Used when the TUI switches to this app's session — clears local stores
+    /// first, then this triggers a full data re-delivery from the Dart side.
+    pub fn send_subscribe(&self) {
+        let msg = ServerMessage::Subscribe {};
+        if let Ok(json) = serde_json::to_string(&msg) {
+            let _ = self.tx.send(json);
+        }
+    }
 }
 
 /// Connect to a flog_dart server at the given WebSocket URL.
