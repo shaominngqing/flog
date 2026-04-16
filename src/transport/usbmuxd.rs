@@ -95,17 +95,30 @@ mod imp {
         let code = response.as_dictionary()?.get("Number")?.as_unsigned_integer()?;
         if code != 0 { return None; }
 
-        // lockdownd uses big-endian 4-byte length prefix (different from usbmuxd)
+        // Query both DeviceName and MarketingName via lockdownd
+        let device_name = lockdown_get_value(&mut stream, "DeviceName").await;
+        let marketing_name = lockdown_get_value(&mut stream, "MarketingName").await;
+
+        match (device_name, marketing_name) {
+            (Some(dn), Some(mn)) => Some(format!("{} ({})", dn, mn)),
+            (Some(dn), None) => Some(dn),
+            (None, Some(mn)) => Some(mn),
+            (None, None) => None,
+        }
+    }
+
+    /// Query a single value from lockdownd.
+    /// lockdownd uses big-endian 4-byte length prefix (different from usbmuxd).
+    async fn lockdown_get_value(stream: &mut UnixStream, key: &str) -> Option<String> {
         let req = plist::Value::Dictionary({
             let mut d = plist::Dictionary::new();
             d.insert("Request".into(), "GetValue".into());
-            d.insert("Key".into(), "DeviceName".into());
+            d.insert("Key".into(), key.into());
             d
         });
         let mut body = Vec::new();
         req.to_writer_xml(&mut body).ok()?;
-        let len = (body.len() as u32).to_be_bytes();
-        stream.write_all(&len).await.ok()?;
+        stream.write_all(&(body.len() as u32).to_be_bytes()).await.ok()?;
         stream.write_all(&body).await.ok()?;
 
         let mut len_buf = [0u8; 4];
