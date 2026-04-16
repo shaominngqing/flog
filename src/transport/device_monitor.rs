@@ -297,11 +297,11 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
 
                             // Only emit Added once per serial (same device may have multiple connections)
                             if known_serials.insert(serial.clone()) {
-                                let product_id = props.get("ProductID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u16;
+                                let device_class = props.get("DeviceClass").and_then(|v| v.as_string()).unwrap_or("iOS").to_string();
                                 let name = if !device_name.is_empty() {
                                     device_name
                                 } else {
-                                    usb_product_id_to_name(product_id, &serial)
+                                    device_class
                                 };
                                 let _ = tx.send(DeviceEvent::Added(Device {
                                     id: serial,
@@ -327,19 +327,6 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
         }
 
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-    }
-}
-
-/// Best-effort iOS device name from usbmuxd info. No external dependencies.
-/// Once the app connects, the Hello message provides the real device info.
-#[cfg(target_os = "macos")]
-fn usb_product_id_to_name(_product_id: u16, serial: &str) -> String {
-    // Modern iPhones have serials starting with "00008"
-    // iPads typically start with other prefixes
-    if serial.starts_with("00008") {
-        "iPhone".to_string()
-    } else {
-        "iPad".to_string()
     }
 }
 
