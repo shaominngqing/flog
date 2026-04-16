@@ -40,9 +40,13 @@ class FlogServer {
   /// Whether at least one flog TUI client is connected.
   bool get connected => _clients.isNotEmpty;
 
+  /// Initialize flog: register system hooks and start the WebSocket server.
+  ///
+  /// Call this as early as possible in your app (e.g. right after
+  /// `WidgetsFlutterBinding.ensureInitialized()`). Safe to call multiple
+  /// times — only the first call takes effect.
   void start({
     int port = 9753,
-    Dio? dio,
     String appName = 'flutter',
     String appVersion = '',
     String packageName = '',
@@ -51,12 +55,33 @@ class FlogServer {
     if (_started) return;
     _started = true;
     _port = port;
-    _dio = dio;
     _appName = appName;
     _appVersion = appVersion;
     _packageName = packageName;
     _installSystemHooks();
     _startServer();
+  }
+
+  /// Update app info after async detection.
+  ///
+  /// Called by [flog] after [PackageInfo.fromPlatform] resolves.
+  /// The hello message sent to flog TUI on connect uses these values.
+  void updateAppInfo({
+    required String appName,
+    required String appVersion,
+    required String packageName,
+  }) {
+    _appName = appName;
+    _appVersion = appVersion;
+    _packageName = packageName;
+  }
+
+  /// Register a [Dio] instance for network replay.
+  ///
+  /// Called by [FlogDio] automatically. When the flog TUI triggers a
+  /// replay, this Dio instance is used to re-execute the request.
+  void registerDio(Dio dio) {
+    _dio = dio;
   }
 
   // ── System log capture ──

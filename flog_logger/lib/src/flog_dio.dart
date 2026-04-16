@@ -90,10 +90,6 @@ class FlogDio implements Dio {
     String? baseUrl,
     FlogHttpConfig? flogConfig,
     BaseOptions? options,
-    int flogPort = 9753,
-    String flogAppName = 'flutter',
-    String flogAppVersion = '',
-    String flogPackageName = '',
   }) : _inner = Dio(options ?? BaseOptions(baseUrl: baseUrl ?? '')) {
     if (baseUrl != null && options == null) {
       _inner.options.baseUrl = baseUrl;
@@ -102,14 +98,9 @@ class FlogDio implements Dio {
     if (flogEnabled) {
       final config = flogConfig ?? const FlogHttpConfig();
 
-      // Start FlogServer to accept connections from flog TUI
-      FlogServer.instance.start(
-        port: flogPort,
-        dio: _inner,
-        appName: flogAppName,
-        appVersion: flogAppVersion,
-        packageName: flogPackageName,
-      );
+      // Register this Dio for replay support.
+      // FlogServer.start() should have been called earlier in bootstrap.
+      FlogServer.instance.registerDio(_inner);
 
       // Mock interceptor first — intercepts before real network
       _inner.interceptors.insert(0, FlogMockInterceptor());

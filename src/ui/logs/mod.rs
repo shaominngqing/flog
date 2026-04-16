@@ -742,14 +742,17 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             let first_text = wrapped.first().map(|s| s.as_str()).unwrap_or("");
             let mut spans = header_spans;
             if entry.repeat_count > 1 && !first_text.is_empty() {
-                let bar_end = full_msg.find(&entry.message).unwrap_or(0);
+                let bar_str = repeat_bar(entry.repeat_count, 8);
+                let bar_display_len = bar_str.width();
+                // +1 for the space between bar and message
+                let split_at = (bar_display_len + 1).min(first_text.width());
                 let bar_part: String = first_text
                     .chars()
-                    .take(bar_end.min(first_text.len()))
+                    .take(split_at)
                     .collect();
                 let msg_part: String = first_text
                     .chars()
-                    .skip(bar_end.min(first_text.len()))
+                    .skip(split_at)
                     .collect();
                 if !bar_part.is_empty() {
                     spans.push(Span::styled(bar_part, Style::default().fg(PINK).bg(row_bg)));

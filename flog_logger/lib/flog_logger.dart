@@ -3,11 +3,17 @@
 /// Sends structured log messages to flog TUI via Direct Socket.
 ///
 /// ```dart
+/// // Initialize once, as early as possible:
+/// flog();
+///
+/// // Then use FlogLogger anywhere:
 /// final log = FlogLogger('Network');
 /// log.i('-> GET /api/users');
 /// log.e('Connection failed', error: e, stackTrace: st);
 /// ```
 library flog_dart;
+
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'src/flog_server.dart';
 import 'src/flog_net.dart' show flogEnabled;
@@ -20,6 +26,39 @@ export 'src/flog_mock_interceptor.dart';
 export 'src/flog_sse_parser.dart';
 export 'src/flog_web_socket.dart';
 export 'src/flog_dio.dart' show FlogDio, FlogHttpConfig, SseResponse;
+
+/// Top-level entry point for flog_dart.
+///
+/// ```dart
+/// void main() {
+///   WidgetsFlutterBinding.ensureInitialized();
+///   Flog.init();
+///   runApp(MyApp());
+/// }
+/// ```
+class Flog {
+  Flog._();
+
+  /// Initialize flog_dart. Call once, as early as possible.
+  ///
+  /// Synchronous — does not block app startup. App info (name, version,
+  /// package) is auto-detected in the background via [PackageInfo].
+  static void init({int port = 9753}) {
+    if (!flogEnabled) return;
+
+    // Start server and register hooks immediately (synchronous, zero delay).
+    FlogServer.instance.start(port: port);
+
+    // Auto-detect app info in the background — updates before any TUI connects.
+    PackageInfo.fromPlatform().then((info) {
+      FlogServer.instance.updateAppInfo(
+        appName: info.appName,
+        appVersion: info.version,
+        packageName: info.packageName,
+      );
+    }).catchError((_) {});
+  }
+}
 
 class FlogLogger {
   /// The tag used to identify the source of log messages.

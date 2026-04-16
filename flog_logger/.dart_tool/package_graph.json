@@ -5,9 +5,10 @@
   "packages": [
     {
       "name": "flog_dart",
-      "version": "0.3.0",
+      "version": "0.5.0",
       "dependencies": [
         "dio",
+        "flutter",
         "web_socket_channel"
       ],
       "devDependencies": [
@@ -20,6 +21,50 @@
       "dependencies": []
     },
     {
+      "name": "flutter",
+      "version": "0.0.0",
+      "dependencies": [
+        "characters",
+        "collection",
+        "material_color_utilities",
+        "meta",
+        "sky_engine",
+        "vector_math"
+      ]
+    },
+    {
+      "name": "sky_engine",
+      "version": "0.0.0",
+      "dependencies": []
+    },
+    {
+      "name": "vector_math",
+      "version": "2.2.0",
+      "dependencies": []
+    },
+    {
+      "name": "meta",
+      "version": "1.17.0",
+      "dependencies": []
+    },
+    {
+      "name": "material_color_utilities",
+      "version": "0.13.0",
+      "dependencies": [
+        "collection"
+      ]
+    },
+    {
+      "name": "collection",
+      "version": "1.19.1",
+      "dependencies": []
+    },
+    {
+      "name": "characters",
+      "version": "1.4.1",
+      "dependencies": []
+    },
+    {
       "name": "web_socket_channel",
       "version": "3.0.3",
       "dependencies": [
@@ -28,19 +73,6 @@
         "stream_channel",
         "web",
         "web_socket"
-      ]
-    },
-    {
-      "name": "dio",
-      "version": "5.9.2",
-      "dependencies": [
-        "async",
-        "collection",
-        "dio_web_adapter",
-        "http_parser",
-        "meta",
-        "mime",
-        "path"
       ]
     },
     {
@@ -70,6 +102,13 @@
       ]
     },
     {
+      "name": "typed_data",
+      "version": "1.4.0",
+      "dependencies": [
+        "collection"
+      ]
+    },
+    {
       "name": "async",
       "version": "2.13.1",
       "dependencies": [
@@ -78,28 +117,21 @@
       ]
     },
     {
-      "name": "dio_web_adapter",
-      "version": "2.1.2",
+      "name": "dio",
+      "version": "5.9.2",
       "dependencies": [
-        "dio",
+        "async",
+        "collection",
+        "dio_web_adapter",
         "http_parser",
         "meta",
-        "web"
+        "mime",
+        "path"
       ]
     },
     {
       "name": "path",
       "version": "1.9.1",
-      "dependencies": []
-    },
-    {
-      "name": "mime",
-      "version": "2.0.0",
-      "dependencies": []
-    },
-    {
-      "name": "meta",
-      "version": "1.18.2",
       "dependencies": []
     },
     {
@@ -113,15 +145,13 @@
       ]
     },
     {
-      "name": "collection",
-      "version": "1.19.1",
-      "dependencies": []
-    },
-    {
-      "name": "typed_data",
-      "version": "1.4.0",
+      "name": "dio_web_adapter",
+      "version": "2.1.2",
       "dependencies": [
-        "collection"
+        "dio",
+        "http_parser",
+        "meta",
+        "web"
       ]
     },
     {
@@ -130,6 +160,11 @@
       "dependencies": [
         "source_span"
       ]
+    },
+    {
+      "name": "mime",
+      "version": "2.0.0",
+      "dependencies": []
     },
     {
       "name": "source_span",
