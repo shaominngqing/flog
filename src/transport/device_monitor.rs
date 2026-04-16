@@ -297,11 +297,12 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
 
                             // Only emit Added once per serial (same device may have multiple connections)
                             if known_serials.insert(serial.clone()) {
-                                let device_class = props.get("DeviceClass").and_then(|v| v.as_string()).unwrap_or("iOS").to_string();
                                 let name = if !device_name.is_empty() {
                                     device_name
                                 } else {
-                                    device_class
+                                    // Query lockdownd for real device name + model
+                                    super::usbmuxd::query_device_name(device_id).await
+                                        .unwrap_or_else(|| "iPhone".to_string())
                                 };
                                 let _ = tx.send(DeviceEvent::Added(Device {
                                     id: serial,

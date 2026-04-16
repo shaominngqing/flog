@@ -73,6 +73,50 @@ mod imp {
         Ok(stream)
     }
 
+    /// Query device name via lockdownd (port 62078) through usbmuxd tunnel.
+    /// No external tools required — pure usbmuxd + lockdownd protocol.
+    pub async fn query_device_name(device_id: u32) -> Option<String> {
+        let mut stream = UnixStream::connect(USBMUXD_SOCKET).await.ok()?;
+
+        // Connect to lockdownd (port 62078) via usbmuxd
+        let port_be = (62078u32).to_be();
+        let request = plist::Value::Dictionary({
+            let mut d = plist::Dictionary::new();
+            d.insert("MessageType".into(), "Connect".into());
+            d.insert("DeviceID".into(), plist::Value::Integer(device_id.into()));
+            d.insert("PortNumber".into(), plist::Value::Integer(port_be.into()));
+            d.insert("ClientVersionString".into(), "flog".into());
+            d.insert("ProgName".into(), "flog".into());
+            d
+        });
+        send_plist(&mut stream, &request, 2).await.ok()?;
+
+        let (_, response) = recv_plist(&mut stream).await.ok()?;
+        let code = response.as_dictionary()?.get("Number")?.as_unsigned_integer()?;
+        if code != 0 { return None; }
+
+        // lockdownd uses big-endian 4-byte length prefix (different from usbmuxd)
+        let req = plist::Value::Dictionary({
+            let mut d = plist::Dictionary::new();
+            d.insert("Request".into(), "GetValue".into());
+            d.insert("Key".into(), "DeviceName".into());
+            d
+        });
+        let mut body = Vec::new();
+        req.to_writer_xml(&mut body).ok()?;
+        let len = (body.len() as u32).to_be_bytes();
+        stream.write_all(&len).await.ok()?;
+        stream.write_all(&body).await.ok()?;
+
+        let mut len_buf = [0u8; 4];
+        stream.read_exact(&mut len_buf).await.ok()?;
+        let resp_len = u32::from_be_bytes(len_buf) as usize;
+        let mut resp_body = vec![0u8; resp_len];
+        stream.read_exact(&mut resp_body).await.ok()?;
+        let value = plist::Value::from_reader(std::io::Cursor::new(resp_body)).ok()?;
+        value.as_dictionary()?.get("Value")?.as_string().map(|s| s.to_string())
+    }
+
     async fn send_plist(stream: &mut UnixStream, value: &plist::Value, tag: u32) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut body = Vec::new();
         value.to_writer_xml(&mut body)?;
