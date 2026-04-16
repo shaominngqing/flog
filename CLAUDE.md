@@ -112,7 +112,7 @@ Both Logs and Network use the same pattern:
 
 ## flog_dart Dart Package
 
-`flog_logger/` contains the Dart companion package published as [flog_dart](https://pub.dev/packages/flog_dart) on pub.dev.
+`flog_dart/` contains the Dart companion package published as [flog_dart](https://pub.dev/packages/flog_dart) on pub.dev.
 
 - `FlogLogger` — Structured `[LEVEL][Tag] message` logging
 - `FlogDio` — Drop-in `Dio` replacement that auto-instruments HTTP for Network Inspector. Inserts `FlogMockInterceptor` + `FlogHttpInterceptor` automatically. Also provides `sse()` convenience method for SSE streams.

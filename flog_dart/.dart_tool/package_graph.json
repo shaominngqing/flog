@@ -5,7 +5,7 @@
   "packages": [
     {
       "name": "flog_dart",
-      "version": "0.6.2",
+      "version": "0.6.4",
       "dependencies": [
         "dio",
         "flutter",
