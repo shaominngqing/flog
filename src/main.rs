@@ -254,11 +254,6 @@ async fn main() -> io::Result<()> {
                     }
                 }
                 transport::DeviceEvent::Removed(id) => {
-                    // Sync to App
-                    {
-                        let mut a = app_for_discovery.lock().await;
-                        a.discovered_devices.remove(&id);
-                    }
                     // Cancel all connection tasks for this device (all ports)
                     let mut tasks = active_tasks_c.lock().await;
                     let keys_to_remove: Vec<String> = tasks.keys()
@@ -268,6 +263,21 @@ async fn main() -> io::Result<()> {
                     for key in keys_to_remove {
                         if let Some(task) = tasks.remove(&key) {
                             task.abort();
+                        }
+                    }
+                    drop(tasks);
+
+                    // Clean up app state — remove device and all its connected apps
+                    {
+                        let mut a = app_for_discovery.lock().await;
+                        a.discovered_devices.remove(&id);
+                        // Remove all connected apps for this device
+                        let app_ids: Vec<String> = a.connected_apps.iter()
+                            .filter(|app| app.device_id == id)
+                            .map(|app| app.id.clone())
+                            .collect();
+                        for app_id in app_ids {
+                            a.remove_connected_app(&app_id);
                         }
                     }
                 }
