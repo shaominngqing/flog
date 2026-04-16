@@ -46,7 +46,8 @@ mod imp {
     pub async fn connect_device(device_id: u32, port: u16) -> Result<UnixStream, Box<dyn std::error::Error + Send + Sync>> {
         let mut stream = UnixStream::connect(USBMUXD_SOCKET).await?;
 
-        let port_be = (port as u32).to_be();
+        // usbmuxd expects port as htons(port): u16 byte-swap, zero-extended to u32
+        let port_be = port.swap_bytes() as u32;
         let request = plist::Value::Dictionary({
             let mut d = plist::Dictionary::new();
             d.insert("MessageType".into(), "Connect".into());
