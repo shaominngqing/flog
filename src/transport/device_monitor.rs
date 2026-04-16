@@ -236,6 +236,10 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
 
         let (mut read_half, mut write_half) = stream.into_split();
 
+        // Track usbmuxd DeviceID → serial, and known serials for dedup
+        let mut device_id_map: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        let mut known_serials: std::collections::HashSet<String> = std::collections::HashSet::new();
+
         // Send Listen request
         let request = plist::Value::Dictionary({
             let mut d = plist::Dictionary::new();
@@ -288,22 +292,34 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
                         let serial = props.get("SerialNumber").and_then(|v| v.as_string()).unwrap_or("").to_string();
                         let device_name = props.get("DeviceName").and_then(|v| v.as_string()).unwrap_or("").to_string();
                         if !serial.is_empty() {
-                            let name = if device_name.is_empty() {
-                                format!("iOS ({})", &serial[..8.min(serial.len())])
-                            } else {
-                                device_name
-                            };
-                            let _ = tx.send(DeviceEvent::Added(Device {
-                                id: serial.clone(),
-                                name,
-                                kind: DeviceKind::IosUsb { device_id },
-                            }));
+                            // Track DeviceID → serial mapping for Detached events
+                            device_id_map.insert(device_id, serial.clone());
+
+                            // Only emit Added once per serial (same device may have multiple connections)
+                            if known_serials.insert(serial.clone()) {
+                                let name = if device_name.is_empty() {
+                                    format!("iOS ({})", &serial[..8.min(serial.len())])
+                                } else {
+                                    device_name
+                                };
+                                let _ = tx.send(DeviceEvent::Added(Device {
+                                    id: serial,
+                                    name,
+                                    kind: DeviceKind::IosUsb { device_id },
+                                }));
+                            }
                         }
                     }
                 }
                 "Detached" => {
-                    let device_id = dict.get("DeviceID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0);
-                    let _ = tx.send(DeviceEvent::Removed(format!("usbmuxd:{}", device_id)));
+                    let device_id = dict.get("DeviceID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
+                    // Look up serial by DeviceID, remove only when all connections for this serial are gone
+                    if let Some(serial) = device_id_map.remove(&device_id) {
+                        if !device_id_map.values().any(|s| s == &serial) {
+                            known_serials.remove(&serial);
+                            let _ = tx.send(DeviceEvent::Removed(serial));
+                        }
+                    }
                 }
                 _ => {}
             }
