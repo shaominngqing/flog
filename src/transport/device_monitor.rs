@@ -297,11 +297,11 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
 
                             // Only emit Added once per serial (same device may have multiple connections)
                             if known_serials.insert(serial.clone()) {
+                                let product_id = props.get("ProductID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u16;
                                 let name = if !device_name.is_empty() {
                                     device_name
                                 } else {
-                                    // Try ideviceinfo for model name
-                                    ios_device_name(&serial).await
+                                    usb_product_id_to_name(product_id, &serial)
                                 };
                                 let _ = tx.send(DeviceEvent::Added(Device {
                                     id: serial,
@@ -330,78 +330,17 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
     }
 }
 
-/// Query iOS device name and model via ideviceinfo (libimobiledevice).
-/// Falls back to serial prefix if ideviceinfo is not available.
+/// Best-effort iOS device name from usbmuxd info. No external dependencies.
+/// Once the app connects, the Hello message provides the real device info.
 #[cfg(target_os = "macos")]
-async fn ios_device_name(serial: &str) -> String {
-    // Try DeviceName first (user-set name like "John's iPhone")
-    if let Some(name) = idevice_value(serial, "DeviceName").await {
-        // Append model if available: "John's iPhone (iPhone 15 Pro)"
-        if let Some(product_type) = idevice_value(serial, "ProductType").await {
-            let model = product_type_to_name(&product_type);
-            return format!("{} ({})", name, model);
-        }
-        return name;
-    }
-    // Try ProductType alone
-    if let Some(product_type) = idevice_value(serial, "ProductType").await {
-        return product_type_to_name(&product_type);
-    }
-    // Fallback
-    format!("iOS ({})", &serial[..8.min(serial.len())])
-}
-
-#[cfg(target_os = "macos")]
-async fn idevice_value(serial: &str, key: &str) -> Option<String> {
-    let output = Command::new("ideviceinfo")
-        .args(["-u", serial, "-k", key])
-        .output()
-        .await
-        .ok()?;
-    if output.status.success() {
-        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if val.is_empty() { None } else { Some(val) }
+fn usb_product_id_to_name(_product_id: u16, serial: &str) -> String {
+    // Modern iPhones have serials starting with "00008"
+    // iPads typically start with other prefixes
+    if serial.starts_with("00008") {
+        "iPhone".to_string()
     } else {
-        None
+        "iPad".to_string()
     }
-}
-
-#[cfg(target_os = "macos")]
-fn product_type_to_name(product_type: &str) -> String {
-    match product_type {
-        // iPhone
-        "iPhone14,2" => "iPhone 13 Pro",
-        "iPhone14,3" => "iPhone 13 Pro Max",
-        "iPhone14,4" => "iPhone 13 mini",
-        "iPhone14,5" => "iPhone 13",
-        "iPhone14,6" => "iPhone SE (3rd)",
-        "iPhone14,7" => "iPhone 14",
-        "iPhone14,8" => "iPhone 14 Plus",
-        "iPhone15,2" => "iPhone 14 Pro",
-        "iPhone15,3" => "iPhone 14 Pro Max",
-        "iPhone15,4" => "iPhone 15",
-        "iPhone15,5" => "iPhone 15 Plus",
-        "iPhone16,1" => "iPhone 15 Pro",
-        "iPhone16,2" => "iPhone 15 Pro Max",
-        "iPhone17,1" => "iPhone 16 Pro",
-        "iPhone17,2" => "iPhone 16 Pro Max",
-        "iPhone17,3" => "iPhone 16",
-        "iPhone17,4" => "iPhone 16 Plus",
-        "iPhone17,5" => "iPhone 16e",
-        // iPad (recent)
-        "iPad13,18" => "iPad (10th)",
-        "iPad13,19" => "iPad (10th)",
-        "iPad14,3" => "iPad Pro 11\" (4th)",
-        "iPad14,4" => "iPad Pro 11\" (4th)",
-        "iPad14,5" => "iPad Pro 12.9\" (6th)",
-        "iPad14,6" => "iPad Pro 12.9\" (6th)",
-        "iPad16,3" => "iPad Pro 11\" (M4)",
-        "iPad16,4" => "iPad Pro 11\" (M4)",
-        "iPad16,5" => "iPad Pro 13\" (M4)",
-        "iPad16,6" => "iPad Pro 13\" (M4)",
-        _ => product_type,
-    }
-    .to_string()
 }
 
 // ── Source 3: localhost probe ──
