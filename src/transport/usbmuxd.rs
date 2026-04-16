@@ -76,10 +76,16 @@ mod imp {
     /// Query device name via lockdownd (port 62078) through usbmuxd tunnel.
     /// No external tools required — pure usbmuxd + lockdownd protocol.
     pub async fn query_device_name(device_id: u32) -> Option<String> {
+        // Timeout the entire query — lockdownd may be slow if device is locked
+        tokio::time::timeout(std::time::Duration::from_secs(3), query_device_name_inner(device_id)).await.ok()?
+    }
+
+    async fn query_device_name_inner(device_id: u32) -> Option<String> {
         let mut stream = UnixStream::connect(USBMUXD_SOCKET).await.ok()?;
 
         // Connect to lockdownd (port 62078) via usbmuxd
-        let port_be = (62078u32).to_be();
+        // usbmuxd expects port as htons(port): u16 byte-swap, then zero-extended to u32
+        let port_be = 62078u16.swap_bytes() as u32;
         let request = plist::Value::Dictionary({
             let mut d = plist::Dictionary::new();
             d.insert("MessageType".into(), "Connect".into());
@@ -120,6 +126,7 @@ mod imp {
         req.to_writer_xml(&mut body).ok()?;
         stream.write_all(&(body.len() as u32).to_be_bytes()).await.ok()?;
         stream.write_all(&body).await.ok()?;
+        stream.flush().await.ok()?;
 
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).await.ok()?;
