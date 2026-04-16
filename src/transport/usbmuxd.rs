@@ -107,7 +107,7 @@ mod imp {
         let marketing_name = lockdown_get_value(&mut stream, "MarketingName").await;
 
         match (device_name, marketing_name) {
-            (Some(dn), Some(mn)) => Some(format!("{} ({})", dn, mn)),
+            (Some(dn), Some(mn)) => Some(format!("{} ({})", mn, dn)),
             (Some(dn), None) => Some(dn),
             (None, Some(mn)) => Some(mn),
             (None, None) => None,
