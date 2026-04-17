@@ -42,6 +42,8 @@ const TIME_WIDTH: usize = 12;
 const LEVEL_WIDTH: usize = 9; // " VERBOSE " is the longest
 /// Max visual lines per log entry (header line + wrapped continuation lines).
 const MAX_WRAP_LINES: usize = 3;
+/// Max collapsed stack trace preview lines shown in the log list.
+const MAX_STACK_PREVIEW_LINES: usize = 5;
 
 fn level_color(level: LogLevel) -> Color {
     match level {
@@ -656,8 +658,9 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             let base = Style::default().fg(mc).bg(row_bg);
             let dim_s = Style::default().fg(SURFACE1).bg(row_bg);
 
+            let cursor_color = if entry.level == LogLevel::Error { RED } else { BLUE };
             let cursor = if is_selected {
-                Span::styled("▎", Style::default().fg(BLUE).bg(row_bg))
+                Span::styled("▎", Style::default().fg(cursor_color).bg(row_bg))
             } else {
                 Span::styled(" ", Style::default().bg(row_bg))
             };
@@ -781,7 +784,7 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             // cursor(1) + bookmark(2) + time(TIME_WIDTH) + sep(1) + level(LEVEL_WIDTH) + sep(1) + tag(TAG_WIDTH) + sep(1)
             let empty_prefix = |sel: bool, bg: Color| -> Vec<Span<'static>> {
                 let cursor_s = if sel {
-                    Span::styled("▎", Style::default().fg(BLUE).bg(bg))
+                    Span::styled("▎", Style::default().fg(cursor_color).bg(bg))
                 } else {
                     Span::styled(" ", Style::default().bg(bg))
                 };
@@ -847,6 +850,55 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                         ));
                     }
                     lines.push(Line::from(cs));
+                    row_map.push(fi);
+                }
+            }
+
+            // Stack trace preview (error + collapsed stacktrace)
+            if entry.error.is_some() || entry.stacktrace.is_some() {
+                let (preview, remaining) = entry.stack_preview_lines(MAX_STACK_PREVIEW_LINES);
+                let err_style = Style::default().fg(RED).bg(row_bg).add_modifier(Modifier::DIM);
+                let frame_style = Style::default().fg(OVERLAY0).bg(row_bg);
+
+                for (pi, pline) in preview.iter().enumerate() {
+                    if lines.len() >= height {
+                        break;
+                    }
+                    let mut ps = empty_prefix(is_selected, row_bg);
+                    let style = if pi == 0 && entry.error.is_some() {
+                        err_style // First line is the error summary → RED dimmed
+                    } else {
+                        frame_style // Stack frames → OVERLAY0
+                    };
+                    ps.push(Span::styled(
+                        safe_pad(pline, wrap_width),
+                        style,
+                    ));
+                    let used: usize = ps.iter().map(|s| s.content.width()).sum();
+                    if used < total_width {
+                        ps.push(Span::styled(
+                            " ".repeat(total_width - used),
+                            Style::default().bg(row_bg),
+                        ));
+                    }
+                    lines.push(Line::from(ps));
+                    row_map.push(fi);
+                }
+
+                if remaining > 0 && lines.len() < height {
+                    let mut ts = empty_prefix(is_selected, row_bg);
+                    ts.push(Span::styled(
+                        format!("... {} more frames", remaining),
+                        Style::default().fg(OVERLAY0).bg(row_bg).add_modifier(Modifier::ITALIC),
+                    ));
+                    let used: usize = ts.iter().map(|s| s.content.width()).sum();
+                    if used < total_width {
+                        ts.push(Span::styled(
+                            " ".repeat(total_width - used),
+                            Style::default().bg(row_bg),
+                        ));
+                    }
+                    lines.push(Line::from(ts));
                     row_map.push(fi);
                 }
             }
@@ -939,7 +991,15 @@ fn entry_row_count_from_store(
     for extra in &entry.extra_lines {
         extra_rows += wrap_text(extra, wrap_width, MAX_WRAP_LINES).len();
     }
-    wrapped.len() + extra_rows
+    let mut stack_rows = 0;
+    if entry.error.is_some() || entry.stacktrace.is_some() {
+        let (preview, remaining) = entry.stack_preview_lines(MAX_STACK_PREVIEW_LINES);
+        stack_rows = preview.len();
+        if remaining > 0 {
+            stack_rows += 1; // "... N more frames" line
+        }
+    }
+    wrapped.len() + extra_rows + stack_rows
 }
 
 // ══════════════════════════════════════
