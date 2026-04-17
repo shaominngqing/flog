@@ -92,6 +92,29 @@ impl LogEntry {
         }
         s
     }
+
+    /// Returns a capped preview of error + collapsed stacktrace for list view.
+    /// Returns (lines, remaining_count) where remaining_count is how many more lines exist beyond the cap.
+    pub fn stack_preview_lines(&self, max_lines: usize) -> (Vec<String>, usize) {
+        let mut lines: Vec<String> = Vec::new();
+
+        if let Some(ref err) = self.error {
+            lines.push(format!("Error: {}", err));
+        }
+
+        if let Some(ref st) = self.stacktrace {
+            let collapsed = collapse_stack_frames(st);
+            lines.extend(collapsed);
+        }
+
+        if lines.len() <= max_lines {
+            (lines, 0)
+        } else {
+            let remaining = lines.len() - max_lines;
+            lines.truncate(max_lines);
+            (lines, remaining)
+        }
+    }
 }
 
 /// Result of parsing a single raw line.
@@ -257,5 +280,50 @@ Error: Stack Overflow
         assert!(msg.contains("── Error ──"));
         assert!(msg.contains("NullPointerException"));
         assert!(!msg.contains("── Stack Trace ──"));
+    }
+
+    #[test]
+    fn stack_preview_basic() {
+        let mut entry = LogEntry::new(LogLevel::Error, "Test", "Parse error");
+        entry.error = Some("Stack Overflow".to_string());
+        entry.stacktrace = Some(
+            "#0      Foo._emit (package:app/foo.dart:25:3)\n\
+             #1      Foo._emit (package:app/foo.dart:27:5)\n\
+             #2      Foo._emit (package:app/foo.dart:27:5)\n\
+             #3      Bar.run (package:app/bar.dart:10:7)\n\
+             #4      Baz.start (package:app/baz.dart:20:3)\n\
+             #5      Main.go (package:app/main.dart:5:1)\n\
+             #6      Root.init (package:app/root.dart:1:1)\n\
+             #7      App.launch (package:app/app.dart:99:2)"
+                .to_string(),
+        );
+
+        let (lines, remaining) = entry.stack_preview_lines(5);
+        assert_eq!(lines[0], "Error: Stack Overflow");
+        assert!(lines[1].contains("Foo._emit"));
+        assert!(lines.len() <= 5);
+        assert!(remaining > 0);
+    }
+
+    #[test]
+    fn stack_preview_no_error_no_stack() {
+        let entry = LogEntry::new(LogLevel::Info, "Test", "Hello");
+        let (lines, remaining) = entry.stack_preview_lines(5);
+        assert!(lines.is_empty());
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn stack_preview_short_stack() {
+        let mut entry = LogEntry::new(LogLevel::Error, "Test", "Oops");
+        entry.stacktrace = Some(
+            "#0      Foo.bar (package:app/foo.dart:1:1)\n\
+             #1      Baz.qux (package:app/baz.dart:2:2)"
+                .to_string(),
+        );
+
+        let (lines, remaining) = entry.stack_preview_lines(5);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(remaining, 0);
     }
 }
