@@ -113,6 +113,7 @@ impl NetworkStore {
             }
             entry.http_status = msg.status;
             entry.duration = msg.duration;
+            entry.error = msg.error;
             if let Some(headers) = msg.headers {
                 entry.response_headers = Some(headers.to_string());
             }

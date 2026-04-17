@@ -1,3 +1,7 @@
+## 0.7.1
+
+- **FlogHttpInterceptor** — `onError` now emits HTTP status code, response headers, and response body for server error responses (4xx/5xx). Previously only a generic error string was sent, causing flog to show "failed" instead of the actual status code.
+
 ## 0.2.0
 
 - **FlogHttpInterceptor** — Dio interceptor for HTTP request/response logging to flog Network Inspector.

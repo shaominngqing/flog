@@ -198,18 +198,48 @@ class FlogHttpInterceptor extends Interceptor {
     final duration =
         start != null ? DateTime.now().difference(start).inMilliseconds : null;
 
-    final data = <String, dynamic>{
-      'id': id,
-      't': 'err',
-      'p': 'http',
-      'error': err.message ?? err.type.toString(),
-    };
+    final response = err.response;
 
-    if (duration != null) {
-      data['duration'] = duration;
+    // When the server returned an actual HTTP response (4xx/5xx), emit it as
+    // a normal response so flog shows the status code, headers, and body.
+    if (response != null) {
+      final data = <String, dynamic>{
+        'id': id,
+        't': 'res',
+        'p': 'http',
+        'status': response.statusCode,
+        'error': err.message ?? err.type.toString(),
+      };
+
+      if (duration != null) {
+        data['duration'] = duration;
+      }
+
+      if (includeResponseHeaders) {
+        data['headers'] = response.headers.map;
+      }
+
+      if (includeResponseBody && response.data != null) {
+        data['body'] = _truncate(_encodeBody(response.data));
+      }
+
+      emitNet(data);
+    } else {
+      // No HTTP response at all (timeout, DNS failure, connection refused, etc.)
+      final data = <String, dynamic>{
+        'id': id,
+        't': 'err',
+        'p': 'http',
+        'error': err.message ?? err.type.toString(),
+      };
+
+      if (duration != null) {
+        data['duration'] = duration;
+      }
+
+      emitNet(data);
     }
 
-    emitNet(data);
     handler.next(err);
   }
 
