@@ -71,18 +71,26 @@ impl LogEntry {
         }
     }
 
-    /// Complete message including continuation lines.
+    /// Complete message including continuation lines, error, and collapsed stacktrace.
     pub fn full_message(&self) -> String {
-        if self.extra_lines.is_empty() {
-            self.message.clone()
-        } else {
-            let mut s = self.message.clone();
-            for line in &self.extra_lines {
+        let mut s = self.message.clone();
+        for line in &self.extra_lines {
+            s.push('\n');
+            s.push_str(line);
+        }
+        if let Some(ref err) = self.error {
+            s.push_str("\n\n── Error ──\n");
+            s.push_str(err);
+        }
+        if let Some(ref st) = self.stacktrace {
+            s.push_str("\n\n── Stack Trace ──\n");
+            let collapsed = collapse_stack_frames(st);
+            for line in &collapsed {
                 s.push('\n');
                 s.push_str(line);
             }
-            s
         }
+        s
     }
 }
 
@@ -211,5 +219,43 @@ Error: Stack Overflow
         let result = collapse_stack_frames(input);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], input);
+    }
+
+    #[test]
+    fn full_message_includes_error_and_stacktrace() {
+        let mut entry = LogEntry::new(LogLevel::Error, "Test", "Parse error");
+        entry.error = Some("Stack Overflow".to_string());
+        entry.stacktrace = Some(
+            "#0      Foo._emit (package:app/foo.dart:25:3)\n\
+             #1      Foo._emit (package:app/foo.dart:27:5)\n\
+             #2      Foo._emit (package:app/foo.dart:27:5)"
+                .to_string(),
+        );
+
+        let msg = entry.full_message();
+        assert!(msg.contains("Parse error"));
+        assert!(msg.contains("── Error ──"));
+        assert!(msg.contains("Stack Overflow"));
+        assert!(msg.contains("── Stack Trace ──"));
+        assert!(msg.contains("× 2"));
+    }
+
+    #[test]
+    fn full_message_no_error_no_stacktrace() {
+        let entry = LogEntry::new(LogLevel::Info, "Test", "Hello world");
+        let msg = entry.full_message();
+        assert_eq!(msg, "Hello world");
+        assert!(!msg.contains("── Error ──"));
+    }
+
+    #[test]
+    fn full_message_error_only_no_stacktrace() {
+        let mut entry = LogEntry::new(LogLevel::Error, "Test", "Crash");
+        entry.error = Some("NullPointerException".to_string());
+
+        let msg = entry.full_message();
+        assert!(msg.contains("── Error ──"));
+        assert!(msg.contains("NullPointerException"));
+        assert!(!msg.contains("── Stack Trace ──"));
     }
 }
