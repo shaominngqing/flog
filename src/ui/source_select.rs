@@ -102,14 +102,9 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
 
     let device_count = device_order.len();
 
-    // ── Size: fit content, don't over-expand ──
+    // ── Size: fixed 3/4 height, scrollable content ──
     let picker_w = (area.width * 2 / 3).max(50).min(area.width.saturating_sub(4));
-    let est_lines: usize = device_order.iter().enumerate().map(|(i, did)| {
-        let app_count = apps_by_device.get(did).map(|v| v.len()).unwrap_or(0);
-        // device header(2) + per-app(5: name+pkg+platform+mode+pad) + waiting(1) + separator(1)
-        2 + if app_count > 0 { app_count * 5 } else { 1 } + if i < device_order.len() - 1 { 1 } else { 0 }
-    }).sum();
-    let picker_h = ((est_lines + 2) as u16).max(6).min(area.height * 4 / 5);
+    let picker_h = (area.height * 3 / 4).max(6);
     let picker_x = (area.width.saturating_sub(picker_w)) / 2;
     let picker_y = (area.height.saturating_sub(picker_h)) / 2;
 
@@ -133,133 +128,113 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     let mut selectable_ids: Vec<String> = Vec::new();
     let mut selectable_line_starts: Vec<usize> = Vec::new();
 
+    // ── Empty state: no devices discovered ──
+    if device_order.is_empty() {
+        let empty_lines = vec![
+            Line::from(Span::styled(" ".repeat(inner_w), Style::default().bg(MANTLE))),
+            {
+                let text = "No devices found";
+                let pad_l = inner_w.saturating_sub(text.width()) / 2;
+                let pad_r = inner_w.saturating_sub(pad_l + text.width());
+                Line::from(vec![
+                    Span::styled(" ".repeat(pad_l), Style::default().bg(MANTLE)),
+                    Span::styled(text, Style::default().fg(OVERLAY0).bg(MANTLE)),
+                    Span::styled(" ".repeat(pad_r), Style::default().bg(MANTLE)),
+                ])
+            },
+            Line::from(Span::styled(" ".repeat(inner_w), Style::default().bg(MANTLE))),
+            {
+                let text = "Run your Flutter app with flog_dart";
+                let pad_l = inner_w.saturating_sub(text.width()) / 2;
+                let pad_r = inner_w.saturating_sub(pad_l + text.width());
+                Line::from(vec![
+                    Span::styled(" ".repeat(pad_l), Style::default().bg(MANTLE)),
+                    Span::styled(text, Style::default().fg(SURFACE1).bg(MANTLE)),
+                    Span::styled(" ".repeat(pad_r), Style::default().bg(MANTLE)),
+                ])
+            },
+        ];
+        f.render_widget(Paragraph::new(empty_lines).block(block), picker_area);
+        app.layout.device_picker_items = Vec::new();
+        app.layout.device_picker_rect = Some((picker_area.x, picker_area.y, picker_area.width, picker_area.height));
+        app.layout.device_picker_item_ids = Vec::new();
+        app.layout.device_picker_total_lines = 0;
+        return;
+    }
+
+    // ── Pass 1: Build layout items (device headers + app cards) ──
+    // Each item has a height so we can compute Y offsets and scroll.
+    enum PickerItem {
+        DeviceHeader {
+            name: String,
+            kind: DeviceKind,
+            id: String,
+        },
+        AppCard {
+            sel_idx: usize,
+            app_id: String,
+            is_active: bool,
+            app_name: String,
+            app_version: String,
+            package_name: String,
+            os: String,
+            build_mode: String,
+            port: u16,
+        },
+        Waiting,
+        Separator,
+    }
+
+    impl PickerItem {
+        fn height(&self) -> u16 {
+            match self {
+                // pill+name, id+conn, blank
+                PickerItem::DeviceHeader { .. } => 3,
+                // border(1) + content(4) + border(1) + spacing(1)
+                PickerItem::AppCard { .. } => 7,
+                PickerItem::Waiting => 1,
+                PickerItem::Separator => 2,
+            }
+        }
+    }
+
+    let mut items: Vec<PickerItem> = Vec::new();
+    let mut selectable_ids: Vec<String> = Vec::new();
+
     for (di, device_id) in device_order.iter().enumerate() {
         let dev = app.discovered_devices.get(device_id);
-        let dev_name = dev.map(|d| d.name.as_str()).unwrap_or(device_id.as_str());
-        let dev_kind = dev.map(|d| &d.kind).cloned().unwrap_or(DeviceKind::Local);
+        let dev_name = dev.map(|d| d.name.clone()).unwrap_or_else(|| device_id.clone());
+        let dev_kind = dev.map(|d| d.kind.clone()).unwrap_or(DeviceKind::Local);
 
-        // ═══ Device header (2 lines on SURFACE0) ═══
-        // Line 1: device name + platform pill
-        let platform_label = match &dev_kind {
-            DeviceKind::Android => "Android",
-            DeviceKind::IosUsb { .. } => "iOS",
-            DeviceKind::Local => "Simulator",
-        };
-        let pill_style = match &dev_kind {
-            DeviceKind::Android => Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
-            DeviceKind::IosUsb { .. } => Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD),
-            DeviceKind::Local => Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD),
-        };
-        let pill_text = format!(" {} ", platform_label);
-        let name_text = format!("  {} ", dev_name);
-        let pad1 = inner_w.saturating_sub(name_text.width() + pill_text.width() + 1);
-        all_lines.push(Line::from(vec![
-            Span::styled(name_text, Style::default().fg(TEXT).bg(SURFACE0).add_modifier(Modifier::BOLD)),
-            Span::styled(" ".repeat(pad1), Style::default().bg(SURFACE0)),
-            Span::styled(pill_text, pill_style),
-            Span::styled(" ", Style::default().bg(SURFACE0)),
-        ]));
-        line_to_selectable.push(None);
+        items.push(PickerItem::DeviceHeader {
+            name: dev_name,
+            kind: dev_kind,
+            id: device_id.clone(),
+        });
 
-        // Line 2: device ID (serial / udid)
-        let id_text = format!("  ID: {}", device_id);
-        let pad2 = inner_w.saturating_sub(id_text.width());
-        all_lines.push(Line::from(vec![
-            Span::styled(id_text, Style::default().fg(OVERLAY0).bg(SURFACE0)),
-            Span::styled(" ".repeat(pad2), Style::default().bg(SURFACE0)),
-        ]));
-        line_to_selectable.push(None);
-
-        // ═══ App sub-cards ═══
-        let apps = apps_by_device.get(device_id);
-        if let Some(app_list) = apps {
-            for ca in app_list {
+        let app_list = apps_by_device.get(device_id);
+        if let Some(list) = app_list {
+            for ca in list {
                 let sel_idx = selectable_ids.len();
                 selectable_ids.push(ca.id.clone());
-                selectable_line_starts.push(all_lines.len());
-
-                let is_active = app.active_app_id.as_deref() == Some(&ca.id);
-                let is_selected = sel_idx == app.device_picker_selected;
-                let row_bg = if is_active {
-                    SURFACE1
-                } else if is_selected {
-                    SURFACE0
-                } else {
-                    MANTLE
-                };
-
-                let label_fg = OVERLAY0;
-                let value_fg = if is_active { TEXT } else { SUBTEXT0 };
-                let unknown_fg = SURFACE1;
-
-                // Helper: render "     Label: value" line; empty values show "unknown" dimmed
-                let push_kv = |lines: &mut Vec<Line>, l2s: &mut Vec<Option<usize>>,
-                               label: &str, value: &str, bg: Color, si: usize| {
-                    let left = format!("     {}: ", label);
-                    let (display, fg) = if value.is_empty() {
-                        ("unknown", unknown_fg)
-                    } else {
-                        (value, value_fg)
-                    };
-                    let used = left.width() + display.width();
-                    let pad = inner_w.saturating_sub(used);
-                    lines.push(Line::from(vec![
-                        Span::styled(left, Style::default().fg(label_fg).bg(bg)),
-                        Span::styled(display.to_string(), Style::default().fg(fg).bg(bg)),
-                        Span::styled(" ".repeat(pad), Style::default().bg(bg)),
-                    ]));
-                    l2s.push(Some(si));
-                };
-
-                // Line 1: indicator + app name + version
-                let indicator = if is_active {
-                    Span::styled("   \u{25cf} ", Style::default().fg(GREEN).bg(row_bg).add_modifier(Modifier::BOLD))
-                } else {
-                    Span::styled("   \u{25cb} ", Style::default().fg(TEAL).bg(row_bg))
-                };
-                let app_label = if ca.app_version.is_empty() {
-                    ca.app_name.clone()
-                } else {
-                    format!("{} v{}", ca.app_name, ca.app_version)
-                };
-                let port_text = format!("Port: {} ", ca.port);
-                let pad_a1 = inner_w.saturating_sub(5 + app_label.width() + port_text.width());
-                all_lines.push(Line::from(vec![
-                    indicator,
-                    Span::styled(app_label, Style::default().fg(TEXT).bg(row_bg).add_modifier(Modifier::BOLD)),
-                    Span::styled(" ".repeat(pad_a1), Style::default().bg(row_bg)),
-                    Span::styled(port_text, Style::default().fg(SAPPHIRE).bg(row_bg)),
-                ]));
-                line_to_selectable.push(Some(sel_idx));
-
-                // Detail rows — always shown, "unknown" when empty
-                push_kv(&mut all_lines, &mut line_to_selectable,
-                        "Package", &ca.package_name, row_bg, sel_idx);
-                push_kv(&mut all_lines, &mut line_to_selectable,
-                        "Platform", &ca.os, row_bg, sel_idx);
-                push_kv(&mut all_lines, &mut line_to_selectable,
-                        "Mode", &ca.build_mode, row_bg, sel_idx);
-
-                // Bottom padding
-                all_lines.push(Line::from(Span::styled(" ".repeat(inner_w), Style::default().bg(row_bg))));
-                line_to_selectable.push(Some(sel_idx));
+                items.push(PickerItem::AppCard {
+                    sel_idx,
+                    app_id: ca.id.clone(),
+                    is_active: app.active_app_id.as_deref() == Some(&ca.id),
+                    app_name: ca.app_name.clone(),
+                    app_version: ca.app_version.clone(),
+                    os: ca.os.clone(),
+                    package_name: ca.package_name.clone(),
+                    build_mode: ca.build_mode.clone(),
+                    port: ca.port,
+                });
             }
         } else {
-            // No apps — "Waiting for app..."
-            let wait_text = "     Waiting for app...".to_string();
-            let pad_w = inner_w.saturating_sub(wait_text.width());
-            all_lines.push(Line::from(vec![
-                Span::styled(wait_text, Style::default().fg(OVERLAY0).bg(MANTLE)),
-                Span::styled(" ".repeat(pad_w), Style::default().bg(MANTLE)),
-            ]));
-            line_to_selectable.push(None);
+            items.push(PickerItem::Waiting);
         }
 
-        // Thin separator between device groups
         if di < device_order.len() - 1 {
-            let sep = "\u{2500}".repeat(inner_w);
-            all_lines.push(Line::from(Span::styled(sep, Style::default().fg(SURFACE0).bg(MANTLE))));
-            line_to_selectable.push(None);
+            items.push(PickerItem::Separator);
         }
     }
 
@@ -269,55 +244,265 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
         app.device_picker_selected = max_sel;
     }
 
-    // ── Scroll: ensure selected app's first line is visible ──
-    let visible_h = inner.height as usize;
-    let total_lines = all_lines.len();
-    let selected_line = selectable_line_starts.get(app.device_picker_selected).copied().unwrap_or(0);
-    // Each app sub-card is 5 lines (name + package + platform + mode + pad)
-    let selected_end = selected_line + 5;
-    let scroll = if selected_line < app.device_picker_scroll {
-        selected_line.saturating_sub(1) // show a bit of context above
-    } else if selected_end > app.device_picker_scroll + visible_h {
-        selected_end.saturating_sub(visible_h)
-    } else {
-        app.device_picker_scroll
-    };
-    app.device_picker_scroll = scroll;
+    // ── Compute Y offsets ──
+    let total_content_h: u16 = items.iter().map(|it| it.height()).sum();
+    let visible_h = inner.height;
 
-    let visible_lines: Vec<Line> = all_lines
-        .into_iter()
-        .skip(scroll)
-        .take(visible_h)
-        .collect();
+    // Find the Y offset of the selected card
+    let mut selected_y: u16 = 0;
+    let mut selected_h: u16 = 0;
+    {
+        let mut y = 0u16;
+        for it in &items {
+            if let PickerItem::AppCard { sel_idx, .. } = it {
+                if *sel_idx == app.device_picker_selected {
+                    selected_y = y;
+                    selected_h = it.height();
+                    break;
+                }
+            }
+            y += it.height();
+        }
+    }
 
-    f.render_widget(Paragraph::new(visible_lines).block(block), picker_area);
+    // Scroll to keep selected card visible
+    let scroll = &mut app.device_picker_scroll;
+    let scroll_u16 = *scroll as u16;
+    if selected_y < scroll_u16 {
+        *scroll = selected_y.saturating_sub(1) as usize;
+    } else if selected_y + selected_h > scroll_u16 + visible_h {
+        *scroll = (selected_y + selected_h).saturating_sub(visible_h) as usize;
+    }
+    let scroll_offset = *scroll as u16;
+
+    // ── Pass 2: Render each item at its absolute position ──
+    // First render the outer block
+    f.render_widget(block, picker_area);
+
+    let card_margin = 3u16; // left margin for app cards inside picker
+    let card_w = inner.width.saturating_sub(card_margin * 2);
+
+    let mut click_regions: Vec<(u16, u16, u16, usize)> = Vec::new();
+    let mut y = 0u16; // content Y (before scroll)
+
+    for item in &items {
+        let h = item.height();
+        // Skip items above the scroll viewport
+        if y + h <= scroll_offset {
+            y += h;
+            continue;
+        }
+        // Stop if below viewport
+        if y >= scroll_offset + visible_h {
+            break;
+        }
+
+        let screen_y = inner.y + y.saturating_sub(scroll_offset);
+        let remaining = (inner.y + visible_h).saturating_sub(screen_y);
+        let visible_item_h = h.min(remaining);
+
+        match item {
+            PickerItem::DeviceHeader { name, kind, id } => {
+                let platform_label = match kind {
+                    DeviceKind::Android => "Android",
+                    DeviceKind::IosUsb { .. } => "iOS",
+                    DeviceKind::Local => "Simulator",
+                };
+                let pill_style = match kind {
+                    DeviceKind::Android => Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
+                    DeviceKind::IosUsb { .. } => Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD),
+                    DeviceKind::Local => Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD),
+                };
+                let conn_type = match kind {
+                    DeviceKind::Android => "ADB",
+                    DeviceKind::IosUsb { .. } => "USB",
+                    DeviceKind::Local => "Simulator",
+                };
+                let id_display = if id.len() > 20 {
+                    format!("{}...{}", &id[..8], &id[id.len()-4..])
+                } else {
+                    id.clone()
+                };
+
+                let pill_text = format!(" {} ", platform_label);
+                let iw = inner.width as usize;
+
+                let mut lines: Vec<Line> = Vec::new();
+                // Line 1: pill + name
+                let name_text = format!(" {}", name);
+                let used1 = 2 + pill_text.width() + name_text.width();
+                let pad1 = iw.saturating_sub(used1);
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default().bg(MANTLE)),
+                    Span::styled(pill_text, pill_style),
+                    Span::styled(name_text, Style::default().fg(TEXT).bg(MANTLE).add_modifier(Modifier::BOLD)),
+                    Span::styled(" ".repeat(pad1), Style::default().bg(MANTLE)),
+                ]));
+                // Line 2: id · conn
+                let id_line = format!("  {} \u{00b7} {}", id_display, conn_type);
+                let pad2 = iw.saturating_sub(id_line.width());
+                lines.push(Line::from(vec![
+                    Span::styled(id_line, Style::default().fg(OVERLAY0).bg(MANTLE)),
+                    Span::styled(" ".repeat(pad2), Style::default().bg(MANTLE)),
+                ]));
+                // Line 3: blank
+                lines.push(Line::from(Span::styled(" ".repeat(iw), Style::default().bg(MANTLE))));
+
+                let area = Rect::new(inner.x, screen_y, inner.width, visible_item_h);
+                f.render_widget(
+                    Paragraph::new(lines).style(Style::default().bg(MANTLE)),
+                    area,
+                );
+            }
+            PickerItem::AppCard {
+                sel_idx, app_id: _, is_active, app_name, app_version,
+                package_name, os, build_mode, port,
+            } => {
+                let is_selected = *sel_idx == app.device_picker_selected;
+                let (border_color, card_bg) = if *is_active {
+                    (BLUE, SURFACE1)
+                } else if is_selected {
+                    (SAPPHIRE, SURFACE0)
+                } else {
+                    (SURFACE0, MANTLE)
+                };
+
+                let label_fg = OVERLAY0;
+                let value_fg = if *is_active { TEXT } else { SUBTEXT0 };
+                let unknown_fg = SURFACE1;
+
+                // Card area with margin
+                let card_area = Rect::new(
+                    inner.x + card_margin,
+                    screen_y,
+                    card_w,
+                    (h - 1).min(visible_item_h), // -1 for spacing line
+                );
+
+                let card_block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(border_color))
+                    .style(Style::default().bg(card_bg));
+
+                let card_inner = card_block.inner(card_area);
+                let ciw = card_inner.width as usize;
+
+                // Build card content lines
+                let mut card_lines: Vec<Line> = Vec::new();
+
+                // Line 1: indicator + name + [ACTIVE] + port
+                let indicator = if *is_active {
+                    Span::styled(" \u{25cf} ", Style::default().fg(GREEN).bg(card_bg).add_modifier(Modifier::BOLD))
+                } else {
+                    Span::styled(" \u{25cb} ", Style::default().fg(TEAL).bg(card_bg))
+                };
+                let label = if app_version.is_empty() {
+                    app_name.clone()
+                } else {
+                    format!("{} v{}", app_name, app_version)
+                };
+                let active_tag = if *is_active { " ACTIVE" } else { "" };
+                let port_text = format!("Port: {}", port);
+                let fixed = 3 + label.width() + active_tag.len() + port_text.width();
+                let pad = ciw.saturating_sub(fixed);
+                let mut spans = vec![
+                    indicator,
+                    Span::styled(label, Style::default().fg(TEXT).bg(card_bg).add_modifier(Modifier::BOLD)),
+                ];
+                if *is_active {
+                    spans.push(Span::styled(
+                        active_tag.to_string(),
+                        Style::default().fg(GREEN).bg(card_bg).add_modifier(Modifier::BOLD),
+                    ));
+                }
+                spans.push(Span::styled(" ".repeat(pad), Style::default().bg(card_bg)));
+                spans.push(Span::styled(port_text, Style::default().fg(SAPPHIRE).bg(card_bg)));
+                card_lines.push(Line::from(spans));
+
+                // Detail rows
+                let details: [(&str, &str); 3] = [
+                    ("Package", package_name.as_str()),
+                    ("Platform", os.as_str()),
+                    ("Mode", build_mode.as_str()),
+                ];
+                for (lbl, val) in details {
+                    let left = format!("   {}: ", lbl);
+                    let (display, fg) = if val.is_empty() {
+                        ("unknown", unknown_fg)
+                    } else {
+                        (val, value_fg)
+                    };
+                    let used = left.width() + display.width();
+                    let dpad = ciw.saturating_sub(used);
+                    card_lines.push(Line::from(vec![
+                        Span::styled(left, Style::default().fg(label_fg).bg(card_bg)),
+                        Span::styled(display.to_string(), Style::default().fg(fg).bg(card_bg)),
+                        Span::styled(" ".repeat(dpad), Style::default().bg(card_bg)),
+                    ]));
+                }
+
+                f.render_widget(
+                    Paragraph::new(card_lines).block(card_block),
+                    card_area,
+                );
+
+                // Click regions for this card
+                for row in 0..card_area.height {
+                    let ry = card_area.y + row;
+                    if ry >= inner.y && ry < inner.y + visible_h {
+                        click_regions.push((ry, card_area.x, card_area.x + card_area.width, *sel_idx));
+                    }
+                }
+            }
+            PickerItem::Waiting => {
+                let iw = inner.width as usize;
+                let text = "     Waiting for app...";
+                let pad = iw.saturating_sub(text.width());
+                let area = Rect::new(inner.x, screen_y, inner.width, 1);
+                f.render_widget(
+                    Paragraph::new(Line::from(vec![
+                        Span::styled(text, Style::default().fg(OVERLAY0).bg(MANTLE)),
+                        Span::styled(" ".repeat(pad), Style::default().bg(MANTLE)),
+                    ])),
+                    area,
+                );
+            }
+            PickerItem::Separator => {
+                let iw = inner.width as usize;
+                let sep = "\u{2500}".repeat(iw);
+                let mut lines = vec![
+                    Line::from(Span::styled(sep, Style::default().fg(SURFACE0).bg(MANTLE))),
+                ];
+                lines.push(Line::from(Span::styled(" ".repeat(iw), Style::default().bg(MANTLE))));
+                let area = Rect::new(inner.x, screen_y, inner.width, visible_item_h);
+                f.render_widget(
+                    Paragraph::new(lines).style(Style::default().bg(MANTLE)),
+                    area,
+                );
+            }
+        }
+
+        y += h;
+    }
 
     // Scrollbar
-    if total_lines > visible_h {
+    let total_lines = total_content_h as usize;
+    let vis_h = visible_h as usize;
+    if total_lines > vis_h {
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .thumb_style(Style::default().fg(SAPPHIRE))
             .track_style(Style::default().fg(SURFACE0));
-        let max_scroll = total_lines.saturating_sub(visible_h);
-        let mut state = ScrollbarState::new(max_scroll).position(scroll.min(max_scroll));
+        let max_scroll = total_lines.saturating_sub(vis_h);
+        let pos = (app.device_picker_scroll).min(max_scroll);
+        let mut state = ScrollbarState::new(max_scroll).position(pos);
         f.render_stateful_widget(scrollbar, inner, &mut state);
-    }
-
-    // ── Store click regions (all lines belonging to a selectable app) ──
-    let mut click_regions: Vec<(u16, u16, u16, usize)> = Vec::new();
-    for (vi, line_idx) in (scroll..(scroll + visible_h).min(line_to_selectable.len())).enumerate() {
-        if let Some(Some(sel_idx)) = line_to_selectable.get(line_idx) {
-            click_regions.push((
-                inner.y + vi as u16,
-                inner.x,
-                inner.x + inner.width,
-                *sel_idx,
-            ));
-        }
     }
 
     app.layout.device_picker_items = click_regions;
     app.layout.device_picker_rect = Some((picker_area.x, picker_area.y, picker_area.width, picker_area.height));
     app.layout.device_picker_item_ids = selectable_ids;
+    app.layout.device_picker_total_lines = total_lines;
 }
 
 fn kind_label(kind: &DeviceKind) -> &'static str {
