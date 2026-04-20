@@ -189,7 +189,12 @@ pub fn render_json(
                         "{"
                     };
                     let cb = if br == "[" { "]" } else { "}" };
-                    let n = close.saturating_sub(si).saturating_sub(1);
+                    // Count direct children (entries at depth+1) instead of line count
+                let child_depth = fl.depth + 1;
+                let n = fmt_lines[si + 1..close]
+                    .iter()
+                    .filter(|f| f.depth == child_depth)
+                    .count();
                     all_lines.push(Line::from(vec![
                         Span::styled(format!("{} ", ind), Style::default()),
                         Span::styled("\u{25b6} ", Style::default().fg(BLUE)), // ▶
