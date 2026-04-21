@@ -158,4 +158,16 @@ mod tests {
         let t = parse("1776684313608").unwrap();
         assert_eq!(t.nodes[0].kind, NodeKind::Number("1776684313608".into()));
     }
+
+    #[test]
+    fn parse_preserves_object_key_order() {
+        // Insertion order: z, a, m, b. Alphabetical would reorder to a, b, m, z.
+        let t = parse(r#"{"z":1,"a":2,"m":3,"b":4}"#).unwrap();
+        let keys: Vec<&str> = t.nodes[0]
+            .children
+            .iter()
+            .map(|&cid| t.nodes[cid as usize].key.as_deref().unwrap())
+            .collect();
+        assert_eq!(keys, vec!["z", "a", "m", "b"]);
+    }
 }

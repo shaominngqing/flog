@@ -12,7 +12,7 @@ ratatui = "0.29"
 crossterm = "0.28"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "io-util", "io-std", "process", "time", "macros"] }
 regex = "1"
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 serde = { version = "1", features = ["derive"] }
 unicode-width = "0.2"
 toml = "0.8"
