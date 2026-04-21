@@ -45,38 +45,68 @@ pub fn parse_whole(text: &str) -> Option<Value> {
 /// `(start_byte, end_byte, value)` where `text[..start]` is free-form
 /// prefix and `text[end..]` is free-form suffix.
 ///
-/// Scans for candidate `{` or `[` starts left-to-right; tries strict
-/// JSON first, then tolerant parsing. On failure at one candidate,
-/// advances to the next bracket and retries.
+/// Scans every `{` / `[` candidate, attempts strict JSON then tolerant
+/// parsing at each, and returns the candidate with the **largest span**
+/// that also passes a usefulness check (see `is_useful_match`). This
+/// filters out log-tag false positives like `[DEBUG]` that parse
+/// technically but have no tree-worthy structure.
 pub fn find_and_parse(text: &str) -> Option<(usize, usize, Value)> {
-    let bytes = text.as_bytes();
+    let mut best: Option<(usize, usize, Value)> = None;
     let mut search_from = 0usize;
     while let Some(rel) = text[search_from..].find(['{', '[']) {
         let start = search_from + rel;
         let payload = &text[start..];
 
-        // 1. Strict JSON: serde_json::StreamDeserializer lets us detect
-        // how much was consumed via the Deserializer's byte offset.
-        let mut de = serde_json::Deserializer::from_str(payload).into_iter::<Value>();
-        if let Some(Ok(v)) = de.next() {
-            let consumed = de.byte_offset();
-            return Some((start, start + consumed, v));
+        // Strict JSON first, tolerant fallback second.
+        let candidate = {
+            let mut de = serde_json::Deserializer::from_str(payload).into_iter::<Value>();
+            match de.next() {
+                Some(Ok(v)) => Some((de.byte_offset(), v)),
+                _ => {
+                    let mut p = Parser::new(payload);
+                    p.parse_value().map(|v| (p.pos, v))
+                }
+            }
+        };
+
+        if let Some((consumed, v)) = candidate {
+            let end = start + consumed;
+            if is_useful_match(&v, start, end, text) {
+                let span = consumed;
+                let is_better = match &best {
+                    None => true,
+                    Some((bs, be, _)) => span > (*be - *bs),
+                };
+                if is_better {
+                    best = Some((start, end, v));
+                }
+            }
         }
 
-        // 2. Tolerant fallback.
-        let mut p = Parser::new(payload);
-        if let Some(v) = p.parse_value() {
-            let consumed = p.pos;
-            return Some((start, start + consumed, v));
-        }
-
-        // Advance past this bracket and try the next.
         search_from = start + 1;
-        // Don't split a multi-byte boundary — `find` always returns char
-        // boundaries so `start + 1` is safe for ASCII `{`/`[`.
-        let _ = bytes;
     }
-    None
+    best
+}
+
+/// A match is "useful" (worth rendering as a tree) unless it looks like
+/// a log-level tag — a single-primitive-element array with real text
+/// around it (e.g. `[DEBUG] some log...`). Everything else is accepted,
+/// including small objects like `{userId: 123}`.
+fn is_useful_match(v: &Value, start: usize, end: usize, text: &str) -> bool {
+    if let Value::Array(arr) = v {
+        if arr.len() == 1 && !is_container(&arr[0]) {
+            let prefix_has_text = !text[..start].trim().is_empty();
+            let suffix_has_text = !text[end..].trim().is_empty();
+            if prefix_has_text || suffix_has_text {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn is_container(v: &Value) -> bool {
+    matches!(v, Value::Array(_) | Value::Object(_))
 }
 
 struct Parser<'a> {
@@ -604,5 +634,53 @@ mod tests {
             "This course covers, among other things, ordering and, well, asking for help"
         );
         assert_eq!(v["level"], 2);
+    }
+
+    // ── Scoring / selection tests ──────────────────────────────────────
+
+    #[test]
+    fn find_prefers_larger_region_over_tag_like_prefix() {
+        // Bug: `[DEBUG]` hijacks the search because it parses as a 1-element
+        // array. Real structured content is the Dart Map after it.
+        let s = "[DEBUG] body: {code: 0, message: ok, items: [1, 2, 3]}";
+        let (start, end, v) = find_and_parse(s).expect("should find the Dart Map, not [DEBUG]");
+        assert_eq!(
+            &s[start..end],
+            "{code: 0, message: ok, items: [1, 2, 3]}",
+            "should pick the larger region"
+        );
+        assert_eq!(v["code"], 0);
+        assert_eq!(v["items"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn find_short_log_tag_alone_returns_none() {
+        // A bare `[DEBUG]` with nothing structured after it should return
+        // None — we prefer falling back to plain text over extracting a
+        // useless 1-element array.
+        assert!(find_and_parse("[DEBUG] some plain text").is_none());
+    }
+
+    #[test]
+    fn find_real_array_not_rejected() {
+        // Conversely, when the message really is an array, we should still
+        // return it — don't over-reject.
+        let (start, end, v) = find_and_parse("result: [1, 2, 3]").unwrap();
+        assert_eq!(&v[0], 1);
+        assert_eq!(&v[2], 3);
+        assert_eq!(&"result: [1, 2, 3]"[start..end], "[1, 2, 3]");
+    }
+
+    // ── Dart Map containing embedded strict-JSON value ─────────────────
+
+    #[test]
+    fn dart_map_with_embedded_strict_json_object() {
+        // Screenshot case: in a Dart Map the value of `content` is a strict
+        // JSON literal (with quoted keys).
+        let input = r#"{messageId: abc, role: assistant, content: {"goals": [{"title": "Restaurant Ordering", "icon": "✈"}]}, contentType: text}"#;
+        let v = parse_whole(input).expect("should parse Dart Map with embedded JSON value");
+        assert_eq!(v["messageId"], "abc");
+        assert_eq!(v["content"]["goals"][0]["title"], "Restaurant Ordering");
+        assert_eq!(v["contentType"], "text");
     }
 }
