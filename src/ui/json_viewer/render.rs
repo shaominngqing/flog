@@ -1,0 +1,1 @@
+//! Rendering (implementation follows).

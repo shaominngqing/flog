@@ -1,0 +1,1 @@
+//! Fold state (implementation follows).
