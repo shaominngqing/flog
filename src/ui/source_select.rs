@@ -641,9 +641,10 @@ fn push_app_card(
     };
 
     // Border/bg choice per state
-    let (card_bg, card_border_fg, tl, tr, bl, br, h, v) = if is_active {
+    // card_bg is always MANTLE — borders + pill + bold carry the ACTIVE distinction.
+    let card_bg = MANTLE;
+    let (card_border_fg, tl, tr, bl, br, h, v) = if is_active {
         (
-            SURFACE1,
             SAPPHIRE,
             '\u{2554}', // ╔
             '\u{2557}', // ╗
@@ -654,7 +655,6 @@ fn push_app_card(
         )
     } else {
         (
-            MANTLE,
             SURFACE0,
             '\u{250c}', // ┌
             '\u{2510}', // ┐
