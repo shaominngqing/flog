@@ -280,6 +280,7 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
                     let sel_idx = selectable_ids.len();
                     selectable_ids.push(ca.id.clone());
                     let is_active = app.active_app_id.as_deref() == Some(&ca.id);
+                    let is_selected = app.device_picker_selected == sel_idx;
 
                     push_app_card(
                         &mut lines,
@@ -290,6 +291,7 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
                         card_w,
                         sel_idx,
                         is_active,
+                        is_selected,
                         &ca.app_name,
                         &ca.app_version,
                         &ca.package_name,
@@ -599,6 +601,7 @@ fn push_app_card(
     card_w: usize,
     sel_idx: usize,
     is_active: bool,
+    is_selected: bool,
     app_name: &str,
     app_version: &str,
     package_name: &str,
@@ -612,6 +615,30 @@ fn push_app_card(
     let gutter_s = " ".repeat(gutter as usize);
     let left_card_gutter = " ".repeat(card_indent as usize);
     let right_card_gutter = left_card_gutter.clone();
+
+    // Selection preview cursor: SAPPHIRE ▎ in the last column of the left indent,
+    // only when this card is SELECTED but not ACTIVE (active styling already distinguishes).
+    let show_cursor = is_selected && !is_active;
+    let cursor_pre_w = (card_indent as usize).saturating_sub(1);
+    let push_left_indent = |spans: &mut Vec<Span<'static>>| {
+        if show_cursor {
+            if cursor_pre_w > 0 {
+                spans.push(Span::styled(
+                    " ".repeat(cursor_pre_w),
+                    Style::default().bg(dev_bg),
+                ));
+            }
+            spans.push(Span::styled(
+                "\u{258e}".to_string(), // ▎
+                Style::default().fg(SAPPHIRE).bg(dev_bg),
+            ));
+        } else {
+            spans.push(Span::styled(
+                left_card_gutter.clone(),
+                Style::default().bg(dev_bg),
+            ));
+        }
+    };
 
     // Border/bg choice per state
     let (card_bg, card_border_fg, tl, tr, bl, br, h, v) = if is_active {
@@ -682,7 +709,7 @@ fn push_app_card(
     let mut top_spans: Vec<Span<'static>> = Vec::new();
     top_spans.push(Span::styled(gutter_s.clone(), Style::default().bg(bg)));
     top_spans.push(device_border_span.clone());
-    top_spans.push(Span::styled(left_card_gutter.clone(), Style::default().bg(dev_bg)));
+    push_left_indent(&mut top_spans);
     // card top-left corner
     top_spans.push(Span::styled(tl.to_string(), Style::default().fg(card_border_fg).bg(dev_bg)));
     // "─ "
@@ -761,7 +788,7 @@ fn push_app_card(
         let mut spans: Vec<Span<'static>> = Vec::new();
         spans.push(Span::styled(gutter_s.clone(), Style::default().bg(bg)));
         spans.push(device_border_span.clone());
-        spans.push(Span::styled(left_card_gutter.clone(), Style::default().bg(dev_bg)));
+        push_left_indent(&mut spans);
         spans.push(Span::styled(v.to_string(), Style::default().fg(card_border_fg).bg(card_bg)));
         spans.push(Span::styled(" ".repeat(card_inner_w), Style::default().bg(card_bg)));
         spans.push(Span::styled(v.to_string(), Style::default().fg(card_border_fg).bg(card_bg)));
@@ -793,7 +820,7 @@ fn push_app_card(
         let mut spans: Vec<Span<'static>> = Vec::new();
         spans.push(Span::styled(gutter_s.clone(), Style::default().bg(bg)));
         spans.push(device_border_span.clone());
-        spans.push(Span::styled(left_card_gutter.clone(), Style::default().bg(dev_bg)));
+        push_left_indent(&mut spans);
         spans.push(Span::styled(v.to_string(), Style::default().fg(card_border_fg).bg(card_bg)));
         spans.push(Span::styled("    ".to_string(), Style::default().bg(card_bg)));
         spans.push(Span::styled(
@@ -818,7 +845,7 @@ fn push_app_card(
     let mut bot_spans: Vec<Span<'static>> = Vec::new();
     bot_spans.push(Span::styled(gutter_s.clone(), Style::default().bg(bg)));
     bot_spans.push(device_border_span.clone());
-    bot_spans.push(Span::styled(left_card_gutter.clone(), Style::default().bg(dev_bg)));
+    push_left_indent(&mut bot_spans);
     bot_spans.push(Span::styled(bl.to_string(), Style::default().fg(card_border_fg).bg(dev_bg)));
     bot_spans.push(Span::styled(
         h.to_string().repeat(card_inner_w),
