@@ -465,13 +465,20 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
             let lw = live_text.width() as u16;
             let cw = counts.width() as u16;
-            let ctxw = ctx.width() as u16;
+            let ctxw = (ctx.width() + 2) as u16; // +2 for "⇅ "
             let sx = (lw + cw, lw + cw + ctxw);
             let w = lw + cw + ctxw;
             (
                 vec![
                     Span::styled(live_text, live_style),
                     Span::styled(counts, Style::default().fg(SUBTEXT0).bg(bg)),
+                    Span::styled(
+                        "⇅ ".to_string(),
+                        Style::default()
+                            .fg(SAPPHIRE)
+                            .bg(bg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(
                         ctx,
                         Style::default()
