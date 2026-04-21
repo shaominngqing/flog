@@ -7,34 +7,16 @@
 //! always align.
 
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::super::{BLUE, GREEN, LAVENDER, MAUVE, OVERLAY0, PEACH, PINK, SAPPHIRE, SURFACE0, TEAL, YELLOW};
+use super::palette::{
+    key_color, BOOL_COLOR, COMMA_COLOR, FOLD_COLOR, NULL_COLOR, NUM_COLOR, STR_COLOR,
+};
 use super::state::JsonViewerState;
 use super::tree::{NodeKind, Tree};
-
-const STR_COLOR: Color = GREEN;
-const NUM_COLOR: Color = PEACH;
-const BOOL_COLOR: Color = PINK;
-const NULL_COLOR: Color = OVERLAY0;
-const COMMA_COLOR: Color = SURFACE0;
-const FOLD_COLOR: Color = OVERLAY0;
-
-const DEPTH_COLORS: [Color; 6] = [MAUVE, BLUE, TEAL, YELLOW, SAPPHIRE, LAVENDER];
-const DEPTH_BRACE: [Color; 6] = [
-    Color::Rgb(110, 115, 141),
-    Color::Rgb(100, 105, 131),
-    Color::Rgb(90, 95, 121),
-    Color::Rgb(80, 85, 111),
-    Color::Rgb(73, 77, 100),
-    Color::Rgb(54, 58, 79),
-];
-
-fn key_color(depth: u32) -> Color { DEPTH_COLORS[(depth as usize) % DEPTH_COLORS.len()] }
-fn brace_color(depth: u32) -> Color { DEPTH_BRACE[(depth as usize) % DEPTH_BRACE.len()] }
 
 /// Render `tree` into `out`, pushing one `Option<(section_key, node_id)>`
 /// into `click_map` for each line added. Clickable rows (foldable containers)
@@ -115,7 +97,7 @@ fn push_leaf_line(
     if let Some(ref key) = node.key {
         spans.push(Span::styled(
             format!("\"{}\"", key),
-            Style::default().fg(key_color(depth)),
+            Style::default().fg(key_color(depth as usize)),
         ));
         spans.push(Span::styled(": ", Style::default().fg(COMMA_COLOR)));
     }
@@ -147,9 +129,10 @@ fn render_leaf_value(kind: &NodeKind, max_width: usize) -> Vec<Span<'static>> {
         NodeKind::Number(s) => vec![Span::styled(s.clone(), Style::default().fg(NUM_COLOR))],
         NodeKind::String(s) => {
             let quoted = format!("\"{}\"", s);
-            let text = if quoted.width() > max_width && max_width >= 2 {
-                // Truncate inside the quotes, leave room for closing `"` + `…`
-                let budget = max_width.saturating_sub(2); // `"…`
+            let text = if quoted.width() > max_width && max_width >= 3 {
+                // Output format is `"<content>…"` — three fixed cells
+                // (open quote, ellipsis, close quote).
+                let budget = max_width.saturating_sub(3);
                 let mut w = 0usize;
                 let mut cut = 0usize;
                 for (i, ch) in s.char_indices() {
@@ -214,11 +197,23 @@ mod tests {
 
     #[test]
     fn leaf_string_truncated() {
-        // "  " marker (2) + `"…"` (3) + content
-        // max_width 10 -> used 2, remaining 8, budget for content = 6 chars
+        // Marker "  " (width 2) + content budget 8 → string span must be ≤ 8
+        // The string span is `"<prefix>…"` so content width must be ≤ 5.
         let lines = render(r#""abcdefghij""#, 10);
-        // "abcdefghij" has width 10 — with "…" bookend we expect a truncated form.
-        // Exact cut point varies by width budget; just assert the ellipsis appears.
-        assert!(lines[0].contains('…'), "expected truncation: {:?}", lines);
+        let line = &lines[0];
+        let line_w = unicode_width::UnicodeWidthStr::width(line.as_str());
+        assert!(
+            line_w <= 10,
+            "line width {} exceeds max_width 10: {:?}",
+            line_w,
+            line
+        );
+        // Must keep the leading marker and the bookend quotes.
+        assert!(line.starts_with("  \""), "missing marker + open quote: {:?}", line);
+        assert!(line.ends_with("…\""), "missing ellipsis + close quote: {:?}", line);
+        // Content between the quotes must be a non-empty prefix of "abcdefghij".
+        let content = &line["  \"".len() .. line.len() - "…\"".len()];
+        assert!(!content.is_empty());
+        assert!("abcdefghij".starts_with(content), "not a prefix: {:?}", content);
     }
 }

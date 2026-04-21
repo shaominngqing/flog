@@ -5,30 +5,14 @@
 //! log messages. Not the tree viewer.
 
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 
-use super::super::{BLUE, GREEN, LAVENDER, MAUVE, OVERLAY0, PEACH, PINK, SAPPHIRE, SURFACE0, TEAL, TEXT, YELLOW};
-
-const STR_COLOR: Color = GREEN;
-const NUM_COLOR: Color = PEACH;
-const BOOL_COLOR: Color = PINK;
-const NULL_COLOR: Color = OVERLAY0;
-const COMMA_COLOR: Color = SURFACE0;
-
-const DEPTH_COLORS: [Color; 6] = [MAUVE, BLUE, TEAL, YELLOW, SAPPHIRE, LAVENDER];
-const DEPTH_BRACE: [Color; 6] = [
-    Color::Rgb(110, 115, 141),
-    Color::Rgb(100, 105, 131),
-    Color::Rgb(90, 95, 121),
-    Color::Rgb(80, 85, 111),
-    Color::Rgb(73, 77, 100),
-    Color::Rgb(54, 58, 79),
-];
-
-fn key_color(depth: usize) -> Color { DEPTH_COLORS[depth % DEPTH_COLORS.len()] }
-fn brace_color(depth: usize) -> Color { DEPTH_BRACE[depth % DEPTH_BRACE.len()] }
+use super::super::TEXT;
+use super::palette::{
+    brace_color, key_color, BOOL_COLOR, COMMA_COLOR, NULL_COLOR, NUM_COLOR, STR_COLOR,
+};
 
 /// Colorize raw text (typically JSON) with syntax highlighting.
 pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {

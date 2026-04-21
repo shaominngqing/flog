@@ -7,6 +7,7 @@
 //! - `colorize` — raw-text JSON syntax highlight (independent).
 
 mod colorize;
+mod palette;
 mod render;
 mod state;
 mod tree;
