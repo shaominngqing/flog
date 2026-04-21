@@ -80,15 +80,22 @@ fn level_badge(level: LogLevel) -> (Color, Color, bool) {
 }
 
 /// Render level as a styled pill with fixed LEVEL_WIDTH-char width.
-fn level_pill(level: LogLevel, _row_bg: Color) -> Span<'static> {
+fn level_pill(level: LogLevel, row_bg: Color) -> Span<'static> {
     let (fg, bg, bold) = level_badge(level);
+    // On highlighted rows (error/warning bg), pull level pill bg down to MANTLE for contrast.
+    let pill_bg = if (row_bg == ERROR_ROW_BG || row_bg == WARNING_ROW_BG)
+        && matches!(level, LogLevel::Debug | LogLevel::Verbose | LogLevel::System)
+    {
+        MANTLE
+    } else {
+        bg
+    };
     let label = level.as_str();
-    // Center the label within LEVEL_WIDTH
     let total_pad = LEVEL_WIDTH.saturating_sub(label.len());
     let left_pad = total_pad / 2;
     let right_pad = total_pad - left_pad;
     let text = format!("{}{}{}", " ".repeat(left_pad), label, " ".repeat(right_pad));
-    let mut style = Style::default().fg(fg).bg(bg);
+    let mut style = Style::default().fg(fg).bg(pill_bg);
     if bold {
         style = style.add_modifier(Modifier::BOLD);
     }
@@ -150,22 +157,29 @@ fn tag_pill_spans(filter: &crate::domain::FilterState) -> Vec<Span<'static>> {
 // ══════════════════════════════════════
 
 pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
-    // Layout: separator | toolbar | main | status
+    // Layout: 7 rows — sep | op1 | op2 | sep | col_header | main | status
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // separator rule
-            Constraint::Length(1), // toolbar
-            Constraint::Min(3),    // main area (list + optional detail)
-            Constraint::Length(1), // status bar
+            Constraint::Length(1), // sep below tab bar
+            Constraint::Length(1), // op row 1: search + count
+            Constraint::Length(1), // op row 2: T tag + levels
+            Constraint::Length(1), // sep below ops
+            Constraint::Length(1), // column header
+            Constraint::Min(3),    // main
+            Constraint::Length(1), // status
         ])
         .split(area);
 
-    app.layout.toolbar_y = rows[1].y;
-    app.layout.bottom_y = rows[3].y;
+    app.layout.toolbar_y = rows[1].y; // op row 1 (for click hit-test on search)
+    app.layout.col_header_y = rows[4].y;
+    app.layout.bottom_y = rows[6].y;
 
     draw_separator_rule(f, rows[0]);
-    draw_toolbar(f, app, rows[1]);
+    draw_toolbar_op1(f, app, rows[1]);
+    draw_toolbar_op2(f, app, rows[2]);
+    draw_separator_rule(f, rows[3]);
+    draw_column_header(f, rows[4]);
 
     if app.show_detail_panel {
         let cols = Layout::default()
@@ -174,7 +188,7 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
                 Constraint::Percentage(100 - app.detail_panel_pct),
                 Constraint::Percentage(app.detail_panel_pct),
             ])
-            .split(rows[2]);
+            .split(rows[5]);
 
         app.layout.list_y = cols[0].y;
         app.layout.list_height = cols[0].height;
@@ -182,40 +196,36 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
         draw_log_list(f, app, cols[0]);
         detail::draw_side_panel(f, app, cols[1]);
     } else {
-        app.layout.list_y = rows[2].y;
-        app.layout.list_height = rows[2].height;
+        app.layout.list_y = rows[5].y;
+        app.layout.list_height = rows[5].height;
 
-        draw_log_list(f, app, rows[2]);
+        draw_log_list(f, app, rows[5]);
     }
 
-    draw_jump_to_bottom(f, app, rows[2]);
+    draw_jump_to_bottom(f, app, rows[5]);
 
-    draw_status_bar(f, app, rows[3]);
+    draw_status_bar(f, app, rows[6]);
 }
 
 // ══════════════════════════════════════
 //  Toolbar
 // ══════════════════════════════════════
 
-fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
-    let mut spans: Vec<Span> = Vec::new();
-    let mut x: u16 = 0;
+fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
     let search_active = app.mode == AppMode::Search;
-    let filter_active = app.mode == AppMode::TagFilter;
+    let w = area.width as u16;
 
-    // Leading space
+    let mut spans: Vec<Span> = Vec::new();
+
     spans.push(Span::styled(" ", Style::default().bg(bg)));
-    x += 1;
 
-    // Search
     let si = if search_active {
         Style::default().fg(MANTLE).bg(YELLOW)
     } else {
         Style::default().fg(OVERLAY0).bg(bg)
     };
     spans.push(Span::styled("/", si));
-    x += 1;
     let sw: usize = 20;
     let st = if search_active {
         format!("{}_", app.search.input)
@@ -233,9 +243,8 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     };
     app.layout.search_x = (1, 1 + 1 + sw as u16);
     spans.push(Span::styled(safe_pad(&st, sw), ss));
-    x += sw as u16;
 
-    // Sparkline
+    // Sparkline inline after search box
     if !app.search.matches.is_empty() {
         let fc = app.filtered_count();
         let spark = search_sparkline(&app.search.matches, fc, 12);
@@ -243,26 +252,40 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
             format!(" {}", spark),
             Style::default().fg(LAVENDER).bg(bg),
         ));
-        x += 1 + spark.width() as u16;
-        let info = format!("{}/{}", app.search.match_idx + 1, app.search.matches.len());
-        spans.push(Span::styled(
-            format!(" {} ", info),
-            Style::default().fg(YELLOW).bg(bg),
-        ));
-        x += 2 + info.width() as u16;
+        let info = format!(" {}/{} ", app.search.match_idx + 1, app.search.matches.len());
+        spans.push(Span::styled(info, Style::default().fg(YELLOW).bg(bg)));
         spans.push(Span::styled("<", Style::default().fg(BLUE).bg(bg)));
-        spans.push(Span::styled("> ", Style::default().fg(BLUE).bg(bg)));
-        x += 3;
+        spans.push(Span::styled(">", Style::default().fg(BLUE).bg(bg)));
     }
 
-    spans.push(Span::styled("   ", Style::default().bg(bg)));
-    x += 3;
+    let used: u16 = spans.iter().map(|s| s.content.width() as u16).sum();
 
-    // Tag filter
+    // Right-align count: " {filtered}/{total} "
+    let count_text = format!(" {}/{} ", app.filtered_count(), app.store.len());
+    let cw = count_text.width() as u16;
+    let pad = w.saturating_sub(used + cw);
+    spans.push(Span::styled(" ".repeat(pad as usize), Style::default().bg(bg)));
+    spans.push(Span::styled(count_text, Style::default().fg(SUBTEXT0).bg(bg)));
+
+    f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)), area);
+}
+
+fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
+    let bg = MANTLE;
+    let filter_active = app.mode == AppMode::TagFilter;
+    let mut spans: Vec<Span> = Vec::new();
+    let mut x: u16 = 0;
+
+    spans.push(Span::styled(" ", Style::default().bg(bg)));
+    x += 1;
+
+    // T pill + 2 spaces + tag placeholder (or pills if active)
     let filter_start_x = x;
     if filter_active {
         spans.push(Span::styled("T", Style::default().fg(MANTLE).bg(GREEN)));
         x += 1;
+        spans.push(Span::styled("  ", Style::default().bg(bg)));
+        x += 2;
         let fw: usize = 14;
         spans.push(Span::styled(
             safe_pad(&format!("{}_", app.tag_filter.input), fw),
@@ -270,27 +293,32 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
         ));
         x += fw as u16;
     } else if !app.filter.tag_include.is_empty() || !app.filter.tag_exclude.is_empty() {
+        spans.push(Span::styled("T", Style::default().fg(MANTLE).bg(GREEN)));
+        x += 1;
+        spans.push(Span::styled("  ", Style::default().bg(bg)));
+        x += 2;
         let pills = tag_pill_spans(&app.filter);
         for p in &pills {
             x += p.content.width() as u16;
         }
         spans.extend(pills);
     } else {
-        spans.push(Span::styled("T", Style::default().fg(OVERLAY0).bg(bg)));
+        spans.push(Span::styled("T", Style::default().fg(MANTLE).bg(GREEN)));
         x += 1;
+        spans.push(Span::styled("  ", Style::default().bg(bg)));
+        x += 2;
         spans.push(Span::styled(
-            safe_pad(" tag...", 7),
+            safe_pad("tag...", 14),
             Style::default().fg(OVERLAY0).bg(bg),
         ));
-        x += 7;
+        x += 14;
     }
     app.layout.filter_x = (filter_start_x, x);
 
     // Separator
-    spans.push(Span::styled("  │  ", Style::default().fg(SURFACE1).bg(bg)));
-    x += 5;
+    spans.push(Span::styled("   │   ", Style::default().fg(SURFACE1).bg(bg)));
+    x += 7;
 
-    // Level buttons — pill style
     app.layout.levels_x = x;
     for (label, level) in &[
         ("S", LogLevel::System),
@@ -310,28 +338,13 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
             }
             s
         } else if app.filter.min_level > *level {
-            Style::default()
-                .fg(SURFACE0)
-                .bg(bg)
-                .add_modifier(Modifier::DIM)
+            Style::default().fg(SURFACE0).bg(bg).add_modifier(Modifier::DIM)
         } else {
             Style::default().fg(level_color(*level)).bg(bg)
         };
         spans.push(Span::styled(format!(" {} ", label), style));
         x += 3;
     }
-
-    // Separator + counts
-    spans.push(Span::styled("  │  ", Style::default().fg(SURFACE1).bg(bg)));
-    x += 5;
-
-    let count_text = format!("{}/{}", app.filtered_count(), app.store.len());
-    let count_w = count_text.width() as u16;
-    spans.push(Span::styled(
-        count_text,
-        Style::default().fg(SUBTEXT0).bg(bg),
-    ));
-    x += count_w;
 
     if !app.bookmarks.is_empty() {
         let bm = format!("  ●{}", app.bookmarks.len());
@@ -341,13 +354,34 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
 
     let rem = area.width.saturating_sub(x);
     if rem > 0 {
-        spans.push(Span::styled(
-            " ".repeat(rem as usize),
-            Style::default().bg(bg),
-        ));
+        spans.push(Span::styled(" ".repeat(rem as usize), Style::default().bg(bg)));
     }
 
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)), area);
+}
+
+fn draw_column_header(f: &mut Frame, area: Rect) {
+    // Columns: cursor(1) + bookmark(2) + TIME(12) + sep(1) + LEVEL(9) + sep(1) + TAG(14) + sep(1) + MESSAGE
+    // We emit label headers aligned to those column starts.
+    let header_style = Style::default().fg(OVERLAY0).bg(MANTLE);
+    let text = format!(
+        " {}{}{}{}{}",
+        safe_pad("", 3),                         // cursor + bookmark
+        safe_pad("TIME", TIME_WIDTH),            // 12
+        safe_pad(" LEVEL", LEVEL_WIDTH + 1),     // 10
+        safe_pad(" TAG", TAG_WIDTH + 1),         // 15
+        " MESSAGE",
+    );
+    let w = area.width as usize;
+    let pad = w.saturating_sub(text.width());
+    let line = Line::from(vec![
+        Span::styled(text, header_style),
+        Span::styled(" ".repeat(pad), Style::default().bg(MANTLE)),
+    ]);
+    f.render_widget(
+        Paragraph::new(line).style(Style::default().bg(MANTLE)),
+        area,
+    );
 }
 
 // ══════════════════════════════════════
@@ -987,7 +1021,7 @@ fn draw_jump_to_bottom(f: &mut Frame, app: &mut App, area: Rect) {
         app.layout.jump_to_bottom_rect = None;
         return;
     }
-    if area.height < 4 || area.width < 24 {
+    if area.height < 5 || area.width < 24 {
         app.layout.jump_to_bottom_rect = None;
         return;
     }
@@ -996,34 +1030,33 @@ fn draw_jump_to_bottom(f: &mut Frame, app: &mut App, area: Rect) {
     let pill_w = (label_text.width() as u16 + 2).min(area.width.saturating_sub(4));
     let pill_h: u16 = 3;
     let pill_x = area.x + (area.width.saturating_sub(pill_w)) / 2;
-    let pill_y_rel = (area.height as f32 * 0.70) as u16;
-    let pill_y = area.y + pill_y_rel.min(area.height.saturating_sub(pill_h));
+    let pill_y = area.y + area.height.saturating_sub(pill_h + 1);
 
-    let border_style = Style::default().fg(SAPPHIRE).bg(SURFACE0);
+    let border_style = Style::default().fg(SAPPHIRE).bg(BASE);
     let top = format!("╭{}╮", "─".repeat((pill_w - 2) as usize));
     let bot = format!("╰{}╯", "─".repeat((pill_w - 2) as usize));
 
     let mid = if app.new_logs_since_pause > 0 {
         let total_inner = (pill_w - 2) as usize;
-        let base = "  ↓ Jump to bottom  ";
+        let base_text = "  ↓ Jump to bottom  ";
         let new_text = format!("{} new  ", app.new_logs_since_pause);
-        let used = base.width() + new_text.width();
+        let used = base_text.width() + new_text.width();
         let pad = total_inner.saturating_sub(used);
         vec![
             Span::styled("│", border_style),
-            Span::styled(base.to_string(), Style::default().fg(TEXT).bg(SURFACE0)),
-            Span::styled(new_text, Style::default().fg(YELLOW).bg(SURFACE0)),
-            Span::styled(" ".repeat(pad), Style::default().bg(SURFACE0)),
+            Span::styled(base_text.to_string(), Style::default().fg(TEXT).bg(BASE)),
+            Span::styled(new_text, Style::default().fg(YELLOW).bg(BASE)),
+            Span::styled(" ".repeat(pad), Style::default().bg(BASE)),
             Span::styled("│", border_style),
         ]
     } else {
         let total_inner = (pill_w - 2) as usize;
-        let base = "  ↓ Jump to bottom  ";
-        let pad = total_inner.saturating_sub(base.width());
+        let base_text = "  ↓ Jump to bottom  ";
+        let pad = total_inner.saturating_sub(base_text.width());
         vec![
             Span::styled("│", border_style),
-            Span::styled(base.to_string(), Style::default().fg(TEXT).bg(SURFACE0)),
-            Span::styled(" ".repeat(pad), Style::default().bg(SURFACE0)),
+            Span::styled(base_text.to_string(), Style::default().fg(TEXT).bg(BASE)),
+            Span::styled(" ".repeat(pad), Style::default().bg(BASE)),
             Span::styled("│", border_style),
         ]
     };
@@ -1035,7 +1068,7 @@ fn draw_jump_to_bottom(f: &mut Frame, app: &mut App, area: Rect) {
         Line::from(Span::styled(bot, border_style)),
     ];
     f.render_widget(
-        Paragraph::new(lines).style(Style::default().bg(SURFACE0)),
+        Paragraph::new(lines).style(Style::default().bg(BASE)),
         pill_area,
     );
 
