@@ -194,7 +194,9 @@ impl<'a> Parser<'a> {
 
     /// Parse a bare value up to the next `,` / `}` / `]` at the current
     /// nesting level. Recognizes `null`, `true`, `false`, integers, floats.
-    /// Anything else becomes a trimmed `Value::String`.
+    /// Anything else becomes a trimmed `Value::String`. An empty bare value
+    /// (Dart prints null-or-empty strings as nothing, e.g. `title: ,`)
+    /// becomes `Value::String("")`.
     fn parse_bare_value(&mut self) -> Option<Value> {
         let start = self.pos;
         while let Some(b) = self.peek() {
@@ -204,9 +206,6 @@ impl<'a> Parser<'a> {
             self.pos += 1;
         }
         let raw = std::str::from_utf8(&self.src[start..self.pos]).ok()?.trim();
-        if raw.is_empty() {
-            return None;
-        }
         Some(classify_bare(raw))
     }
 
@@ -357,5 +356,66 @@ mod tests {
     #[test]
     fn text_without_brackets_returns_none() {
         assert!(parse("hello world").is_none());
+    }
+
+    #[test]
+    fn dart_map_with_nested_array_of_maps() {
+        // Reproduces the screenshot scenario: response body is a Dart Map
+        // whose `result.items` is a list of Dart Maps.
+        let input = "body: {code: 0, message: ok, result: {items: [{id: 928, userId: 204, title: Business Meetings}, {id: 929, userId: 204, title: Travel English}], total: 2}, weeks: []}";
+        let v = parse(input).expect("should parse");
+        // Root should be an object, NOT absorb the items into itself.
+        assert_eq!(v["code"], 0);
+        assert_eq!(v["message"], "ok");
+        assert!(v["result"]["items"].is_array(), "items must be an array, got: {:?}", v["result"]["items"]);
+        let items = v["result"]["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2, "items should have 2 elements");
+        assert_eq!(items[0]["id"], 928);
+        assert_eq!(items[1]["id"], 929);
+        assert_eq!(v["result"]["total"], 2);
+        assert!(v["weeks"].is_array());
+        assert_eq!(v["weeks"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn dart_map_empty_string_value() {
+        // Dart prints empty strings as nothing: `title: ,` — bare value is empty.
+        let v = parse("{id: 963, title: , level: 2}").expect("should parse");
+        assert_eq!(v["id"], 963);
+        assert_eq!(v["title"], "");
+        assert_eq!(v["level"], 2);
+    }
+
+    #[test]
+    fn dart_array_of_bare_string_phrases() {
+        // Skills list from the screenshot: multi-word phrases separated by `,`.
+        let v = parse("{skills: [Navigate airport check-in, Ask for directions, Handle hotel check-in]}")
+            .expect("should parse");
+        let skills = v["skills"].as_array().unwrap();
+        assert_eq!(skills.len(), 3);
+        assert_eq!(skills[0], "Navigate airport check-in");
+        assert_eq!(skills[1], "Ask for directions");
+        assert_eq!(skills[2], "Handle hotel check-in");
+    }
+
+    #[test]
+    fn dart_map_with_unicode_emoji_value() {
+        // Dart icon fields can contain emoji: `icon: ✈`
+        let v = parse("{name: alice, icon: ✈, age: 30}").expect("should parse");
+        assert_eq!(v["name"], "alice");
+        assert_eq!(v["icon"], "✈");
+        assert_eq!(v["age"], 30);
+    }
+
+    #[test]
+    fn full_screenshot_response_body() {
+        // A compressed version of the exact response shape from the bug report.
+        let input = r#"body: {id: 963, userId: 204394584, userGoalId: 788, title: , level: 2, sceneType: 7000, courseStatus: 10, createdTime: 1776760746431, updatedTime: 1776760746466, goal: {id: 788, userId: 204394584, key: goal-mo8dh22h-mt7tlail, level: 2, weeks: 4, icon: ✈, skills: [Navigate airport check-in and security, Ask for directions and local information, Handle hotel check-in and room issues], conversationId: , createdTime: 1776760746425, updatedTime: 1776760746425}, weeks: []}"#;
+        let v = parse(input).expect("should parse full screenshot body");
+        assert_eq!(v["id"], 963);
+        assert_eq!(v["title"], "");
+        assert_eq!(v["goal"]["skills"].as_array().unwrap().len(), 3);
+        assert_eq!(v["goal"]["icon"], "✈");
+        assert_eq!(v["weeks"].as_array().unwrap().len(), 0);
     }
 }
