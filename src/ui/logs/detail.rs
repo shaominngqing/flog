@@ -123,35 +123,64 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let entry_changed = app.detail.viewer_text_fingerprint != fingerprint;
 
     let total_content;
-    match crate::domain::structured_parser::parse(&full_msg) {
-        Some(value) => {
+    match crate::domain::structured_parser::find_and_parse(&full_msg) {
+        Some((json_start, json_end, value)) => {
             let tree = json_viewer::Tree::from_value(&value);
             if entry_changed || app.detail.viewer_state.expanded.len() != tree.nodes.len() {
                 app.detail.viewer_state = json_viewer::init_state(&tree, 1);
                 app.detail.viewer_text_fingerprint = fingerprint;
             }
 
-            let body_height = inner_h.saturating_sub(all_lines.len());
-            let mut body_click_map: Vec<Option<(String, u32)>> = Vec::new();
+            // Build the full body: [prefix lines] + [tree lines] + [suffix lines].
+            // Track `Option<u32>` node ids per body row so click handling can
+            // locate foldable rows after scroll. Prefix/suffix rows → None.
             let mut body_lines: Vec<Line<'static>> = Vec::new();
+            let mut body_click_map: Vec<Option<u32>> = Vec::new();
+
+            // Prefix — non-empty stripped text before the structured region.
+            let prefix = full_msg[..json_start].trim_end();
+            if !prefix.is_empty() {
+                for wl in crate::ui::wrap_text(prefix, inner_w, 50) {
+                    body_lines.push(Line::from(Span::styled(wl, Style::default().fg(TEXT))));
+                    body_click_map.push(None);
+                }
+            }
+
+            // Tree — rendered via json_viewer.
+            let mut tree_click_map: Vec<Option<(String, u32)>> = Vec::new();
             json_viewer::append_render(
                 &mut body_lines,
-                &mut body_click_map,
+                &mut tree_click_map,
                 &tree,
                 &app.detail.viewer_state,
                 "log_detail",
                 "",
                 inner_w,
             );
+            body_click_map.extend(
+                tree_click_map
+                    .iter()
+                    .map(|slot| slot.as_ref().map(|(_, id)| *id)),
+            );
 
+            // Suffix — non-empty trimmed text after the structured region.
+            let suffix = full_msg[json_end..].trim();
+            if !suffix.is_empty() {
+                for wl in crate::ui::wrap_text(suffix, inner_w, 50) {
+                    body_lines.push(Line::from(Span::styled(wl, Style::default().fg(TEXT))));
+                    body_click_map.push(None);
+                }
+            }
+
+            let body_height = inner_h.saturating_sub(all_lines.len());
             let full_body_len = body_lines.len();
             let scroll = app.detail.scroll.min(full_body_len);
-            // Store click map aligned with visible rows (after scroll).
+
             app.detail.viewer_click_map = body_click_map
                 .iter()
                 .skip(scroll)
                 .take(body_height)
-                .map(|slot| slot.as_ref().map(|(_, id)| *id))
+                .copied()
                 .collect();
 
             let visible: Vec<Line<'static>> = body_lines

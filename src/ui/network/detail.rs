@@ -926,7 +926,7 @@ fn render_json_section(
     viewer_states: &mut HashMap<String, JsonViewerState>,
     max_w: usize,
 ) {
-    match crate::domain::structured_parser::parse(json_text) {
+    match crate::domain::structured_parser::parse_whole(json_text) {
         Some(value) => {
             let tree = json_viewer::Tree::from_value(&value);
             let state = viewer_states
