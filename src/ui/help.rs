@@ -189,9 +189,18 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(mouse_action("Right-click row", "Toggle bookmark \u{25cf}"));
     lines.push(mouse_action("Scroll wheel", "Scroll log list"));
     lines.push(mouse_action("Click S/V/D/I/W/E", "Set minimum log level"));
-    lines.push(mouse_action("Click search / # tag", "Start search / tag filter"));
-    lines.push(mouse_action("Click \u{21c5} app context", "Switch connected app"));
-    lines.push(mouse_action("Click Jump-to-bottom pill", "Scroll to tail, resume LIVE"));
+    lines.push(mouse_action(
+        "Click search / # tag",
+        "Start search / tag filter",
+    ));
+    lines.push(mouse_action(
+        "Click \u{21c5} app context",
+        "Switch connected app",
+    ));
+    lines.push(mouse_action(
+        "Click Jump-to-bottom pill",
+        "Scroll to tail, resume LIVE",
+    ));
     lines.push(blank());
 
     lines.push(subheading("\u{1f50d} Search & Filter"));
@@ -285,6 +294,8 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(kv("r", "Replay selected request (HTTP only)"));
     lines.push(kv("M", "Create Mock rule from selected request"));
     lines.push(kv("Ctrl+m", "Open Mock rules management panel"));
+    lines.push(kv("E", "Expand all JSON sections"));
+    lines.push(kv("C", "Collapse all JSON sections (keep root)"));
     lines.push(kv("S", "Performance stats"));
     lines.push(kv("s", "Select mode (text selection)"));
     lines.push(kv("Esc", "Clear all filters"));

@@ -21,6 +21,9 @@ pub enum NodeKind {
 pub struct FlatNode {
     pub kind: NodeKind,
     pub depth: u32,
+    /// Parent node ID; `None` only for the root. Currently used by tests and
+    /// kept for future navigation features.
+    #[allow(dead_code)]
     pub parent: Option<u32>,
     /// Child node IDs in source order. Empty for leaves.
     pub children: Vec<u32>,
@@ -32,6 +35,7 @@ pub struct Tree {
     pub nodes: Vec<FlatNode>,
 }
 
+#[allow(dead_code)]
 impl Tree {
     pub fn root(&self) -> &FlatNode {
         &self.nodes[0]
@@ -40,7 +44,10 @@ impl Tree {
         &self.nodes[id as usize]
     }
     pub fn is_container(&self, id: u32) -> bool {
-        matches!(self.nodes[id as usize].kind, NodeKind::Object | NodeKind::Array)
+        matches!(
+            self.nodes[id as usize].kind,
+            NodeKind::Object | NodeKind::Array
+        )
     }
     pub fn is_empty_container(&self, id: u32) -> bool {
         self.is_container(id) && self.nodes[id as usize].children.is_empty()

@@ -104,7 +104,9 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
                     }
                     let is_key = {
                         let mut k = j;
-                        while k < len && chars[k].is_ascii_whitespace() { k += 1; }
+                        while k < len && chars[k].is_ascii_whitespace() {
+                            k += 1;
+                        }
                         k < len && chars[k] == ':'
                     };
                     let color = if is_key { key_color(depth) } else { STR_COLOR };
@@ -113,19 +115,28 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
                 }
                 '{' | '[' => {
                     flush!();
-                    spans.push(Span::styled(c.to_string(), Style::default().fg(brace_color(depth))));
+                    spans.push(Span::styled(
+                        c.to_string(),
+                        Style::default().fg(brace_color(depth)),
+                    ));
                     depth += 1;
                     i += 1;
                 }
                 '}' | ']' => {
                     flush!();
                     depth = depth.saturating_sub(1);
-                    spans.push(Span::styled(c.to_string(), Style::default().fg(brace_color(depth))));
+                    spans.push(Span::styled(
+                        c.to_string(),
+                        Style::default().fg(brace_color(depth)),
+                    ));
                     i += 1;
                 }
                 ':' | ',' => {
                     flush!();
-                    spans.push(Span::styled(c.to_string(), Style::default().fg(COMMA_COLOR)));
+                    spans.push(Span::styled(
+                        c.to_string(),
+                        Style::default().fg(COMMA_COLOR),
+                    ));
                     i += 1;
                 }
                 't' if matches!(chars.get(i..i + 4), Some(&['t', 'r', 'u', 'e'])) => {
@@ -158,7 +169,9 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
                         flush!();
                         spans.push(Span::styled(
                             "null",
-                            Style::default().fg(NULL_COLOR).add_modifier(Modifier::ITALIC),
+                            Style::default()
+                                .fg(NULL_COLOR)
+                                .add_modifier(Modifier::ITALIC),
                         ));
                         i += 4;
                     } else {
@@ -167,10 +180,12 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
                         i += 1;
                     }
                 }
-                '0'..='9' | '-' if {
-                    c.is_ascii_digit()
-                        || (c == '-' && i + 1 < len && chars[i + 1].is_ascii_digit())
-                } => {
+                '0'..='9' | '-'
+                    if {
+                        c.is_ascii_digit()
+                            || (c == '-' && i + 1 < len && chars[i + 1].is_ascii_digit())
+                    } =>
+                {
                     flush!();
                     let mut num = String::new();
                     num.push(c);

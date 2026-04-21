@@ -165,7 +165,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let full = f.area();
     f.render_widget(Block::default().style(Style::default().bg(BASE)), full);
 
-
     // Layout: tab bar (2 rows) + view content
     let rows = Layout::default()
         .direction(Direction::Vertical)

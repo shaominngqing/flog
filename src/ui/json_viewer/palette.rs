@@ -6,7 +6,9 @@
 
 use ratatui::style::Color;
 
-use super::super::{BLUE, GREEN, LAVENDER, MAUVE, OVERLAY0, PEACH, PINK, SAPPHIRE, SURFACE0, TEAL, YELLOW};
+use super::super::{
+    BLUE, GREEN, LAVENDER, MAUVE, OVERLAY0, PEACH, PINK, SAPPHIRE, SURFACE0, TEAL, YELLOW,
+};
 
 pub(super) const STR_COLOR: Color = GREEN;
 pub(super) const NUM_COLOR: Color = PEACH;

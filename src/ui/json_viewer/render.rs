@@ -50,6 +50,7 @@ pub fn append_render(
 
 /// Render node `id` and its subtree. `trailing_comma` says whether to append
 /// a comma after this node's value (used for non-last siblings).
+#[allow(clippy::too_many_arguments)]
 fn render_node(
     out: &mut Vec<Line<'static>>,
     click_map: &mut Vec<Option<(String, u32)>>,
@@ -65,36 +66,56 @@ fn render_node(
     let is_container = matches!(node.kind, NodeKind::Object | NodeKind::Array);
 
     if !is_container {
-        push_leaf_line(out, click_map, tree, section_key, outer_prefix, max_width, id, trailing_comma);
+        push_leaf_line(
+            out,
+            click_map,
+            tree,
+            section_key,
+            outer_prefix,
+            max_width,
+            id,
+            trailing_comma,
+        );
         return;
     }
 
     let expanded = state.is_expanded(id);
     if !expanded || node.children.is_empty() {
         push_container_collapsed(
-            out, click_map, tree, section_key, outer_prefix, max_width, id, trailing_comma,
+            out,
+            click_map,
+            tree,
+            section_key,
+            outer_prefix,
+            max_width,
+            id,
+            trailing_comma,
         );
         return;
     }
 
     // Recursion safety: `tree::parse` uses `serde_json::from_str` which has
     // a default nesting cap of 128. Any JSON that parses is safe to recurse on.
-    push_container_opener(
-        out, click_map, tree, section_key, outer_prefix, id,
-    );
+    push_container_opener(out, click_map, tree, section_key, outer_prefix, id);
     let child_count = node.children.len();
     for (i, &cid) in node.children.iter().enumerate() {
         let child_trailing = i + 1 < child_count;
         render_node(
-            out, click_map, tree, state, section_key, outer_prefix,
-            max_width, cid, child_trailing,
+            out,
+            click_map,
+            tree,
+            state,
+            section_key,
+            outer_prefix,
+            max_width,
+            cid,
+            child_trailing,
         );
     }
-    push_container_closer(
-        out, click_map, tree, outer_prefix, id, trailing_comma,
-    );
+    push_container_closer(out, click_map, tree, outer_prefix, id, trailing_comma);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_leaf_line(
     out: &mut Vec<Line<'static>>,
     click_map: &mut Vec<Option<(String, u32)>>,
@@ -124,7 +145,9 @@ fn push_leaf_line(
 
     // Remaining width for the value
     let used: usize = spans.iter().map(|s| s.content.as_ref().width()).sum();
-    let remaining = max_width.saturating_sub(used).saturating_sub(if trailing_comma { 1 } else { 0 });
+    let remaining = max_width
+        .saturating_sub(used)
+        .saturating_sub(if trailing_comma { 1 } else { 0 });
 
     spans.extend(render_leaf_value(&node.kind, remaining));
 
@@ -140,7 +163,9 @@ fn render_leaf_value(kind: &NodeKind, max_width: usize) -> Vec<Span<'static>> {
     match kind {
         NodeKind::Null => vec![Span::styled(
             "null",
-            Style::default().fg(NULL_COLOR).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(NULL_COLOR)
+                .add_modifier(Modifier::ITALIC),
         )],
         NodeKind::Bool(b) => vec![Span::styled(
             if *b { "true" } else { "false" },
@@ -176,6 +201,7 @@ fn render_leaf_value(kind: &NodeKind, max_width: usize) -> Vec<Span<'static>> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_container_collapsed(
     out: &mut Vec<Line<'static>>,
     click_map: &mut Vec<Option<(String, u32)>>,
@@ -295,10 +321,7 @@ fn summarize_container(tree: &Tree, id: u32, max_width: usize) -> Vec<Span<'stat
         if emitted > 0 {
             spans.push(Span::styled(", ", Style::default().fg(COMMA_COLOR)));
         }
-        spans.push(Span::styled(
-            "…".to_string(),
-            Style::default().fg(OVERLAY0),
-        ));
+        spans.push(Span::styled("…".to_string(), Style::default().fg(OVERLAY0)));
     }
     spans.push(Span::styled(close.to_string(), bc));
     if !count_suffix.is_empty() {
@@ -322,7 +345,9 @@ fn preview_child(tree: &Tree, cid: u32) -> Vec<Span<'static>> {
     match &child.kind {
         NodeKind::Null => spans.push(Span::styled(
             "null",
-            Style::default().fg(NULL_COLOR).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(NULL_COLOR)
+                .add_modifier(Modifier::ITALIC),
         )),
         NodeKind::Bool(b) => spans.push(Span::styled(
             if *b { "true" } else { "false" },
@@ -352,12 +377,8 @@ fn preview_child(tree: &Tree, cid: u32) -> Vec<Span<'static>> {
             };
             spans.push(Span::styled(text, Style::default().fg(STR_COLOR)));
         }
-        NodeKind::Object => {
-            spans.push(Span::styled("{…}", Style::default().fg(FOLD_COLOR)))
-        }
-        NodeKind::Array => {
-            spans.push(Span::styled("[…]", Style::default().fg(FOLD_COLOR)))
-        }
+        NodeKind::Object => spans.push(Span::styled("{…}", Style::default().fg(FOLD_COLOR))),
+        NodeKind::Array => spans.push(Span::styled("[…]", Style::default().fg(FOLD_COLOR))),
     }
     spans
 }
@@ -446,7 +467,12 @@ mod tests {
         append_render(&mut out, &mut cmap, &t, &s, "sec", "", width);
         assert_eq!(out.len(), cmap.len(), "out and click_map must stay in sync");
         out.iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect()
     }
 
@@ -486,19 +512,35 @@ mod tests {
             line
         );
         // Must keep the leading marker and the bookend quotes.
-        assert!(line.starts_with("  \""), "missing marker + open quote: {:?}", line);
-        assert!(line.ends_with("…\""), "missing ellipsis + close quote: {:?}", line);
+        assert!(
+            line.starts_with("  \""),
+            "missing marker + open quote: {:?}",
+            line
+        );
+        assert!(
+            line.ends_with("…\""),
+            "missing ellipsis + close quote: {:?}",
+            line
+        );
         // Content between the quotes must be a non-empty prefix of "abcdefghij".
-        let content = &line["  \"".len() .. line.len() - "…\"".len()];
+        let content = &line["  \"".len()..line.len() - "…\"".len()];
         assert!(!content.is_empty());
-        assert!("abcdefghij".starts_with(content), "not a prefix: {:?}", content);
+        assert!(
+            "abcdefghij".starts_with(content),
+            "not a prefix: {:?}",
+            content
+        );
     }
 
     #[test]
     fn collapsed_object_shows_summary() {
         let lines = render(r#"{"code": 0, "message": "ok"}"#, 80);
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("▶"), "should have fold marker: {:?}", lines);
+        assert!(
+            lines[0].contains("▶"),
+            "should have fold marker: {:?}",
+            lines
+        );
         assert!(lines[0].contains("code"));
         assert!(lines[0].contains('0'));
         assert!(lines[0].contains("message"));
@@ -591,9 +633,20 @@ mod tests {
         let mut cmap = Vec::new();
         append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
         // Expected lines: ▼ {, "a": 1,, "b": "hi", }
-        assert_eq!(out.len(), 4, "lines={:?}",
-            out.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()).collect::<Vec<_>>());
-        let texts: Vec<String> = out.iter()
+        assert_eq!(
+            out.len(),
+            4,
+            "lines={:?}",
+            out.iter()
+                .map(|l| l
+                    .spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>())
+                .collect::<Vec<_>>()
+        );
+        let texts: Vec<String> = out
+            .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
         assert!(texts[0].contains('{'));
@@ -619,7 +672,8 @@ mod tests {
         let mut out = Vec::new();
         let mut cmap = Vec::new();
         append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
-        let texts: Vec<String> = out.iter()
+        let texts: Vec<String> = out
+            .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
         // Expect: ▼ { / ▼ "a": { / ▶ "b": {c: 1} / } / }
@@ -650,7 +704,8 @@ mod tests {
         let mut out = Vec::new();
         let mut cmap = Vec::new();
         append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
-        let texts: Vec<String> = out.iter()
+        let texts: Vec<String> = out
+            .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
         // Expected: ▼ { / ▼ "items": [ / ▶ {id: 1}, / ▶ {id: 2} / ] / }
@@ -658,7 +713,7 @@ mod tests {
         let leading_spaces = |s: &str| s.chars().take_while(|c| *c == ' ').count();
         assert_eq!(leading_spaces(&texts[2]), 4); // first array element
         assert_eq!(leading_spaces(&texts[3]), 4); // second array element
-        // Closer at items' depth (1): 2 indent cols + 2 blank marker cols = 4.
+                                                  // Closer at items' depth (1): 2 indent cols + 2 blank marker cols = 4.
         assert_eq!(leading_spaces(&texts[4]), 4);
     }
 }
