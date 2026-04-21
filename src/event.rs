@@ -97,6 +97,20 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
         }
     }
 
+    // Jump-to-bottom pill overlay (floating — check first so it wins over list clicks)
+    if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+        if let Some((px, py, pw, ph)) = app.layout.jump_to_bottom_rect {
+            if mouse.row >= py
+                && mouse.row < py + ph
+                && mouse.column >= px
+                && mouse.column < px + pw
+            {
+                app.go_bottom();
+                return;
+            }
+        }
+    }
+
     // Tab bar click detection (common to both tabs)
     if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
         let y = mouse.row;

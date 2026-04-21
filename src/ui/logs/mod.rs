@@ -2,6 +2,7 @@
 
 pub mod detail;
 pub mod highlight;
+pub mod jump;
 pub mod stats;
 
 use ratatui::{
@@ -981,8 +982,64 @@ fn draw_separator_rule(f: &mut Frame, area: Rect) {
     );
 }
 
-fn draw_jump_to_bottom(_f: &mut Frame, _app: &mut App, _area: Rect) {
-    // Real implementation in Task 7.
+fn draw_jump_to_bottom(f: &mut Frame, app: &mut App, area: Rect) {
+    if !jump::should_show(app.auto_scroll) {
+        app.layout.jump_to_bottom_rect = None;
+        return;
+    }
+    if area.height < 4 || area.width < 24 {
+        app.layout.jump_to_bottom_rect = None;
+        return;
+    }
+
+    let label_text = jump::label(app.new_logs_since_pause);
+    let pill_w = (label_text.width() as u16 + 2).min(area.width.saturating_sub(4));
+    let pill_h: u16 = 3;
+    let pill_x = area.x + (area.width.saturating_sub(pill_w)) / 2;
+    let pill_y_rel = (area.height as f32 * 0.70) as u16;
+    let pill_y = area.y + pill_y_rel.min(area.height.saturating_sub(pill_h));
+
+    let border_style = Style::default().fg(SAPPHIRE).bg(SURFACE0);
+    let top = format!("╭{}╮", "─".repeat((pill_w - 2) as usize));
+    let bot = format!("╰{}╯", "─".repeat((pill_w - 2) as usize));
+
+    let mid = if app.new_logs_since_pause > 0 {
+        let total_inner = (pill_w - 2) as usize;
+        let base = "  ↓ Jump to bottom  ";
+        let new_text = format!("{} new  ", app.new_logs_since_pause);
+        let used = base.width() + new_text.width();
+        let pad = total_inner.saturating_sub(used);
+        vec![
+            Span::styled("│", border_style),
+            Span::styled(base.to_string(), Style::default().fg(TEXT).bg(SURFACE0)),
+            Span::styled(new_text, Style::default().fg(YELLOW).bg(SURFACE0)),
+            Span::styled(" ".repeat(pad), Style::default().bg(SURFACE0)),
+            Span::styled("│", border_style),
+        ]
+    } else {
+        let total_inner = (pill_w - 2) as usize;
+        let base = "  ↓ Jump to bottom  ";
+        let pad = total_inner.saturating_sub(base.width());
+        vec![
+            Span::styled("│", border_style),
+            Span::styled(base.to_string(), Style::default().fg(TEXT).bg(SURFACE0)),
+            Span::styled(" ".repeat(pad), Style::default().bg(SURFACE0)),
+            Span::styled("│", border_style),
+        ]
+    };
+
+    let pill_area = Rect::new(pill_x, pill_y, pill_w, pill_h);
+    let lines = vec![
+        Line::from(Span::styled(top, border_style)),
+        Line::from(mid),
+        Line::from(Span::styled(bot, border_style)),
+    ];
+    f.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(SURFACE0)),
+        pill_area,
+    );
+
+    app.layout.jump_to_bottom_rect = Some((pill_x, pill_y, pill_w, pill_h));
 }
 
 // ══════════════════════════════════════
