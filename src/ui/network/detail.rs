@@ -251,7 +251,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         );
         if !is_collapsed {
             if let Some(ref headers) = entry.request_headers {
-                render_json_section(
+                // Headers: root only, save space.
+                render_json_section_with_depth(
                     &mut all_lines,
                     &mut section_line_map,
                     &mut json_click_map,
@@ -259,6 +260,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     "req_headers",
                     &mut app.network.json_viewer_states,
                     inner_w,
+                    0,
                 );
             }
             all_lines.push(Line::raw(""));
@@ -309,7 +311,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         );
         if !is_collapsed {
             if let Some(ref headers) = entry.response_headers {
-                render_json_section(
+                // Headers: root only, save space.
+                render_json_section_with_depth(
                     &mut all_lines,
                     &mut section_line_map,
                     &mut json_click_map,
@@ -317,6 +320,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     "res_headers",
                     &mut app.network.json_viewer_states,
                     inner_w,
+                    0,
                 );
             }
             all_lines.push(Line::raw(""));
@@ -917,6 +921,12 @@ fn push_kv_wrapped(
 //  JSON rendering using json_viewer
 // ══════════════════════════════════════
 
+/// Default initial expansion depth for JSON sections (DevTools style:
+/// root + its direct children expanded, grandchildren folded).
+const DEFAULT_JSON_EXPAND_DEPTH: u32 = 1;
+
+/// Render a JSON/Dart-Map section with the default expansion depth.
+/// Callers that need a different depth use [`render_json_section_with_depth`].
 fn render_json_section(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
@@ -926,12 +936,37 @@ fn render_json_section(
     viewer_states: &mut HashMap<String, JsonViewerState>,
     max_w: usize,
 ) {
+    render_json_section_with_depth(
+        lines,
+        section_map,
+        json_click_map,
+        json_text,
+        section_key,
+        viewer_states,
+        max_w,
+        DEFAULT_JSON_EXPAND_DEPTH,
+    );
+}
+
+/// Like [`render_json_section`] but overrides the initial expansion depth.
+/// Use `0` to show only the root expanded (e.g. for headers where metadata
+/// is usually collapsed by default).
+fn render_json_section_with_depth(
+    lines: &mut Vec<Line<'static>>,
+    section_map: &mut Vec<Option<String>>,
+    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_text: &str,
+    section_key: &str,
+    viewer_states: &mut HashMap<String, JsonViewerState>,
+    max_w: usize,
+    expand_depth: u32,
+) {
     match crate::domain::structured_parser::parse_whole(json_text) {
         Some(value) => {
             let tree = json_viewer::Tree::from_value(&value);
             let state = viewer_states
                 .entry(section_key.to_string())
-                .or_insert_with(|| json_viewer::init_state(&tree, 1));
+                .or_insert_with(|| json_viewer::init_state(&tree, expand_depth));
             let base = lines.len();
             json_viewer::append_render(
                 lines,
