@@ -206,10 +206,13 @@ impl NetworkState {
 #[derive(Default)]
 pub struct LayoutCache {
     pub toolbar_y: u16,
+    /// Y position of the column header row (Logs tab). Set by renderer.
+    pub col_header_y: u16,
+    /// Y position of the column header row (Network tab). Set by renderer.
+    pub net_col_header_y: u16,
     pub list_y: u16,
     pub list_height: u16,
     pub bottom_y: u16,
-    pub timeline_y: u16,
     pub search_x: (u16, u16),
     pub filter_x: (u16, u16),
     pub levels_x: u16,
@@ -266,6 +269,10 @@ pub struct LayoutCache {
     pub device_picker_rect: Option<(u16, u16, u16, u16)>,
     /// Device picker item IDs (parallel to device_picker_items indices).
     pub device_picker_item_ids: Vec<String>,
+    /// Total line count in device picker content (for scroll clamping).
+    pub device_picker_total_lines: usize,
+    /// Jump-to-bottom floating overlay rect: (x, y, w, h). None when hidden.
+    pub jump_to_bottom_rect: Option<(u16, u16, u16, u16)>,
 }
 
 // ── App ──
@@ -319,7 +326,6 @@ pub struct App {
     pub server_port: u16,
     pub source_name: String,
     pub status_message: Option<(String, u64)>,
-    pub connected: bool,
     /// Discovered devices from device_monitor, keyed by device ID.
     pub discovered_devices: HashMap<String, crate::transport::device_monitor::Device>,
     /// Show device picker dropdown.
@@ -377,7 +383,6 @@ impl App {
             server_port: 9753,
             source_name: String::new(),
             status_message: None,
-            connected: false,
             discovered_devices: HashMap::new(),
             show_device_picker: false,
             device_picker_selected: 0,
@@ -452,7 +457,6 @@ impl App {
             // just register. User can switch to it manually.
         }
 
-        self.connected = true;
     }
 
     /// Remove a disconnected app.
@@ -466,14 +470,9 @@ impl App {
                 self.switch_to_app(&next_id);
             } else {
                 self.active_app_id = None;
-                self.connected = false;
                 self.source_name = format!("Scanning... (port {})", self.server_port);
                 self.reset_session();
             }
-        }
-
-        if self.connected_apps.is_empty() {
-            self.connected = false;
         }
     }
 
@@ -486,6 +485,11 @@ impl App {
     pub fn switch_to_app(&mut self, id: &str) {
         if self.active_app_id.as_deref() == Some(id) {
             return; // Already active
+        }
+
+        // Validate: target app must still be connected
+        if !self.connected_apps.iter().any(|a| a.id == id) {
+            return;
         }
 
         // Clear everything — data will come from Dart's FlogStore
@@ -526,8 +530,6 @@ impl App {
     // ── Data Input ──
 
     pub fn add_entry(&mut self, entry: LogEntry) {
-        self.connected = true;
-
         if entry.tag == "flog_net" {
             if let Some(msg) = crate::parser::network::try_parse_network(&entry.tag, &entry.message)
             {

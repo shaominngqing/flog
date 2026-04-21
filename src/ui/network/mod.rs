@@ -125,31 +125,41 @@ fn protocol_pill(protocol: Protocol) -> Span<'static> {
 // ══════════════════════════════════════
 
 pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
-    // Vertical: toolbar (2 rows) | header | body | status bar
+    // 7-row chrome: sep | op1 | op2 | sep | col_header | main | status
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // toolbar (search + filters)
-            Constraint::Length(1), // header
-            Constraint::Min(3),    // body (table + optional detail)
-            Constraint::Length(1), // status bar
+            Constraint::Length(1), // sep
+            Constraint::Length(1), // op1: search + count
+            Constraint::Length(1), // op2: pills
+            Constraint::Length(1), // sep
+            Constraint::Length(1), // column header
+            Constraint::Min(3),    // list (+ optional detail)
+            Constraint::Length(1), // status
         ])
         .split(area);
 
-    app.layout.toolbar_y = rows[0].y;
-    app.layout.list_y = rows[2].y;
-    app.layout.list_height = rows[2].height;
-    app.layout.bottom_y = rows[3].y;
+    app.layout.net_toolbar_y = rows[1].y;
+    app.layout.net_col_header_y = rows[4].y;
+    app.layout.toolbar_y = rows[1].y;
+    app.layout.list_y = rows[5].y;
+    app.layout.list_height = rows[5].height;
+    app.layout.bottom_y = rows[6].y;
 
-    filter::draw_network_toolbar(f, app, rows[0]);
-    draw_table_header(f, app, rows[1]);
+    crate::ui::draw_separator_rule(f, rows[0]);
+    let count = app.network.filtered_count(&app.network_store);
+    let total = app.network_store.len();
+    filter::draw_network_op1(f, app, rows[1], count, total);
+    filter::draw_network_op2(f, app, rows[2]);
+    crate::ui::draw_separator_rule(f, rows[3]);
+    filter::draw_network_column_header(f, rows[4]);
 
     // Body: detail panel / mock rules panel / full table
     if app.network.show_mock_rules_panel {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(rows[2]);
+            .split(rows[5]);
 
         app.layout.net_detail_x = cols[1].x;
         draw_table_body(f, app, cols[0]);
@@ -158,61 +168,17 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(rows[2]);
+            .split(rows[5]);
 
         app.layout.net_detail_x = cols[1].x;
         draw_table_body(f, app, cols[0]);
         detail::draw_network_detail(f, app, cols[1]);
     } else {
         app.layout.net_detail_x = app.layout.width;
-        draw_table_body(f, app, rows[2]);
+        draw_table_body(f, app, rows[5]);
     }
 
-    draw_network_status_bar(f, app, rows[3]);
-}
-
-// ══════════════════════════════════════
-//  Table Header
-// ══════════════════════════════════════
-
-fn draw_table_header(f: &mut Frame, _app: &mut App, area: Rect) {
-    let bg = SURFACE0;
-    let style = Style::default()
-        .fg(TEXT)
-        .bg(bg)
-        .add_modifier(Modifier::BOLD);
-
-    let mut spans: Vec<Span> = vec![
-        Span::styled(" ", Style::default().bg(bg)), // cursor space
-        Span::styled(safe_pad("PROTO", PROTO_W), style),
-        Span::styled(" ", Style::default().bg(bg)),
-        Span::styled(safe_pad("METHOD", METHOD_W), style),
-        Span::styled(" ", Style::default().bg(bg)),
-    ];
-
-    // URL takes remaining space
-    let fixed_width = 1 + PROTO_W + 1 + METHOD_W + 1 + STATUS_W + 1 + TIME_W + 1 + SIZE_W + 1;
-    let url_width = (area.width as usize).saturating_sub(fixed_width);
-    spans.push(Span::styled(safe_pad("URL", url_width), style));
-
-    spans.extend(vec![
-        Span::styled(safe_pad("STATUS", STATUS_W), style),
-        Span::styled(" ", Style::default().bg(bg)),
-        Span::styled(safe_pad("TIME", TIME_W), style),
-        Span::styled(" ", Style::default().bg(bg)),
-        Span::styled(safe_pad("SIZE", SIZE_W), style),
-    ]);
-
-    // Fill remaining
-    let used: usize = spans.iter().map(|s| s.content.width()).sum();
-    if used < area.width as usize {
-        spans.push(Span::styled(
-            " ".repeat(area.width as usize - used),
-            Style::default().bg(bg),
-        ));
-    }
-
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    draw_network_status_bar(f, app, rows[6]);
 }
 
 // ══════════════════════════════════════
