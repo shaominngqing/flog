@@ -541,7 +541,7 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
         } else if app.store.is_empty() && app.active_app_id.is_some() {
             draw_waiting_for_logs(f, app, area);
         } else {
-            draw_no_matching_logs(f, area);
+            draw_no_matching_logs(f, app, area);
         }
         app.layout.row_to_filtered_idx.clear();
         app.layout.rendered_to_end = true;
@@ -1104,8 +1104,6 @@ fn draw_waiting_for_logs(f: &mut Frame, app: &mut App, area: Rect) {
         _ => "⣷",
     };
 
-    let dots = ".".repeat(((tick / 10) % 4) as usize);
-
     let mut lines: Vec<Line> = Vec::new();
     for _ in 0..start_y {
         lines.push(Line::raw(""));
@@ -1115,32 +1113,43 @@ fn draw_waiting_for_logs(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(logo_line);
     }
     lines.push(Line::raw(""));
+
+    let subtitle = app
+        .active_app_id
+        .as_ref()
+        .and_then(|id| app.connected_apps.iter().find(|a| &a.id == id))
+        .map(|ca| {
+            let version = if ca.app_version.is_empty() {
+                String::new()
+            } else {
+                format!(" v{}", ca.app_version)
+            };
+            format!("   Connected · {}{} ({})", ca.app_name, version, ca.os)
+        })
+        .unwrap_or_else(|| "   Flutter Log Viewer".to_string());
+
     lines.push(Line::from(Span::styled(
-        "   Flutter Log Viewer",
+        subtitle,
         Style::default().fg(OVERLAY0),
     )));
     lines.push(Line::raw(""));
     lines.push(Line::from(vec![
-        Span::styled(format!("   {} ", spinner), Style::default().fg(BLUE)),
-        Span::styled(
-            format!("Waiting for logs{:<3}", dots),
-            Style::default().fg(SUBTEXT0),
-        ),
+        Span::styled(format!("   {}  ", spinner), Style::default().fg(BLUE)),
+        Span::styled("Waiting for logs...", Style::default().fg(SUBTEXT0)),
     ]));
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }
 
-fn draw_no_matching_logs(f: &mut Frame, area: Rect) {
+fn draw_no_matching_logs(f: &mut Frame, app: &App, area: Rect) {
     let mid = area.height / 2;
     let mut lines: Vec<Line> = Vec::new();
-    for _ in 0..mid.saturating_sub(3) {
+    for _ in 0..mid.saturating_sub(4) {
         lines.push(Line::raw(""));
     }
 
-    // Empty state icon
     lines.push(Line::from(Span::styled(
-        "          \u{2205}", // ∅ symbol
+        "          \u{2205}",
         Style::default().fg(SURFACE1),
     )));
     lines.push(Line::raw(""));
@@ -1149,9 +1158,60 @@ fn draw_no_matching_logs(f: &mut Frame, area: Rect) {
         Style::default().fg(OVERLAY0),
     )));
     lines.push(Line::from(Span::styled(
-        "    Try adjusting your filters or level",
+        "    Try adjusting filters or level",
         Style::default().fg(SURFACE1),
     )));
+    lines.push(Line::raw(""));
+
+    let mut filter_rows: Vec<String> = Vec::new();
+    if !app.filter.search_query.is_empty() {
+        filter_rows.push(format!("    search: \"{}\"", app.filter.search_query));
+    }
+    if app.filter.min_level != LogLevel::System {
+        filter_rows.push(format!("    level:  {}+", app.filter.min_level.as_str()));
+    }
+    let tag_includes: Vec<String> = app
+        .filter
+        .tag_include
+        .iter()
+        .map(|t| format!("+{}", t))
+        .collect();
+    let tag_excludes: Vec<String> = app
+        .filter
+        .tag_exclude
+        .iter()
+        .map(|t| format!("-{}", t))
+        .collect();
+    if !tag_includes.is_empty() || !tag_excludes.is_empty() {
+        let combined: Vec<String> = tag_includes.into_iter().chain(tag_excludes).collect();
+        filter_rows.push(format!("    tags:   {}", combined.join(" ")));
+    }
+
+    if !filter_rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "    ┌─ Active filters ─────────────────┐",
+            Style::default().fg(SURFACE0),
+        )));
+        for r in &filter_rows {
+            lines.push(Line::from(vec![
+                Span::styled("    │", Style::default().fg(SURFACE0)),
+                Span::styled(
+                    safe_pad(r, 34),
+                    Style::default().fg(SUBTEXT0),
+                ),
+                Span::styled("│", Style::default().fg(SURFACE0)),
+            ]));
+        }
+        lines.push(Line::from(Span::styled(
+            "    └──────────────────────────────────┘",
+            Style::default().fg(SURFACE0),
+        )));
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled(
+            "    press esc to clear all",
+            Style::default().fg(OVERLAY0),
+        )));
+    }
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }

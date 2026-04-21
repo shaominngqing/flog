@@ -41,7 +41,13 @@ pub fn draw_waiting_for_connection(f: &mut Frame, app: &App, area: Rect) {
     let w = area.width as usize;
 
     let mut lines: Vec<Line> = Vec::new();
-    let content_h = BANNER.len() + 6;
+    let quickstart_h = if app.discovered_devices.is_empty() { 7 } else { 0 };
+    let devlist_h = if app.discovered_devices.is_empty() {
+        0
+    } else {
+        app.discovered_devices.len() + 2
+    };
+    let content_h = BANNER.len() + 6 + quickstart_h + devlist_h;
     let top_pad = h.saturating_sub(content_h) / 3;
 
     for _ in 0..top_pad {
@@ -52,11 +58,15 @@ pub fn draw_waiting_for_connection(f: &mut Frame, app: &App, area: Rect) {
         lines.push(render_banner_line(text, row, tick, w));
     }
 
-    lines.push(centered_text_line("Flutter Log Viewer", w, OVERLAY0));
+    lines.push(centered_text_line(
+        "Flutter Log Viewer · Network Inspector",
+        w,
+        OVERLAY0,
+    ));
     lines.push(fill_line(w));
 
     let spinner = braille_spinner(tick);
-    let status = format!("{} Waiting for connection on port {}...", spinner, app.server_port);
+    let status = format!("{}  Waiting for connection on port {}...", spinner, app.server_port);
     lines.push(centered_text_line(&status, w, TEXT));
     lines.push(fill_line(w));
 
@@ -68,11 +78,47 @@ pub fn draw_waiting_for_connection(f: &mut Frame, app: &App, area: Rect) {
             lines.push(centered_text_line(&info, w, SUBTEXT0));
         }
     } else {
-        lines.push(centered_text_line(
-            "Run your Flutter app with flog_dart to connect",
-            w,
-            OVERLAY0,
-        ));
+        let box_w: usize = 46;
+        let box_left_pad = w.saturating_sub(box_w) / 2;
+        let border_style = Style::default().fg(SURFACE0).bg(BASE);
+        let border_line = |left: char, mid: char, right: char| {
+            let mut spans = vec![
+                Span::styled(" ".repeat(box_left_pad), Style::default().bg(BASE)),
+                Span::styled(left.to_string(), border_style),
+                Span::styled(mid.to_string().repeat(box_w - 2), border_style),
+                Span::styled(right.to_string(), border_style),
+            ];
+            let total = box_left_pad + box_w;
+            if total < w {
+                spans.push(Span::styled(" ".repeat(w - total), Style::default().bg(BASE)));
+            }
+            Line::from(spans)
+        };
+        let content_line = |text: &str| {
+            let inner_w = box_w - 2;
+            let text_w = text.width();
+            let right = inner_w.saturating_sub(text_w);
+            let mut spans = vec![
+                Span::styled(" ".repeat(box_left_pad), Style::default().bg(BASE)),
+                Span::styled("│", border_style),
+                Span::styled(text.to_string(), Style::default().fg(SUBTEXT0).bg(BASE)),
+                Span::styled(" ".repeat(right), Style::default().bg(BASE)),
+                Span::styled("│", border_style),
+            ];
+            let total = box_left_pad + box_w;
+            if total < w {
+                spans.push(Span::styled(" ".repeat(w - total), Style::default().bg(BASE)));
+            }
+            Line::from(spans)
+        };
+
+        lines.push(border_line('┌', '─', '┐'));
+        lines.push(content_line("  Quick Start                               "));
+        lines.push(content_line("   1. Add flog_dart to your Flutter app     "));
+        lines.push(content_line("   2. Run your app in debug mode            "));
+        lines.push(content_line("   3. flog will auto-connect                "));
+        lines.push(content_line("                                            "));
+        lines.push(border_line('└', '─', '┘'));
     }
 
     while lines.len() < h {
