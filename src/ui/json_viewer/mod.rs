@@ -14,6 +14,22 @@ mod tree;
 
 pub use colorize::colorize_json_text;
 
+// ── New AST-based API ────────────────────────────────────────────────────
+pub use render::append_render;
+pub use state::{collapse_all, expand_all, toggle};
+pub use tree::{parse, NodeKind, Tree};
+
+// Re-export the real state type under a different name so callers can
+// migrate gradually. Once the legacy shim is deleted (Task 8), we rename
+// this to `JsonViewerState` and drop the alias.
+pub use state::JsonViewerState as AstViewerState;
+
+/// New init_state for the AST viewer. Renamed to avoid clash with the
+/// legacy stub until Task 8.
+pub fn init_ast_state(tree: &Tree, default_expand_depth: u32) -> AstViewerState {
+    state::init_state(tree, default_expand_depth)
+}
+
 // ── Legacy shims ─────────────────────────────────────────────────────────
 // These keep the existing callers compiling until Task 8 migrates them.
 // Delete once no references remain.
