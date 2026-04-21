@@ -203,15 +203,7 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     let search_active = app.mode == AppMode::Search;
     let filter_active = app.mode == AppMode::TagFilter;
 
-    // Logo
-    spans.push(Span::styled(
-        " flog ",
-        Style::default()
-            .fg(MANTLE)
-            .bg(BLUE)
-            .add_modifier(Modifier::BOLD),
-    ));
-    x += 6;
+    // Leading space
     spans.push(Span::styled(" ", Style::default().bg(bg)));
     x += 1;
 
@@ -238,7 +230,7 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         Style::default().fg(OVERLAY0).bg(bg)
     };
-    app.layout.search_x = (7, 7 + 1 + sw as u16);
+    app.layout.search_x = (1, 1 + 1 + sw as u16);
     spans.push(Span::styled(safe_pad(&st, sw), ss));
     x += sw as u16;
 
@@ -262,10 +254,10 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
         x += 3;
     }
 
-    spans.push(Span::styled("  ", Style::default().bg(bg)));
-    x += 2;
+    spans.push(Span::styled("   ", Style::default().bg(bg)));
+    x += 3;
 
-    // Tag
+    // Tag filter
     let filter_start_x = x;
     if filter_active {
         spans.push(Span::styled("T", Style::default().fg(MANTLE).bg(GREEN)));
@@ -286,15 +278,16 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
         spans.push(Span::styled("T", Style::default().fg(OVERLAY0).bg(bg)));
         x += 1;
         spans.push(Span::styled(
-            safe_pad("tag...", 6),
+            safe_pad(" tag...", 7),
             Style::default().fg(OVERLAY0).bg(bg),
         ));
-        x += 6;
+        x += 7;
     }
     app.layout.filter_x = (filter_start_x, x);
 
-    spans.push(Span::styled("  ", Style::default().bg(bg)));
-    x += 2;
+    // Separator
+    spans.push(Span::styled("  │  ", Style::default().fg(SURFACE1).bg(bg)));
+    x += 5;
 
     // Level buttons — pill style
     app.layout.levels_x = x;
@@ -308,28 +301,36 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
     ] {
         let (fg, bg_c, bold) = level_badge(*level);
         let style = if app.filter.min_level == *level {
-            // Active: full pill
-            let mut s =
-                Style::default()
-                    .fg(fg)
-                    .bg(if bg_c == Color::Reset { SURFACE1 } else { bg_c });
+            let mut s = Style::default()
+                .fg(fg)
+                .bg(if bg_c == Color::Reset { SURFACE1 } else { bg_c });
             if bold {
                 s = s.add_modifier(Modifier::BOLD);
             }
             s
         } else if app.filter.min_level > *level {
-            // Filtered out: very dim
             Style::default()
                 .fg(SURFACE0)
                 .bg(bg)
                 .add_modifier(Modifier::DIM)
         } else {
-            // Available
             Style::default().fg(level_color(*level)).bg(bg)
         };
         spans.push(Span::styled(format!(" {} ", label), style));
         x += 3;
     }
+
+    // Separator + counts
+    spans.push(Span::styled("  │  ", Style::default().fg(SURFACE1).bg(bg)));
+    x += 5;
+
+    let count_text = format!("{}/{}", app.filtered_count(), app.store.len());
+    let count_w = count_text.width() as u16;
+    spans.push(Span::styled(
+        count_text,
+        Style::default().fg(SUBTEXT0).bg(bg),
+    ));
+    x += count_w;
 
     if !app.bookmarks.is_empty() {
         let bm = format!("  ●{}", app.bookmarks.len());
