@@ -1063,7 +1063,7 @@ fn logo_lines() -> Vec<Line<'static>> {
 }
 
 fn draw_not_connected(f: &mut Frame, _app: &mut App, area: Rect) {
-    let logo_h = LOGO.len() as u16 + 4; // logo + spacing + text
+    let logo_h = LOGO.len() as u16 + 13; // logo + spacing + subtitle + spacer + Quick Start card (7)
     let start_y = area.height.saturating_sub(logo_h) / 2;
 
     let mut lines: Vec<Line> = Vec::new();
@@ -1076,14 +1076,38 @@ fn draw_not_connected(f: &mut Frame, _app: &mut App, area: Rect) {
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
-        "   Flutter Log Viewer",
+        "   Flutter Log Viewer · Network Inspector",
         Style::default().fg(OVERLAY0),
     )));
     lines.push(Line::raw(""));
-    lines.push(Line::from(Span::styled(
-        "   Select a source to begin",
-        Style::default().fg(SURFACE1),
-    )));
+
+    // Quick Start bordered card
+    let indent = "    ";
+    let card_w = 46usize;
+    let top = format!("{}┌{}┐", indent, "─".repeat(card_w - 2));
+    let bot = format!("{}└{}┘", indent, "─".repeat(card_w - 2));
+    let border_style = Style::default().fg(SURFACE0);
+    let content_fg = Style::default().fg(SUBTEXT0);
+
+    let card_row = |text: &str| -> Line<'static> {
+        let inner_w = card_w - 2;
+        let pad = inner_w.saturating_sub(text.width());
+        Line::from(vec![
+            Span::styled(indent.to_string(), Style::default()),
+            Span::styled("│".to_string(), border_style),
+            Span::styled(text.to_string(), content_fg),
+            Span::styled(" ".repeat(pad), Style::default()),
+            Span::styled("│".to_string(), border_style),
+        ])
+    };
+
+    lines.push(Line::from(Span::styled(top, border_style)));
+    lines.push(card_row("  Quick Start                               "));
+    lines.push(card_row("   1. Add flog_dart to your Flutter app     "));
+    lines.push(card_row("   2. Run your app in debug mode            "));
+    lines.push(card_row("   3. flog will auto-connect                "));
+    lines.push(card_row("                                            "));
+    lines.push(Line::from(Span::styled(bot, border_style)));
 
     f.render_widget(Paragraph::new(lines).style(Style::default().bg(BASE)), area);
 }
