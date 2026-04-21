@@ -257,7 +257,10 @@ fn summarize_container(tree: &Tree, id: u32, max_width: usize) -> Vec<Span<'stat
     } else {
         String::new()
     };
-    let reserved = close.width() + count_suffix.width() + 1; // +1 for `…` (≤2 cols)
+    // Reserve for: close + count_suffix + possible ", …" tail (3 cols).
+    // Over-reserves by 2 when nothing truncates, which is acceptable — the
+    // summary just gets slightly narrower, and the total line always fits.
+    let reserved = close.width() + count_suffix.width() + 3;
     let budget = max_width.saturating_sub(1 + reserved); // -1 for open already pushed
 
     let mut used = 0usize;
@@ -318,14 +321,27 @@ fn preview_child(tree: &Tree, cid: u32) -> Vec<Span<'static>> {
         )),
         NodeKind::Number(s) => spans.push(Span::styled(s.clone(), Style::default().fg(NUM_COLOR))),
         NodeKind::String(s) => {
-            // In previews, always clip long strings early — single entry shouldn't hog the line.
-            let max_chars = 20;
-            let clipped: String = s.chars().take(max_chars).collect();
-            let tail = if s.chars().count() > max_chars { "…" } else { "" };
-            spans.push(Span::styled(
-                format!("\"{}{}\"", clipped, tail),
-                Style::default().fg(STR_COLOR),
-            ));
+            // In previews, clip long strings by column width (CJK-aware).
+            // Budget = 20 display columns, matching "short summary" intent
+            // without letting wide-character strings hog the line.
+            const PREVIEW_BUDGET: usize = 20;
+            let full_w = s.as_str().width();
+            let text = if full_w <= PREVIEW_BUDGET {
+                format!("\"{}\"", s)
+            } else {
+                let mut w = 0usize;
+                let mut cut = 0usize;
+                for (i, ch) in s.char_indices() {
+                    let cw = ch.to_string().as_str().width();
+                    if w + cw > PREVIEW_BUDGET {
+                        break;
+                    }
+                    w += cw;
+                    cut = i + ch.len_utf8();
+                }
+                format!("\"{}…\"", &s[..cut])
+            };
+            spans.push(Span::styled(text, Style::default().fg(STR_COLOR)));
         }
         NodeKind::Object => {
             spans.push(Span::styled("{…}", Style::default().fg(FOLD_COLOR)))
@@ -440,5 +456,48 @@ mod tests {
         append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
         assert_eq!(cmap.len(), 1);
         assert_eq!(cmap[0], Some(("sec".into(), 0)));
+    }
+
+    #[test]
+    fn nested_container_in_summary_shows_placeholder() {
+        // Root object has one child `a` which is a nested object. When the
+        // root is collapsed, `preview_child` should render `a`'s nested
+        // object as `{…}`, not as its contents.
+        let t = tree::parse(r#"{"a": {"b": 1}}"#).unwrap();
+        let mut s = state::init_state(&t, 0);
+        s.expanded[0] = false; // force root collapsed
+        let mut out = Vec::new();
+        let mut cmap = Vec::new();
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        assert_eq!(out.len(), 1);
+        let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            rendered.contains("{…}"),
+            "nested object should preview as placeholder: {:?}",
+            rendered
+        );
+    }
+
+    #[test]
+    fn collapsed_array_fits_within_max_width() {
+        // Sweep widths from 20 to 80, rendering a long array. Total line
+        // width must never exceed max_width, including the `…] (N)` tail.
+        let t = tree::parse("[111,222,333,444,555,666,777,888,999,1000,1001,1002]").unwrap();
+        let s = state::init_state(&t, 0); // collapsed root
+        for max_w in 20..=80 {
+            let mut out = Vec::new();
+            let mut cmap = Vec::new();
+            append_render(&mut out, &mut cmap, &t, &s, "sec", "", max_w);
+            assert_eq!(out.len(), 1);
+            let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
+            let w = unicode_width::UnicodeWidthStr::width(rendered.as_str());
+            assert!(
+                w <= max_w,
+                "width {} exceeds max_width {}: {:?}",
+                w,
+                max_w,
+                rendered
+            );
+        }
     }
 }
