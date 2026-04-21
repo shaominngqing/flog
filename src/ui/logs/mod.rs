@@ -1001,8 +1001,16 @@ fn entry_row_count_from_store(
     wrapped.len() + extra_rows + stack_rows
 }
 
-fn draw_separator_rule(_f: &mut Frame, _area: Rect) {
-    // Real implementation in Task 3.
+fn draw_separator_rule(f: &mut Frame, area: Rect) {
+    let rule: String = "─".repeat(area.width as usize);
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            rule,
+            Style::default().fg(SURFACE0).bg(MANTLE),
+        )))
+        .style(Style::default().bg(MANTLE)),
+        area,
+    );
 }
 
 fn draw_jump_to_bottom(_f: &mut Frame, _app: &mut App, _area: Rect) {
