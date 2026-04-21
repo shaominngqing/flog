@@ -74,7 +74,10 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                 app.device_picker_scroll = app.device_picker_scroll.saturating_sub(1);
             }
             crossterm::event::MouseEventKind::ScrollDown => {
-                app.device_picker_scroll += 1;
+                let max = app.layout.device_picker_total_lines.saturating_sub(1);
+                if app.device_picker_scroll < max {
+                    app.device_picker_scroll += 1;
+                }
             }
             _ => {}
         }
@@ -87,7 +90,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             (app.layout.width as u32 * (100 - app.detail_panel_pct as u32) / 100) as u16;
         if mouse.column >= panel_start
             && mouse.row > app.layout.toolbar_y
-            && mouse.row < app.layout.timeline_y
+            && mouse.row < app.layout.bottom_y
         {
             handle_detail_panel_click(app, &mouse);
             return;
@@ -564,13 +567,6 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                 handle_toolbar_click(app, x);
             } else if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
                 handle_list_click(app, y, is_double);
-            } else if y >= app.layout.timeline_y && y < app.layout.bottom_y {
-                // Timeline click → jump to position
-                let fc = app.filtered_count();
-                let offset = crate::ui::logs::timeline::click_to_offset(x, app.layout.width, fc);
-                app.scroll_offset = offset;
-                app.selected = offset;
-                app.auto_scroll = false;
             } else if y == app.layout.bottom_y {
                 handle_bottom_click(app, x);
             }
@@ -738,7 +734,7 @@ fn handle_detail_panel_click(app: &mut App, mouse: &MouseEvent) {
     }
 
     // Only handle clicks within the list area (not toolbar/timeline/status)
-    if mouse.row <= app.layout.toolbar_y || mouse.row >= app.layout.timeline_y {
+    if mouse.row <= app.layout.toolbar_y || mouse.row >= app.layout.bottom_y {
         return;
     }
 

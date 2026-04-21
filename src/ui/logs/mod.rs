@@ -1,9 +1,8 @@
-//! Logs view — main log list with toolbar, timeline, and status bar.
+//! Logs view — main log list with toolbar and status bar.
 
 pub mod detail;
 pub mod highlight;
 pub mod stats;
-pub mod timeline;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -150,24 +149,23 @@ fn tag_pill_spans(filter: &crate::domain::FilterState) -> Vec<Span<'static>> {
 // ══════════════════════════════════════
 
 pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
-    // Vertical: toolbar | main | timeline | status
+    // Layout: separator | toolbar | main | status
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1), // separator rule
             Constraint::Length(1), // toolbar
             Constraint::Min(3),    // main area (list + optional detail)
-            Constraint::Length(3), // timeline
             Constraint::Length(1), // status bar
         ])
         .split(area);
 
-    app.layout.toolbar_y = rows[0].y;
-    app.layout.timeline_y = rows[2].y;
+    app.layout.toolbar_y = rows[1].y;
     app.layout.bottom_y = rows[3].y;
 
-    draw_toolbar(f, app, rows[0]);
+    draw_separator_rule(f, rows[0]);
+    draw_toolbar(f, app, rows[1]);
 
-    // Main area: detail panel or log list
     if app.show_detail_panel {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
@@ -175,7 +173,7 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
                 Constraint::Percentage(100 - app.detail_panel_pct),
                 Constraint::Percentage(app.detail_panel_pct),
             ])
-            .split(rows[1]);
+            .split(rows[2]);
 
         app.layout.list_y = cols[0].y;
         app.layout.list_height = cols[0].height;
@@ -183,13 +181,14 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
         draw_log_list(f, app, cols[0]);
         detail::draw_side_panel(f, app, cols[1]);
     } else {
-        app.layout.list_y = rows[1].y;
-        app.layout.list_height = rows[1].height;
+        app.layout.list_y = rows[2].y;
+        app.layout.list_height = rows[2].height;
 
-        draw_log_list(f, app, rows[1]);
+        draw_log_list(f, app, rows[2]);
     }
 
-    timeline::draw_timeline(f, app, rows[2]);
+    draw_jump_to_bottom(f, app, rows[2]);
+
     draw_status_bar(f, app, rows[3]);
 }
 
@@ -536,9 +535,9 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     // ── Empty states ──
     if filtered_count == 0 {
-        if app.store.is_empty() && !app.connected {
+        if app.store.is_empty() && app.active_app_id.is_none() {
             draw_not_connected(f, app, area);
-        } else if app.store.is_empty() && app.connected {
+        } else if app.store.is_empty() && app.active_app_id.is_some() {
             draw_waiting_for_logs(f, app, area);
         } else {
             draw_no_matching_logs(f, area);
@@ -1000,6 +999,14 @@ fn entry_row_count_from_store(
         }
     }
     wrapped.len() + extra_rows + stack_rows
+}
+
+fn draw_separator_rule(_f: &mut Frame, _area: Rect) {
+    // Real implementation in Task 3.
+}
+
+fn draw_jump_to_bottom(_f: &mut Frame, _app: &mut App, _area: Rect) {
+    // Real implementation in Task 7.
 }
 
 // ══════════════════════════════════════
