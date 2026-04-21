@@ -62,7 +62,6 @@ fn render_node(
     trailing_comma: bool,
 ) {
     let node = tree.node(id);
-    let depth = node.depth;
     let is_container = matches!(node.kind, NodeKind::Object | NodeKind::Array);
 
     if !is_container {
@@ -78,7 +77,8 @@ fn render_node(
         return;
     }
 
-    let _ = depth;
+    // Recursion safety: `tree::parse` uses `serde_json::from_str` which has
+    // a default nesting cap of 128. Any JSON that parses is safe to recurse on.
     push_container_opener(
         out, click_map, tree, section_key, outer_prefix, id,
     );
