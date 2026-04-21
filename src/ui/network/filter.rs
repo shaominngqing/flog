@@ -1,4 +1,4 @@
-//! Network toolbar renderer — 2-line toolbar with URL search and inline filter pills.
+//! Network toolbar renderer — 2-row toolbar matching Logs (search+count / pill groups).
 
 use ratatui::{
     layout::Rect,
@@ -14,10 +14,10 @@ use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 use crate::ui::safe_pad;
 
 use super::super::{
-    BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, RED, SAPPHIRE, SURFACE0, SURFACE1, TEXT, YELLOW,
+    BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, RED, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
 };
 
-/// Render a filter pill: selected = bright colored bg, unselected = subtle bg.
+/// Render a filter pill: selected = bright colored bg, unselected = outline only (MANTLE bg).
 fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'a> {
     if selected {
         Span::styled(
@@ -30,176 +30,177 @@ fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'
     } else {
         Span::styled(
             format!(" {} ", label),
-            Style::default().fg(OVERLAY0).bg(SURFACE0),
+            Style::default().fg(color).bg(MANTLE),
         )
     }
 }
 
-pub fn draw_network_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
-    if area.height < 2 {
-        return;
-    }
-
+/// Row 1: "/" + search box + (right-aligned) count.
+pub fn draw_network_op1(f: &mut Frame, app: &mut App, area: Rect, count: usize, total: usize) {
     let bg = MANTLE;
-    let w = area.width as usize;
+    let w = area.width as u16;
     let is_searching = app.network.search_active;
 
-    // ── Line 1: Logo + URL search ──
-    let mut spans1: Vec<Span> = Vec::new();
-    let mut x: u16 = 0;
+    let mut spans: Vec<Span> = Vec::new();
+    spans.push(Span::styled(" ", Style::default().bg(bg)));
 
-    spans1.push(Span::styled(
-        " NET ",
-        Style::default()
-            .fg(MANTLE)
-            .bg(SAPPHIRE)
-            .add_modifier(Modifier::BOLD),
-    ));
-    x += 5;
-    spans1.push(Span::styled(" ", Style::default().bg(bg)));
-    x += 1;
-
-    // Mock status indicator (right side of line 1)
-    let mock_text = if app.has_connected_client() {
-        let rule_count = app.mock_rules.enabled_count();
-        if rule_count > 0 {
-            format!("{} mock rules active ", rule_count)
-        } else {
-            String::new()
-        }
+    let si = if is_searching {
+        Style::default().fg(MANTLE).bg(YELLOW)
     } else {
-        String::new()
+        Style::default().fg(OVERLAY0).bg(bg)
     };
-    let mock_w = mock_text.width();
-    let mock_reserved = if mock_w > 0 { mock_w + 1 } else { 0 };
+    spans.push(Span::styled("/", si));
 
-    let search_start = x;
-    let sw: usize = w.saturating_sub(x as usize + mock_reserved + 2);
-    let search_text = if is_searching {
-        format!("/{}_", app.network.search_input)
+    let sw: usize = 40;
+    let s = if is_searching {
+        format!("{}_", app.network.search_input)
     } else if app.network.filter.search.is_empty() {
-        "/filter url...".to_string()
+        "filter url...".to_string()
     } else {
-        format!("/{}", app.network.filter.search)
+        app.network.filter.search.clone()
     };
     let ss = if is_searching {
-        Style::default().fg(TEXT).bg(SURFACE1)
-    } else if app.network.filter.search.is_empty() {
-        Style::default().fg(OVERLAY0).bg(bg)
-    } else {
+        Style::default().fg(TEXT).bg(SURFACE0)
+    } else if !app.network.filter.search.is_empty() {
         Style::default().fg(YELLOW).bg(bg)
+    } else {
+        Style::default().fg(OVERLAY0).bg(bg)
     };
-    spans1.push(Span::styled(safe_pad(&search_text, sw), ss));
-    x += sw as u16;
-    let search_end = x;
+    app.layout.net_search_x = (1, 1 + 1 + sw as u16);
+    spans.push(Span::styled(safe_pad(&s, sw), ss));
 
-    // Mock status indicator (right-aligned on line 1)
-    let rem1 = (area.width as usize).saturating_sub(x as usize);
-    if !mock_text.is_empty() && rem1 > mock_w {
-        let gap = rem1.saturating_sub(mock_w);
-        spans1.push(Span::styled(" ".repeat(gap), Style::default().bg(bg)));
-        spans1.push(Span::styled(
-            mock_text,
-            Style::default().fg(GREEN).bg(bg),
+    let used: u16 = spans.iter().map(|x| x.content.width() as u16).sum();
+    let count_text = format!(" {}/{} ", count, total);
+    let cw = count_text.width() as u16;
+    let pad = w.saturating_sub(used + cw);
+    spans.push(Span::styled(
+        " ".repeat(pad as usize),
+        Style::default().bg(bg),
+    ));
+    spans.push(Span::styled(
+        count_text,
+        Style::default().fg(SUBTEXT0).bg(bg),
+    ));
+
+    f.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
+        area,
+    );
+}
+
+/// Row 2: protocol pills │ method pills │ status pills.
+pub fn draw_network_op2(f: &mut Frame, app: &mut App, area: Rect) {
+    let bg = MANTLE;
+    let mut spans: Vec<Span> = Vec::new();
+    let mut x: u16 = 0;
+    app.layout.net_filter_pills.clear();
+    app.layout.net_filter_pills_y = area.y;
+
+    spans.push(Span::styled(" ", Style::default().bg(bg)));
+    x += 1;
+
+    // Protocol
+    let proto = app.network.filter.protocol;
+    let proto_pills: &[(&str, ProtocolFilter, ratatui::style::Color)] = &[
+        ("All", ProtocolFilter::All, GREEN),
+        ("HTTP", ProtocolFilter::Http, BLUE),
+        ("SSE", ProtocolFilter::Sse, GREEN),
+        ("WS", ProtocolFilter::Ws, PEACH),
+    ];
+    for (label, val, color) in proto_pills {
+        let selected = proto == *val;
+        let p = pill(label, selected, *color);
+        let start = x;
+        x += p.content.width() as u16;
+        app.layout
+            .net_filter_pills
+            .push((format!("proto_{}", label), start, x));
+        spans.push(p);
+        spans.push(Span::styled(" ", Style::default().bg(bg)));
+        x += 1;
+    }
+
+    spans.push(Span::styled(" │ ", Style::default().fg(SURFACE1).bg(bg)));
+    x += 3;
+
+    // Method
+    let method = app.network.filter.method;
+    let method_pills: &[(&str, MethodFilter, ratatui::style::Color)] = &[
+        ("All", MethodFilter::All, GREEN),
+        ("GET", MethodFilter::Get, GREEN),
+        ("POST", MethodFilter::Post, BLUE),
+        ("PUT", MethodFilter::Put, PEACH),
+        ("DEL", MethodFilter::Delete, RED),
+        ("PATCH", MethodFilter::Patch, MAUVE),
+    ];
+    for (label, val, color) in method_pills {
+        let selected = method == *val;
+        let p = pill(label, selected, *color);
+        let start = x;
+        x += p.content.width() as u16;
+        app.layout
+            .net_filter_pills
+            .push((format!("method_{}", label), start, x));
+        spans.push(p);
+        spans.push(Span::styled(" ", Style::default().bg(bg)));
+        x += 1;
+    }
+
+    spans.push(Span::styled(" │ ", Style::default().fg(SURFACE1).bg(bg)));
+    x += 3;
+
+    // Status
+    let status = app.network.filter.status;
+    let status_pills: &[(&str, StatusFilter, ratatui::style::Color)] = &[
+        ("All", StatusFilter::All, GREEN),
+        ("OK", StatusFilter::Completed, GREEN),
+        ("Fail", StatusFilter::Failed, RED),
+        ("Active", StatusFilter::Active, YELLOW),
+        ("Pending", StatusFilter::Pending, OVERLAY0),
+    ];
+    for (label, val, color) in status_pills {
+        let selected = status == *val;
+        let p = pill(label, selected, *color);
+        let start = x;
+        x += p.content.width() as u16;
+        app.layout
+            .net_filter_pills
+            .push((format!("status_{}", label), start, x));
+        spans.push(p);
+        spans.push(Span::styled(" ", Style::default().bg(bg)));
+        x += 1;
+    }
+
+    let rem = area.width.saturating_sub(x);
+    if rem > 0 {
+        spans.push(Span::styled(
+            " ".repeat(rem as usize),
+            Style::default().bg(bg),
         ));
-    } else if rem1 > 0 {
-        spans1.push(Span::styled(" ".repeat(rem1), Style::default().bg(bg)));
     }
 
-    // ── Line 2: Filter pills with separators ──
-    let mut spans2: Vec<Span> = Vec::new();
-    let mut click_regions: Vec<(String, u16, u16)> = Vec::new();
-    let mut cx: u16 = 0;
-    let sep_style = Style::default().fg(SURFACE0).bg(bg);
-    let label_style = Style::default().fg(SURFACE1).bg(bg);
+    f.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
+        area,
+    );
+}
 
-    spans2.push(Span::styled("  ", Style::default().bg(bg)));
-    cx += 2;
-
-    // ── Protocol group ──
-    spans2.push(Span::styled("Protocol ", label_style));
-    cx += 9;
-
-    let proto_options: Vec<(ProtocolFilter, &str, ratatui::style::Color)> = vec![
-        (ProtocolFilter::All, "All", BLUE),
-        (ProtocolFilter::Http, "HTTP", BLUE),
-        (ProtocolFilter::Sse, "SSE", PEACH),
-        (ProtocolFilter::Ws, "WS", MAUVE),
-    ];
-    for (val, label, color) in &proto_options {
-        let start = cx;
-        let selected = app.network.filter.protocol == *val;
-        spans2.push(pill(label, selected, *color));
-        cx += label.len() as u16 + 2;
-        click_regions.push((format!("proto_{}", label), start, cx));
-        // Gap between pills
-        spans2.push(Span::styled(" ", Style::default().bg(bg)));
-        cx += 1;
-    }
-
-    // Vertical separator
-    spans2.push(Span::styled(" \u{2502} ", sep_style)); // │
-    cx += 3;
-
-    // ── Method group ──
-    spans2.push(Span::styled("Method ", label_style));
-    cx += 7;
-
-    let method_options: Vec<(MethodFilter, &str, ratatui::style::Color)> = vec![
-        (MethodFilter::All, "All", GREEN),
-        (MethodFilter::Get, "GET", GREEN),
-        (MethodFilter::Post, "POST", BLUE),
-        (MethodFilter::Put, "PUT", PEACH),
-        (MethodFilter::Delete, "DEL", RED),
-        (MethodFilter::Patch, "PATCH", MAUVE),
-    ];
-    for (val, label, color) in &method_options {
-        let start = cx;
-        let selected = app.network.filter.method == *val;
-        spans2.push(pill(label, selected, *color));
-        cx += label.len() as u16 + 2;
-        click_regions.push((format!("method_{}", label), start, cx));
-        spans2.push(Span::styled(" ", Style::default().bg(bg)));
-        cx += 1;
-    }
-
-    // Vertical separator
-    spans2.push(Span::styled(" \u{2502} ", sep_style));
-    cx += 3;
-
-    // ── Status group ──
-    spans2.push(Span::styled("Status ", label_style));
-    cx += 7;
-
-    let status_options: Vec<(StatusFilter, &str, ratatui::style::Color)> = vec![
-        (StatusFilter::All, "All", GREEN),
-        (StatusFilter::Completed, "OK", GREEN),
-        (StatusFilter::Failed, "Fail", RED),
-        (StatusFilter::Active, "Active", PEACH),
-        (StatusFilter::Pending, "Pending", YELLOW),
-    ];
-    for (val, label, color) in &status_options {
-        let start = cx;
-        let selected = app.network.filter.status == *val;
-        spans2.push(pill(label, selected, *color));
-        cx += label.len() as u16 + 2;
-        click_regions.push((format!("status_{}", label), start, cx));
-        spans2.push(Span::styled(" ", Style::default().bg(bg)));
-        cx += 1;
-    }
-
-    let rem2 = (area.width as usize).saturating_sub(cx as usize);
-    if rem2 > 0 {
-        spans2.push(Span::styled(" ".repeat(rem2), Style::default().bg(bg)));
-    }
-
-    // Store click regions
-    app.layout.net_toolbar_y = area.y;
-    app.layout.net_search_x = (search_start, search_end);
-    app.layout.net_filter_pills = click_regions;
-    app.layout.net_filter_pills_y = area.y + 1; // line 2
-
-    let lines = vec![Line::from(spans1), Line::from(spans2)];
-
-    f.render_widget(Paragraph::new(lines).style(Style::default().bg(bg)), area);
+/// Column header row above the request list.
+pub fn draw_network_column_header(f: &mut Frame, area: Rect) {
+    let header_style = Style::default().fg(OVERLAY0).bg(MANTLE);
+    let w = area.width as usize;
+    let right_cluster = " STATUS   TIME    SIZE ";
+    let right_w = right_cluster.width();
+    let left = " PROTO  METHOD  URL";
+    let left_w = left.width();
+    let pad = w.saturating_sub(left_w + right_w);
+    let line = Line::from(vec![
+        Span::styled(left.to_string(), header_style),
+        Span::styled(" ".repeat(pad), Style::default().bg(MANTLE)),
+        Span::styled(right_cluster.to_string(), header_style),
+    ]);
+    f.render_widget(
+        Paragraph::new(line).style(Style::default().bg(MANTLE)),
+        area,
+    );
 }

@@ -1,9 +1,10 @@
 //! TUI rendering — top-level dispatcher.
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    widgets::Block,
+    text::{Line, Span},
+    widgets::{Block, Paragraph},
     Frame,
 };
 use unicode_width::UnicodeWidthStr;
@@ -113,6 +114,18 @@ pub fn safe_truncate(s: &str, max_w: usize) -> String {
     }
     r.push_str("...");
     r
+}
+
+pub fn draw_separator_rule(f: &mut Frame, area: Rect) {
+    let rule: String = "─".repeat(area.width as usize);
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            rule,
+            Style::default().fg(SURFACE0).bg(MANTLE),
+        )))
+        .style(Style::default().bg(MANTLE)),
+        area,
+    );
 }
 
 pub fn safe_pad(s: &str, width: usize) -> String {

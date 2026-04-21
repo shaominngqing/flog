@@ -175,10 +175,10 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
     app.layout.col_header_y = rows[4].y;
     app.layout.bottom_y = rows[6].y;
 
-    draw_separator_rule(f, rows[0]);
+    crate::ui::draw_separator_rule(f, rows[0]);
     draw_toolbar_op1(f, app, rows[1]);
     draw_toolbar_op2(f, app, rows[2]);
-    draw_separator_rule(f, rows[3]);
+    crate::ui::draw_separator_rule(f, rows[3]);
     draw_column_header(f, rows[4]);
 
     if app.show_detail_panel {
@@ -1002,18 +1002,6 @@ fn entry_row_count_from_store(
         }
     }
     wrapped.len() + extra_rows + stack_rows
-}
-
-fn draw_separator_rule(f: &mut Frame, area: Rect) {
-    let rule: String = "─".repeat(area.width as usize);
-    f.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            rule,
-            Style::default().fg(SURFACE0).bg(MANTLE),
-        )))
-        .style(Style::default().bg(MANTLE)),
-        area,
-    );
 }
 
 fn draw_jump_to_bottom(f: &mut Frame, app: &mut App, area: Rect) {
