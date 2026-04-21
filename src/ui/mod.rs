@@ -157,7 +157,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // tab bar (icon + label + underline)
+            Constraint::Length(1), // tab bar
             Constraint::Min(3),    // view content
         ])
         .split(full);
