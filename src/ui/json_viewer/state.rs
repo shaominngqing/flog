@@ -46,8 +46,12 @@ pub fn toggle(tree: &Tree, state: &mut JsonViewerState, node_id: u32) -> bool {
     true
 }
 
-/// Expand every container.
+/// Expand every container. Auto-resizes `state.expanded` to match the tree
+/// so a stale (shorter) state won't panic — it just extends with `false`.
 pub fn expand_all(tree: &Tree, state: &mut JsonViewerState) {
+    if state.expanded.len() < tree.nodes.len() {
+        state.expanded.resize(tree.nodes.len(), false);
+    }
     for (i, node) in tree.nodes.iter().enumerate() {
         if matches!(node.kind, NodeKind::Object | NodeKind::Array) {
             state.expanded[i] = true;
@@ -55,8 +59,15 @@ pub fn expand_all(tree: &Tree, state: &mut JsonViewerState) {
     }
 }
 
-/// Collapse every container except the root (so the panel stays useful).
+/// Collapse every container **except the root** — the root stays expanded
+/// so the panel always shows at least its top-level keys (otherwise the
+/// user sees just `{…}` with nothing clickable).
+///
+/// Auto-resizes `state.expanded` to match the tree, same as `expand_all`.
 pub fn collapse_all(tree: &Tree, state: &mut JsonViewerState) {
+    if state.expanded.len() < tree.nodes.len() {
+        state.expanded.resize(tree.nodes.len(), false);
+    }
     for (i, node) in tree.nodes.iter().enumerate() {
         if matches!(node.kind, NodeKind::Object | NodeKind::Array) {
             state.expanded[i] = i == 0;
@@ -129,5 +140,22 @@ mod tests {
         collapse_all(&t, &mut s);
         assert!(s.expanded[0]); // root stays
         assert!(!s.expanded[1]); // a collapses
+    }
+
+    #[test]
+    fn bulk_ops_tolerate_stale_shorter_state() {
+        // Build state against a small tree, then use it with a larger tree.
+        let small = parse("{}").unwrap();
+        let mut s = init_state(&small, 5);
+        assert_eq!(s.expanded.len(), 1);
+        let big = parse(r#"{"a": {"b": 1}}"#).unwrap();
+        // Must not panic; must resize.
+        expand_all(&big, &mut s);
+        assert_eq!(s.expanded.len(), big.nodes.len());
+        assert!(s.expanded[0]); // root
+        assert!(s.expanded[1]); // "a" object
+        collapse_all(&big, &mut s);
+        assert!(s.expanded[0]);
+        assert!(!s.expanded[1]);
     }
 }
