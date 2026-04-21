@@ -52,13 +52,22 @@ impl Tree {
     pub fn is_empty_container(&self, id: u32) -> bool {
         self.is_container(id) && self.nodes[id as usize].children.is_empty()
     }
+
+    /// Construct a tree from an already-parsed `serde_json::Value`.
+    ///
+    /// Used by `parse(text)` (for strict JSON input) and by callers that
+    /// obtain a `Value` by some other means (e.g. a tolerant parser for
+    /// Dart `Map.toString()` output in log messages).
+    pub fn from_value(value: &Value) -> Tree {
+        let mut nodes: Vec<FlatNode> = Vec::new();
+        build(value, None, None, 0, &mut nodes);
+        Tree { nodes }
+    }
 }
 
 pub fn parse(text: &str) -> Result<Tree, serde_json::Error> {
     let value: Value = serde_json::from_str(text)?;
-    let mut nodes: Vec<FlatNode> = Vec::new();
-    build(&value, None, None, 0, &mut nodes);
-    Ok(Tree { nodes })
+    Ok(Tree::from_value(&value))
 }
 
 fn build(
