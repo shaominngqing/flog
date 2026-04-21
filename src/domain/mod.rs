@@ -8,6 +8,7 @@ pub mod network_filter;
 pub mod network_store;
 pub mod sse_merge;
 pub mod store;
+pub mod structured_parser;
 pub mod ws_chat;
 
 pub use entry::{InputSource, LogEntry, LogLevel, ParseResult};
