@@ -1018,6 +1018,12 @@ fn draw_jump_to_bottom(f: &mut Frame, app: &mut App, area: Rect) {
         app.layout.jump_to_bottom_rect = None;
         return;
     }
+    // Skip on empty list — nothing to jump over, and the pill would overlap
+    // the "No matching logs" / "Quick Start" empty-state cards.
+    if app.filtered_count() == 0 {
+        app.layout.jump_to_bottom_rect = None;
+        return;
+    }
     if area.height < 5 || area.width < 24 {
         app.layout.jump_to_bottom_rect = None;
         return;
