@@ -356,7 +356,7 @@ fn draw_toolbar(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
 
-    // Left side: toast OR normal info
+    // Left group: toast OR (LIVE pill + counts + app/device/port context)
     let (left_spans, left_width, source_x) =
         if let Some(msg) = app.active_status().map(|s| s.to_string()) {
             let ok_text = " OK ";
@@ -366,15 +366,12 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 vec![
                     Span::styled(
                         ok_text,
-                        Style::default()
-                            .fg(MANTLE)
-                            .bg(GREEN)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(msg_text, Style::default().fg(TEXT).bg(bg)),
                 ],
                 w as u16,
-                (0u16, 0u16), // no source info during toast
+                (0u16, 0u16),
             )
         } else {
             let (live_text, live_style) = if app.auto_scroll {
@@ -386,18 +383,12 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 (
                     format!(" {} LIVE ", dot),
-                    Style::default()
-                        .fg(MANTLE)
-                        .bg(GREEN)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
                 )
             } else if app.new_logs_since_pause > 0 {
                 (
                     format!(" {} new ", app.new_logs_since_pause),
-                    Style::default()
-                        .fg(MANTLE)
-                        .bg(YELLOW)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD),
                 )
             } else {
                 let total = app.filtered_count();
@@ -416,22 +407,38 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
             let total = app.store.len();
             let filtered = app.filtered_count();
-            let device = if app.source_name.is_empty() {
-                String::new()
-            } else {
-                format!(" {}", app.source_name)
-            };
-            let info = format!(" {}/{}{}", filtered, total, device);
+            let counts = format!("  {}/{}  ", filtered, total);
+
+            let ctx = app
+                .active_app_id
+                .as_ref()
+                .and_then(|id| app.connected_apps.iter().find(|a| &a.id == id))
+                .map(|ca| {
+                    let v = if ca.app_version.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" v{}", ca.app_version)
+                    };
+                    let dev = if ca.device_name.is_empty() {
+                        ca.device_id.clone()
+                    } else {
+                        ca.device_name.clone()
+                    };
+                    format!("{}{} · {} · :{}", ca.app_name, v, dev, ca.port)
+                })
+                .unwrap_or_default();
 
             let lw = live_text.width() as u16;
-            let iw = info.width() as u16;
-            let sx = (lw, lw + iw);
-            let w = lw + iw;
+            let cw = counts.width() as u16;
+            let ctxw = ctx.width() as u16;
+            let sx = (lw + cw, lw + cw + ctxw);
+            let w = lw + cw + ctxw;
             (
                 vec![
                     Span::styled(live_text, live_style),
+                    Span::styled(counts, Style::default().fg(SUBTEXT0).bg(bg)),
                     Span::styled(
-                        info,
+                        ctx,
                         Style::default()
                             .fg(SUBTEXT0)
                             .bg(bg)
@@ -445,55 +452,15 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
 
     app.layout.source_info_x = source_x;
 
+    // Right group: unified SURFACE0 buttons with SUBTEXT0 label; Quit in RED
+    let button_style = Style::default().fg(SUBTEXT0).bg(SURFACE0);
+    let quit_style = Style::default().fg(RED).bg(SURFACE0);
     let buttons: Vec<(&str, &str, Style)> = vec![
-        (
-            "separator",
-            " ── ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(YELLOW)
-                .add_modifier(Modifier::BOLD),
-        ),
-        (
-            "clear",
-            " Clear ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(PEACH)
-                .add_modifier(Modifier::BOLD),
-        ),
-        (
-            "export",
-            " Export ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(SAPPHIRE)
-                .add_modifier(Modifier::BOLD),
-        ),
-        (
-            "stats",
-            " Stats ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(SAPPHIRE)
-                .add_modifier(Modifier::BOLD),
-        ),
-        (
-            "help",
-            " ? ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(OVERLAY0)
-                .add_modifier(Modifier::BOLD),
-        ),
-        (
-            "quit",
-            " x ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(RED)
-                .add_modifier(Modifier::BOLD),
-        ),
+        ("clear", "  Clear  ", button_style),
+        ("export", "  Export  ", button_style),
+        ("stats", "  Stats  ", button_style),
+        ("help", "  Help  ", button_style),
+        ("quit", "  Quit  ", quit_style),
     ];
 
     let bw: u16 = buttons.iter().map(|(_, l, _)| l.width() as u16 + 1).sum();
