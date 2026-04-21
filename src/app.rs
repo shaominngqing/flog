@@ -206,6 +206,10 @@ impl NetworkState {
 #[derive(Default)]
 pub struct LayoutCache {
     pub toolbar_y: u16,
+    /// Y position of the column header row (Logs tab). Set by renderer.
+    pub col_header_y: u16,
+    /// Y position of the column header row (Network tab). Set by renderer.
+    pub net_col_header_y: u16,
     pub list_y: u16,
     pub list_height: u16,
     pub bottom_y: u16,
