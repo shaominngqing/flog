@@ -123,8 +123,9 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let entry_changed = app.detail.viewer_text_fingerprint != fingerprint;
 
     let total_content;
-    match json_viewer::parse(&full_msg) {
-        Ok(tree) => {
+    match crate::domain::structured_parser::parse(&full_msg) {
+        Some(value) => {
+            let tree = json_viewer::Tree::from_value(&value);
             if entry_changed || app.detail.viewer_state.expanded.len() != tree.nodes.len() {
                 app.detail.viewer_state = json_viewer::init_state(&tree, 1);
                 app.detail.viewer_text_fingerprint = fingerprint;
@@ -163,7 +164,7 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
             app.detail.viewer_tree = Some(tree);
             total_content = app.detail.header_lines + full_body_len;
         }
-        Err(_) => {
+        None => {
             for wl in crate::ui::wrap_text(&full_msg, inner_w, 500) {
                 all_lines.push(Line::from(Span::styled(
                     wl,

@@ -16,4 +16,4 @@ pub use colorize::colorize_json_text;
 
 pub use render::append_render;
 pub use state::{init_state, toggle, JsonViewerState};
-pub use tree::{parse, Tree};
+pub use tree::Tree;

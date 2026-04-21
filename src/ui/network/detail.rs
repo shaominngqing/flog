@@ -926,8 +926,9 @@ fn render_json_section(
     viewer_states: &mut HashMap<String, JsonViewerState>,
     max_w: usize,
 ) {
-    match json_viewer::parse(json_text) {
-        Ok(tree) => {
+    match crate::domain::structured_parser::parse(json_text) {
+        Some(value) => {
+            let tree = json_viewer::Tree::from_value(&value);
             let state = viewer_states
                 .entry(section_key.to_string())
                 .or_insert_with(|| json_viewer::init_state(&tree, 1));
@@ -946,7 +947,7 @@ fn render_json_section(
                 section_map.push(None);
             }
         }
-        Err(_) => {
+        None => {
             for wl in wrap_text(json_text, max_w.saturating_sub(3), 100) {
                 lines.push(Line::from(Span::styled(
                     format!("   {}", wl),

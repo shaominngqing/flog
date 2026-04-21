@@ -55,9 +55,8 @@ impl Tree {
 
     /// Construct a tree from an already-parsed `serde_json::Value`.
     ///
-    /// Used by `parse(text)` (for strict JSON input) and by callers that
-    /// obtain a `Value` by some other means (e.g. a tolerant parser for
-    /// Dart `Map.toString()` output in log messages).
+    /// All callers obtain their `Value` via `domain::structured_parser`,
+    /// which tries strict JSON first and then a tolerant Dart-Map fallback.
     pub fn from_value(value: &Value) -> Tree {
         let mut nodes: Vec<FlatNode> = Vec::new();
         build(value, None, None, 0, &mut nodes);
@@ -65,6 +64,9 @@ impl Tree {
     }
 }
 
+/// Strict-JSON convenience wrapper. Test-only — runtime callers go through
+/// `domain::structured_parser::parse` + `Tree::from_value`.
+#[cfg(test)]
 pub fn parse(text: &str) -> Result<Tree, serde_json::Error> {
     let value: Value = serde_json::from_str(text)?;
     Ok(Tree::from_value(&value))
