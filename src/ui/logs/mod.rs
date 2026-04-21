@@ -181,7 +181,7 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
     crate::ui::draw_separator_rule(f, rows[3]);
     draw_column_header(f, rows[4]);
 
-    if app.show_detail_panel {
+    let list_area = if app.show_detail_panel {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -195,14 +195,16 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
 
         draw_log_list(f, app, cols[0]);
         detail::draw_side_panel(f, app, cols[1]);
+        cols[0]
     } else {
         app.layout.list_y = rows[5].y;
         app.layout.list_height = rows[5].height;
 
         draw_log_list(f, app, rows[5]);
-    }
+        rows[5]
+    };
 
-    draw_jump_to_bottom(f, app, rows[5]);
+    draw_jump_to_bottom(f, app, list_area);
 
     draw_status_bar(f, app, rows[6]);
 }
@@ -361,16 +363,16 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_column_header(f: &mut Frame, area: Rect) {
-    // Columns: cursor(1) + bookmark(2) + TIME(12) + sep(1) + LEVEL(9) + sep(1) + TAG(14) + sep(1) + MESSAGE
-    // We emit label headers aligned to those column starts.
+    // Match row layout exactly: cursor(1) + bm(2) + TIME(12) + " " + LEVEL(9) + " " + TAG(14) + " " + MESSAGE
     let header_style = Style::default().fg(OVERLAY0).bg(MANTLE);
     let text = format!(
-        " {}{}{}{}{}",
-        safe_pad("", 3),                         // cursor + bookmark
-        safe_pad("TIME", TIME_WIDTH),            // 12
-        safe_pad(" LEVEL", LEVEL_WIDTH + 1),     // 10
-        safe_pad(" TAG", TAG_WIDTH + 1),         // 15
-        " MESSAGE",
+        "{}{}{} {} {} {}",
+        " ",                                // cursor (1)
+        "  ",                               // bookmark (2)
+        safe_pad("TIME", TIME_WIDTH),       // 12
+        safe_pad("LEVEL", LEVEL_WIDTH),     // 9
+        safe_pad("TAG", TAG_WIDTH),         // 14
+        "MESSAGE",
     );
     let w = area.width as usize;
     let pad = w.saturating_sub(text.width());

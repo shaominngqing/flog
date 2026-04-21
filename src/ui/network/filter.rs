@@ -186,19 +186,29 @@ pub fn draw_network_op2(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// Column header row above the request list.
+/// Mirrors row layout: cursor(1) + PROTO(6) + " " + METHOD(8) + " " + URL(flex) + STATUS(10) + " " + TIME(8) + " " + SIZE(8).
 pub fn draw_network_column_header(f: &mut Frame, area: Rect) {
+    const PROTO_W: usize = 6;
+    const METHOD_W: usize = 8;
+    const STATUS_W: usize = 10;
+    const TIME_W: usize = 8;
+    const SIZE_W: usize = 8;
+
     let header_style = Style::default().fg(OVERLAY0).bg(MANTLE);
     let w = area.width as usize;
-    let right_cluster = " STATUS   TIME    SIZE ";
-    let right_w = right_cluster.width();
-    let left = " PROTO  METHOD  URL";
-    let left_w = left.width();
-    let pad = w.saturating_sub(left_w + right_w);
-    let line = Line::from(vec![
-        Span::styled(left.to_string(), header_style),
-        Span::styled(" ".repeat(pad), Style::default().bg(MANTLE)),
-        Span::styled(right_cluster.to_string(), header_style),
-    ]);
+    let fixed = 1 + PROTO_W + 1 + METHOD_W + 1 + STATUS_W + 1 + TIME_W + 1 + SIZE_W;
+    let url_w = w.saturating_sub(fixed);
+    let text = format!(
+        "{}{} {} {}{} {} {}",
+        " ",                                    // cursor (1)
+        crate::ui::safe_pad("PROTO", PROTO_W),  // 6
+        crate::ui::safe_pad("METHOD", METHOD_W),// 8
+        crate::ui::safe_pad("URL", url_w),      // flex
+        crate::ui::safe_pad("STATUS", STATUS_W),// 10
+        crate::ui::safe_pad("TIME", TIME_W),    // 8
+        crate::ui::safe_pad("SIZE", SIZE_W),    // 8
+    );
+    let line = Line::from(Span::styled(text, header_style));
     f.render_widget(
         Paragraph::new(line).style(Style::default().bg(MANTLE)),
         area,
