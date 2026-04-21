@@ -169,11 +169,12 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(kv("j / k", "Move selection up/down"));
     lines.push(kv("\u{2191} \u{2193}", "Move selection up/down"));
     lines.push(kv("PgUp/Dn", "Scroll 20 entries"));
-    lines.push(kv("Home/End", "Jump to top/bottom"));
+    lines.push(kv("Home", "Jump to top"));
+    lines.push(kv("G / End", "Jump to bottom (resume LIVE)"));
     lines.push(kv("/", "Search (supports /regex/i)"));
     lines.push(kv("n / N", "Next / previous match"));
+    lines.push(kv("t", "Enter tag filter (comma-sep, -tag to exclude)"));
     lines.push(kv("Enter", "Toggle detail panel"));
-    lines.push(kv("t", "Enter tag filter"));
     lines.push(kv("c", "Copy selected log to clipboard"));
     lines.push(kv("e", "Export filtered logs to file"));
     lines.push(kv("S", "Statistics view"));
@@ -187,8 +188,10 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(mouse_action("Click same row again", "Toggle detail panel"));
     lines.push(mouse_action("Right-click row", "Toggle bookmark \u{25cf}"));
     lines.push(mouse_action("Scroll wheel", "Scroll log list"));
-    lines.push(mouse_action("Click V/D/I/W/E", "Set minimum log level"));
-    lines.push(mouse_action("Click search box", "Start search input"));
+    lines.push(mouse_action("Click S/V/D/I/W/E", "Set minimum log level"));
+    lines.push(mouse_action("Click search / # tag", "Start search / tag filter"));
+    lines.push(mouse_action("Click \u{21c5} app context", "Switch connected app"));
+    lines.push(mouse_action("Click Jump-to-bottom pill", "Scroll to tail, resume LIVE"));
     lines.push(blank());
 
     lines.push(subheading("\u{1f50d} Search & Filter"));
@@ -274,10 +277,15 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(blank());
     lines.push(subheading("\u{2328} Keyboard"));
     lines.push(kv("j / k", "Move selection up/down"));
+    lines.push(kv("G / End", "Jump to bottom (resume LIVE)"));
     lines.push(kv("Enter", "Toggle detail panel"));
     lines.push(kv("/", "Filter by URL"));
-    lines.push(kv("c", "Copy as cURL command"));
-    lines.push(kv("y", "Copy response body"));
+    lines.push(kv("c", "Copy as cURL (HTTP only)"));
+    lines.push(kv("y", "Copy response body / SSE merged / WS chat"));
+    lines.push(kv("r", "Replay selected request (HTTP only)"));
+    lines.push(kv("M", "Create Mock rule from selected request"));
+    lines.push(kv("Ctrl+m", "Open Mock rules management panel"));
+    lines.push(kv("S", "Performance stats"));
     lines.push(kv("s", "Select mode (text selection)"));
     lines.push(kv("Esc", "Clear all filters"));
     lines.push(blank());
@@ -289,8 +297,8 @@ pub fn draw_help(f: &mut Frame) {
         "Toggle protocol/method/status filter",
     ));
     lines.push(mouse_action(
-        "Click status buttons",
-        "Copy cURL / Copy Response / Clear",
+        "Click action buttons",
+        "Replay / Copy cURL / Copy Response / Mock / Stats",
     ));
     lines.push(mouse_action("Scroll on detail", "Scroll detail content"));
     lines.push(blank());
