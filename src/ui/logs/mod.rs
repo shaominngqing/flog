@@ -171,7 +171,8 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
         ])
         .split(area);
 
-    app.layout.toolbar_y = rows[1].y; // op row 1 (for click hit-test on search)
+    app.layout.toolbar_y = rows[1].y; // op row 1 (search)
+    app.layout.toolbar_op2_y = rows[2].y; // op row 2 (tag + levels)
     app.layout.col_header_y = rows[4].y;
     app.layout.bottom_y = rows[6].y;
 
@@ -281,39 +282,36 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
     spans.push(Span::styled(" ", Style::default().bg(bg)));
     x += 1;
 
-    // T pill + 2 spaces + tag placeholder (or pills if active)
+    // Tag filter: "#" prefix + placeholder/input/pills (no T pill, matches search style)
     let filter_start_x = x;
+    let prefix_style = if filter_active {
+        Style::default().fg(MANTLE).bg(YELLOW)
+    } else {
+        Style::default().fg(OVERLAY0).bg(bg)
+    };
+    spans.push(Span::styled("#", prefix_style));
+    x += 1;
+
     if filter_active {
-        spans.push(Span::styled("T", Style::default().fg(MANTLE).bg(GREEN)));
-        x += 1;
-        spans.push(Span::styled("  ", Style::default().bg(bg)));
-        x += 2;
-        let fw: usize = 14;
+        let fw: usize = 20;
         spans.push(Span::styled(
             safe_pad(&format!("{}_", app.tag_filter.input), fw),
             Style::default().fg(TEXT).bg(SURFACE0),
         ));
         x += fw as u16;
     } else if !app.filter.tag_include.is_empty() || !app.filter.tag_exclude.is_empty() {
-        spans.push(Span::styled("T", Style::default().fg(MANTLE).bg(GREEN)));
-        x += 1;
-        spans.push(Span::styled("  ", Style::default().bg(bg)));
-        x += 2;
         let pills = tag_pill_spans(&app.filter);
         for p in &pills {
             x += p.content.width() as u16;
         }
         spans.extend(pills);
     } else {
-        spans.push(Span::styled("T", Style::default().fg(MANTLE).bg(GREEN)));
-        x += 1;
-        spans.push(Span::styled("  ", Style::default().bg(bg)));
-        x += 2;
+        let fw: usize = 20;
         spans.push(Span::styled(
-            safe_pad("tag...", 14),
+            safe_pad("tag...", fw),
             Style::default().fg(OVERLAY0).bg(bg),
         ));
-        x += 14;
+        x += fw as u16;
     }
     app.layout.filter_x = (filter_start_x, x);
 

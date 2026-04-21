@@ -579,6 +579,8 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
 
             if y == app.layout.toolbar_y {
                 handle_toolbar_click(app, x);
+            } else if y == app.layout.toolbar_op2_y {
+                handle_toolbar_op2_click(app, x);
             } else if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
                 handle_list_click(app, y, is_double);
             } else if y == app.layout.bottom_y {
@@ -598,9 +600,15 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
 }
 
 fn handle_toolbar_click(app: &mut App, x: u16) {
+    // op row 1: search box only
     if x >= app.layout.search_x.0 && x < app.layout.search_x.1 {
         app.enter_search();
-    } else if x >= app.layout.filter_x.0 && x < app.layout.filter_x.1 {
+    }
+}
+
+fn handle_toolbar_op2_click(app: &mut App, x: u16) {
+    // op row 2: tag filter + level buttons
+    if x >= app.layout.filter_x.0 && x < app.layout.filter_x.1 {
         app.enter_tag_filter();
     } else if x >= app.layout.levels_x {
         let offset = x - app.layout.levels_x;
@@ -612,18 +620,7 @@ fn handle_toolbar_click(app: &mut App, x: u16) {
             3 => app.set_level(LogLevel::Info),
             4 => app.set_level(LogLevel::Warning),
             5 => app.set_level(LogLevel::Error),
-            _ => {
-                // 搜索导航按钮
-                if !app.search.matches.is_empty() {
-                    let nav_offset = offset.saturating_sub(6 * LEVEL_BUTTON_WIDTH + 4);
-                    // ◀ and ▶ are each ~2 chars wide
-                    if nav_offset < 2 {
-                        app.prev_match();
-                    } else {
-                        app.next_match();
-                    }
-                }
-            }
+            _ => {}
         }
     }
 }
@@ -715,7 +712,7 @@ fn handle_input_mouse(app: &mut App, mouse: MouseEvent) {
                     AppMode::TagFilter => app.apply_tag_filter(),
                     _ => {}
                 }
-            } else if y == app.layout.toolbar_y {
+            } else if y == app.layout.toolbar_y || y == app.layout.toolbar_op2_y {
                 match app.mode {
                     AppMode::Search => app.cancel_search(),
                     AppMode::TagFilter => app.cancel_tag_filter(),
