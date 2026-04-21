@@ -50,13 +50,29 @@ pub struct StatsSnapshot {
 }
 
 /// Detail view state.
-#[derive(Default)]
 pub struct DetailState {
     pub scroll: usize,
     /// Number of header lines in the detail panel (set by renderer).
     pub header_lines: usize,
-    /// JSON viewer fold/unfold state.
+    /// JSON viewer fold/unfold state (AST-based).
     pub viewer_state: crate::ui::json_viewer::JsonViewerState,
+    /// Cached JSON tree for the currently shown entry. `None` until the
+    /// renderer parses the first body.
+    pub viewer_tree: Option<crate::ui::json_viewer::Tree>,
+    /// Maps body-content row index -> node_id for click-to-fold. Set by renderer.
+    pub viewer_click_map: Vec<Option<u32>>,
+}
+
+impl Default for DetailState {
+    fn default() -> Self {
+        Self {
+            scroll: 0,
+            header_lines: 0,
+            viewer_state: crate::ui::json_viewer::JsonViewerState::default(),
+            viewer_tree: None,
+            viewer_click_map: Vec::new(),
+        }
+    }
 }
 
 /// A segment in a JSON field path.
@@ -96,8 +112,8 @@ pub struct NetworkState {
     /// JSON viewer states keyed by section (e.g., "req_headers", "res_body", "sse_0").
     pub json_viewer_states:
         std::collections::HashMap<String, crate::ui::json_viewer::JsonViewerState>,
-    /// Maps detail panel line index -> (section_key, source_line) for JSON bracket click.
-    pub detail_json_click_map: Vec<Option<(String, usize)>>,
+    /// Maps detail panel line index -> (section_key, node_id) for JSON fold click.
+    pub detail_json_click_map: Vec<Option<(String, u32)>>,
     /// SSE merge rules: URL path (no query params) → merge rule.
     pub sse_merge_rules: std::collections::HashMap<String, SseMergeRule>,
     /// Whether the current SSE detail is showing Merged mode (true) or Events mode (false).
@@ -776,10 +792,14 @@ impl App {
     pub fn reset_detail_for_selection(&mut self) {
         self.detail.scroll = 0;
         self.detail.viewer_state = crate::ui::json_viewer::JsonViewerState::default();
+        self.detail.viewer_tree = None;
+        self.detail.viewer_click_map.clear();
     }
 
-    pub fn toggle_detail_fold(&mut self, source_line: usize) {
-        crate::ui::json_viewer::toggle_fold(&mut self.detail.viewer_state, source_line);
+    pub fn toggle_detail_fold(&mut self, node_id: u32) {
+        if let Some(ref tree) = self.detail.viewer_tree {
+            crate::ui::json_viewer::toggle(tree, &mut self.detail.viewer_state, node_id);
+        }
     }
 
     pub fn detail_scroll_up(&mut self, n: usize) {

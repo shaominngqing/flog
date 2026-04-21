@@ -107,25 +107,59 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
     app.detail.header_lines = all_lines.len() + 1;
 
     // ── Body with fold/unfold using json_viewer ──
-    let fmt_lines = json_viewer::bracket_format(&full_msg);
+    app.detail.viewer_click_map.clear();
+    let total_content;
+    match json_viewer::parse(&full_msg) {
+        Ok(tree) => {
+            // (Re-)initialize state if tree size changed (new entry selected).
+            if app.detail.viewer_state.expanded.len() != tree.nodes.len() {
+                app.detail.viewer_state = json_viewer::init_state(&tree, 1);
+            }
 
-    // Initialize viewer state if needed (first render or selection changed)
-    if app.detail.viewer_state.total_lines == 0 && !fmt_lines.is_empty() {
-        app.detail.viewer_state = json_viewer::init_state(&fmt_lines, 1);
+            let body_height = inner_h.saturating_sub(all_lines.len());
+            let mut body_click_map: Vec<Option<(String, u32)>> = Vec::new();
+            let mut body_lines: Vec<Line<'static>> = Vec::new();
+            json_viewer::append_render(
+                &mut body_lines,
+                &mut body_click_map,
+                &tree,
+                &app.detail.viewer_state,
+                "log_detail",
+                "",
+                inner_w,
+            );
+
+            let full_body_len = body_lines.len();
+            let scroll = app.detail.scroll.min(full_body_len);
+            // Store click map aligned with visible rows (after scroll).
+            app.detail.viewer_click_map = body_click_map
+                .iter()
+                .skip(scroll)
+                .take(body_height)
+                .map(|slot| slot.as_ref().map(|(_, id)| *id))
+                .collect();
+
+            let visible: Vec<Line<'static>> = body_lines
+                .into_iter()
+                .skip(scroll)
+                .take(body_height)
+                .collect();
+            all_lines.extend(visible);
+
+            app.detail.viewer_tree = Some(tree);
+            total_content = app.detail.header_lines + full_body_len;
+        }
+        Err(_) => {
+            for wl in crate::ui::wrap_text(&full_msg, inner_w, 500) {
+                all_lines.push(Line::from(Span::styled(
+                    wl,
+                    Style::default().fg(OVERLAY0),
+                )));
+            }
+            app.detail.viewer_tree = None;
+            total_content = all_lines.len();
+        }
     }
-
-    let body_height = inner_h.saturating_sub(all_lines.len());
-    let body_lines = json_viewer::render_json(
-        &fmt_lines,
-        &mut app.detail.viewer_state,
-        app.detail.scroll,
-        body_height,
-        inner_w,
-    );
-    all_lines.extend(body_lines);
-
-    // Track total content lines for scrollbar
-    let total_content = app.detail.header_lines + app.detail.viewer_state.total_lines;
 
     let block = Block::default()
         .title(" Details ")

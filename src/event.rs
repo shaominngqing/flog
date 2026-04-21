@@ -409,13 +409,20 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                             }
                             return;
                         }
-                        // Then check json_click_map for bracket toggle
-                        if let Some(Some((section_key, source_line))) =
-                            app.network.detail_json_click_map.get(line_idx)
+                        // Then check json_click_map for fold toggle (AST node id)
+                        if let Some(Some((section_key, node_id))) =
+                            app.network.detail_json_click_map.get(line_idx).cloned()
                         {
-                            if let Some(state) = app.network.json_viewer_states.get_mut(section_key)
+                            if let Some(state) =
+                                app.network.json_viewer_states.get_mut(&section_key)
                             {
-                                crate::ui::json_viewer::toggle_fold(state, *source_line);
+                                // Flip the fold bit directly. The tree is ephemeral
+                                // (rebuilt per frame from the source text), so we don't
+                                // have it on hand here — but the click_map only points
+                                // at IDs that were container nodes at render time.
+                                if let Some(slot) = state.expanded.get_mut(node_id as usize) {
+                                    *slot = !*slot;
+                                }
                             }
                             return;
                         }
@@ -757,8 +764,8 @@ fn handle_detail_panel_click(app: &mut App, mouse: &MouseEvent) {
             let header = app.detail.header_lines.max(2) as u16;
             if panel_row >= header {
                 let content_row = (panel_row - header) as usize;
-                if let Some(&source_line) = app.detail.viewer_state.row_to_source.get(content_row) {
-                    app.toggle_detail_fold(source_line);
+                if let Some(Some(node_id)) = app.detail.viewer_click_map.get(content_row).copied() {
+                    app.toggle_detail_fold(node_id);
                 }
             }
         }
@@ -1268,6 +1275,25 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('r') => replay_selected(app),
             KeyCode::Char('c') => copy_as_curl(app),
             KeyCode::Char('y') => copy_response(app),
+            KeyCode::Char('E') => {
+                // Expand all JSON sections in the network detail panel.
+                // Leaves have unused slots; flipping them is harmless —
+                // the renderer consults node kind, not the flag, for leaves.
+                for state in app.network.json_viewer_states.values_mut() {
+                    for slot in state.expanded.iter_mut() {
+                        *slot = true;
+                    }
+                }
+            }
+            KeyCode::Char('C') => {
+                // Collapse all JSON sections (keep root expanded so the
+                // panel still shows top-level keys).
+                for state in app.network.json_viewer_states.values_mut() {
+                    for (i, slot) in state.expanded.iter_mut().enumerate() {
+                        *slot = i == 0;
+                    }
+                }
+            }
             KeyCode::Char('M') => mock_from_selected(app),
             KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.enter_mock_rules();

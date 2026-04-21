@@ -65,7 +65,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     // Track which line indices are section headers (for click toggling)
     let mut section_line_map: Vec<Option<String>> = Vec::new();
     // Track which line indices map to JSON bracket clicks
-    let mut json_click_map: Vec<Option<(String, usize)>> = Vec::new();
+    let mut json_click_map: Vec<Option<(String, u32)>> = Vec::new();
     app.layout.sse_pill_line = None;
     app.layout.ws_pill_line = None;
 
@@ -842,7 +842,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 fn push_section_header(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, usize)>>,
+    json_click_map: &mut Vec<Option<(String, u32)>>,
     title: &str,
     collapsed: bool,
 ) {
@@ -858,7 +858,7 @@ fn push_section_header(
 fn push_kv_single(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, usize)>>,
+    json_click_map: &mut Vec<Option<(String, u32)>>,
     key: &str,
     value: &str,
 ) {
@@ -873,7 +873,7 @@ fn push_kv_single(
 fn push_kv_wrapped(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, usize)>>,
+    json_click_map: &mut Vec<Option<(String, u32)>>,
     key: &str,
     value: &str,
     max_w: usize,
@@ -920,43 +920,41 @@ fn push_kv_wrapped(
 fn render_json_section(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, usize)>>,
+    json_click_map: &mut Vec<Option<(String, u32)>>,
     json_text: &str,
     section_key: &str,
     viewer_states: &mut HashMap<String, JsonViewerState>,
     max_w: usize,
 ) {
-    if serde_json::from_str::<serde_json::Value>(json_text).is_ok() {
-        let fmt_lines = json_viewer::bracket_format(json_text);
-        let state = viewer_states
-            .entry(section_key.to_string())
-            .or_insert_with(|| json_viewer::init_state(&fmt_lines, 1));
-        let rendered =
-            json_viewer::render_json(&fmt_lines, state, 0, usize::MAX, max_w.saturating_sub(3));
-        let _base = lines.len();
-        for (i, line) in rendered.into_iter().enumerate() {
-            // Add indent prefix
-            let mut spans = vec![Span::raw("   ")];
-            spans.extend(line.spans);
-            lines.push(Line::from(spans));
-            section_map.push(None);
-            // Map to json click target
-            let source = state.row_to_source.get(i).copied();
-            if let Some(sl) = source {
-                json_click_map.push(Some((section_key.to_string(), sl)));
-            } else {
-                json_click_map.push(None);
+    match json_viewer::parse(json_text) {
+        Ok(tree) => {
+            let state = viewer_states
+                .entry(section_key.to_string())
+                .or_insert_with(|| json_viewer::init_state(&tree, 1));
+            let base = lines.len();
+            json_viewer::append_render(
+                lines,
+                json_click_map,
+                &tree,
+                state,
+                section_key,
+                "   ",
+                max_w.saturating_sub(3),
+            );
+            // Keep section_map in sync with lines.
+            for _ in base..lines.len() {
+                section_map.push(None);
             }
         }
-    } else {
-        // Fallback: wrapped text
-        for wl in wrap_text(json_text, max_w.saturating_sub(3), 100) {
-            lines.push(Line::from(Span::styled(
-                format!("   {}", wl),
-                Style::default().fg(SUBTEXT0),
-            )));
-            section_map.push(None);
-            json_click_map.push(None);
+        Err(_) => {
+            for wl in wrap_text(json_text, max_w.saturating_sub(3), 100) {
+                lines.push(Line::from(Span::styled(
+                    format!("   {}", wl),
+                    Style::default().fg(SUBTEXT0),
+                )));
+                section_map.push(None);
+                json_click_map.push(None);
+            }
         }
     }
 }
