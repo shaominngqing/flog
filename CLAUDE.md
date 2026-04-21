@@ -54,7 +54,12 @@ Four-layer architecture with strict dependency direction: `ui → app → domain
 - **`ui/`** — ratatui-based TUI with Catppuccin Macchiato theme, dual-tab architecture
   - `mod.rs` — Top-level dispatcher, shared palette constants, utility functions
   - `tab_bar.rs` — Tab bar renderer (▤ Logs / ⇄ Network)
-  - `json_viewer.rs` — **Shared** collapsible JSON tree component (bracket formatter, depth-aware coloring, fold/unfold)
+  - `json_viewer/` — **Shared** collapsible JSON tree component (AST-based)
+    - `tree.rs` — flat-arena tree via `serde_json::Value` + DFS flatten (`preserve_order` feature keeps key insertion order)
+    - `state.rs` — parallel `Vec<bool>` fold state indexed by node ID
+    - `render.rs` — depth-aware rendering with DevTools-style collapsed summaries (`{k: v, …}` / `[v, …] (N)`), fixed-width ▼/▶ markers, CJK-aware string truncation
+    - `palette.rs` — shared Catppuccin color constants (depth-cycling key/brace colors)
+    - `colorize.rs` — independent raw-text JSON syntax highlighter for inline JSON in log messages
   - `logs/mod.rs` — Logs view (toolbar, log list with level colors/tag pills, timeline, status bar)
   - `logs/detail.rs` — Log detail panel using json_viewer
   - `logs/highlight.rs` — Auto-highlight (HTTP methods, status codes, URLs, durations)

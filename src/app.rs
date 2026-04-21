@@ -62,6 +62,11 @@ pub struct DetailState {
     pub viewer_tree: Option<crate::ui::json_viewer::Tree>,
     /// Maps body-content row index -> node_id for click-to-fold. Set by renderer.
     pub viewer_click_map: Vec<Option<u32>>,
+    /// Fingerprint of the JSON text the viewer_state was built against. Used by
+    /// the renderer to detect "selected entry changed" for any code path — not
+    /// just the keyboard/mouse handlers that explicitly call
+    /// `reset_detail_for_selection`.
+    pub viewer_text_fingerprint: u64,
 }
 
 /// A segment in a JSON field path.

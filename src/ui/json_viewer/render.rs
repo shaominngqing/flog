@@ -24,8 +24,9 @@ use super::tree::{NodeKind, Tree};
 /// get `Some(...)`; leaves and close-brace lines get `None`.
 ///
 /// `outer_prefix` is whitespace the caller wants prepended (e.g. `"   "` for
-/// three-space section indent). `max_width` is the total panel width; strings
-/// are truncated with `…` if the line would exceed it.
+/// three-space section indent). `max_width` is the total budget INCLUDING
+/// `outer_prefix` — callers typically pass `panel_width - outer_prefix.len()`.
+/// Strings are truncated with `…` when the rendered line would exceed it.
 pub fn append_render(
     out: &mut Vec<Line<'static>>,
     click_map: &mut Vec<Option<(String, u32)>>,
@@ -608,6 +609,32 @@ mod tests {
         let mut s = state::init_state(&t, 0);
         s.expanded[0] = false; // force root collapsed
         for max_w in 20..=80 {
+            let mut out = Vec::new();
+            let mut cmap = Vec::new();
+            append_render(&mut out, &mut cmap, &t, &s, "sec", "", max_w);
+            assert_eq!(out.len(), 1);
+            let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
+            let w = unicode_width::UnicodeWidthStr::width(rendered.as_str());
+            assert!(
+                w <= max_w,
+                "width {} exceeds max_width {}: {:?}",
+                w,
+                max_w,
+                rendered
+            );
+        }
+    }
+
+    #[test]
+    fn collapsed_object_fits_within_max_width() {
+        // Symmetric sweep for objects (no count suffix, but still should fit).
+        let t = tree::parse(
+            r#"{"code":200,"message":"ok","trace_id":"abc-def-1234","user":"alice"}"#,
+        )
+        .unwrap();
+        let mut s = state::init_state(&t, 0);
+        s.expanded[0] = false;
+        for max_w in 10..=80 {
             let mut out = Vec::new();
             let mut cmap = Vec::new();
             append_render(&mut out, &mut cmap, &t, &s, "sec", "", max_w);

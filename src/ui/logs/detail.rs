@@ -109,12 +109,25 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
 
     // ── Body with fold/unfold using json_viewer ──
     app.detail.viewer_click_map.clear();
+
+    // Cheap deterministic fingerprint of the body text so we reset fold
+    // state whenever the selected entry actually changes — covers every
+    // caller (keyboard nav, mouse click, search jumps, ring-buffer drain)
+    // without each needing to call `reset_detail_for_selection` explicitly.
+    let fingerprint: u64 = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        full_msg.hash(&mut h);
+        h.finish()
+    };
+    let entry_changed = app.detail.viewer_text_fingerprint != fingerprint;
+
     let total_content;
     match json_viewer::parse(&full_msg) {
         Ok(tree) => {
-            // (Re-)initialize state if tree size changed (new entry selected).
-            if app.detail.viewer_state.expanded.len() != tree.nodes.len() {
+            if entry_changed || app.detail.viewer_state.expanded.len() != tree.nodes.len() {
                 app.detail.viewer_state = json_viewer::init_state(&tree, 1);
+                app.detail.viewer_text_fingerprint = fingerprint;
             }
 
             let body_height = inner_h.saturating_sub(all_lines.len());
