@@ -50,6 +50,7 @@ pub struct StatsSnapshot {
 }
 
 /// Detail view state.
+#[derive(Default)]
 pub struct DetailState {
     pub scroll: usize,
     /// Number of header lines in the detail panel (set by renderer).
@@ -61,18 +62,6 @@ pub struct DetailState {
     pub viewer_tree: Option<crate::ui::json_viewer::Tree>,
     /// Maps body-content row index -> node_id for click-to-fold. Set by renderer.
     pub viewer_click_map: Vec<Option<u32>>,
-}
-
-impl Default for DetailState {
-    fn default() -> Self {
-        Self {
-            scroll: 0,
-            header_lines: 0,
-            viewer_state: crate::ui::json_viewer::JsonViewerState::default(),
-            viewer_tree: None,
-            viewer_click_map: Vec::new(),
-        }
-    }
 }
 
 /// A segment in a JSON field path.
@@ -150,6 +139,7 @@ impl NetworkState {
         if self.selected < self.scroll_offset {
             self.scroll_offset = self.selected;
         }
+        self.json_viewer_states.clear();
     }
 
     /// Move selection down (j/Down). Renderer adjusts viewport.
@@ -158,16 +148,19 @@ impl NetworkState {
             return;
         }
         self.selected = (self.selected + n).min(count - 1);
+        self.json_viewer_states.clear();
     }
 
     pub fn go_top(&mut self) {
         self.auto_scroll = false;
         self.selected = 0;
         self.scroll_offset = 0;
+        self.json_viewer_states.clear();
     }
 
     pub fn go_bottom(&mut self) {
         self.auto_scroll = true;
+        self.json_viewer_states.clear();
     }
 
     pub fn new() -> Self {
@@ -671,6 +664,7 @@ impl App {
         if self.selected < self.scroll_offset {
             self.scroll_offset = self.selected;
         }
+        self.reset_detail_for_selection();
     }
 
     /// Move selection down (keyboard j/Down), viewport follows if needed.
@@ -681,18 +675,21 @@ impl App {
         }
         self.selected = (self.selected + n).min(len - 1);
         // Viewport adjustment is done by the renderer (it knows the real capacity).
+        self.reset_detail_for_selection();
     }
 
     pub fn go_top(&mut self) {
         self.auto_scroll = false;
         self.selected = 0;
         self.scroll_offset = 0;
+        self.reset_detail_for_selection();
     }
 
     pub fn go_bottom(&mut self) {
         self.auto_scroll = true;
         self.new_logs_since_pause = 0;
         // The renderer will snap to bottom on next frame.
+        self.reset_detail_for_selection();
     }
 
     // ── Level ──

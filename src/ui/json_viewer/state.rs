@@ -48,6 +48,7 @@ pub fn toggle(tree: &Tree, state: &mut JsonViewerState, node_id: u32) -> bool {
 
 /// Expand every container. Auto-resizes `state.expanded` to match the tree
 /// so a stale (shorter) state won't panic — it just extends with `false`.
+#[allow(dead_code)]
 pub fn expand_all(tree: &Tree, state: &mut JsonViewerState) {
     if state.expanded.len() < tree.nodes.len() {
         state.expanded.resize(tree.nodes.len(), false);
@@ -64,6 +65,7 @@ pub fn expand_all(tree: &Tree, state: &mut JsonViewerState) {
 /// user sees just `{…}` with nothing clickable).
 ///
 /// Auto-resizes `state.expanded` to match the tree, same as `expand_all`.
+#[allow(dead_code)]
 pub fn collapse_all(tree: &Tree, state: &mut JsonViewerState) {
     if state.expanded.len() < tree.nodes.len() {
         state.expanded.resize(tree.nodes.len(), false);

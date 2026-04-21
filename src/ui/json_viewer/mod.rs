@@ -15,5 +15,5 @@ mod tree;
 pub use colorize::colorize_json_text;
 
 pub use render::append_render;
-pub use state::{collapse_all, expand_all, init_state, toggle, JsonViewerState};
-pub use tree::{parse, NodeKind, Tree};
+pub use state::{init_state, toggle, JsonViewerState};
+pub use tree::{parse, Tree};

@@ -17,6 +17,7 @@ use crate::ui::json_viewer;
 const MANTLE: Color = Color::Rgb(30, 32, 48);
 const SURFACE0: Color = Color::Rgb(54, 58, 79);
 const OVERLAY0: Color = Color::Rgb(110, 115, 141);
+const TEXT: Color = Color::Rgb(202, 211, 245);
 const BLUE: Color = Color::Rgb(138, 173, 244);
 const TEAL: Color = Color::Rgb(139, 213, 202);
 const YELLOW: Color = Color::Rgb(238, 212, 159);
@@ -153,7 +154,7 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
             for wl in crate::ui::wrap_text(&full_msg, inner_w, 500) {
                 all_lines.push(Line::from(Span::styled(
                     wl,
-                    Style::default().fg(OVERLAY0),
+                    Style::default().fg(TEXT),
                 )));
             }
             app.detail.viewer_tree = None;
