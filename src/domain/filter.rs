@@ -236,7 +236,7 @@ impl FilterState {
         self.compiled_tag_exclude.clear();
         self.tag_regex = input.contains('*') || input.contains('.');
 
-        for part in input.split(',') {
+        for part in input.split(|c: char| c == ',' || c == '|') {
             let trimmed = part.trim();
             if trimmed.is_empty() {
                 continue;
@@ -251,10 +251,13 @@ impl FilterState {
                     }
                 }
             } else {
-                self.tag_include.push(trimmed.to_string());
-                if self.tag_regex {
-                    if let Ok(re) = Regex::new(&format!("(?i){}", trimmed)) {
-                        self.compiled_tag_include.push(re);
+                let tag = trimmed.strip_prefix('+').unwrap_or(trimmed);
+                if !tag.is_empty() {
+                    self.tag_include.push(tag.to_string());
+                    if self.tag_regex {
+                        if let Ok(re) = Regex::new(&format!("(?i){}", tag)) {
+                            self.compiled_tag_include.push(re);
+                        }
                     }
                 }
             }
@@ -397,5 +400,21 @@ mod tests {
         f.set_exclude("noise");
         f.clear();
         assert!(f.matches(&entry("t", "noise was here")));
+    }
+
+    #[test]
+    fn parse_tag_filter_accepts_pipe_and_plus_prefix() {
+        let mut f = FilterState::default();
+        f.parse_tag_filter("+network|-flog_net");
+        assert_eq!(f.tag_include, vec!["network".to_string()]);
+        assert_eq!(f.tag_exclude, vec!["flog_net".to_string()]);
+    }
+
+    #[test]
+    fn parse_tag_filter_comma_still_works() {
+        let mut f = FilterState::default();
+        f.parse_tag_filter("foo,-bar");
+        assert_eq!(f.tag_include, vec!["foo".to_string()]);
+        assert_eq!(f.tag_exclude, vec!["bar".to_string()]);
     }
 }

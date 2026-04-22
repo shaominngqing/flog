@@ -842,9 +842,7 @@ impl App {
                 self.invalidate_filter();
             }
             InputField::LogTag => {
-                // Translate '|' separators to ',' to reuse parse_tag_filter.
-                let as_csv = self.inputs.log_tag.replace('|', ",");
-                self.filter.parse_tag_filter(&as_csv);
+                self.filter.parse_tag_filter(&self.inputs.log_tag);
                 self.invalidate_filter();
             }
             InputField::NetSearch => {
@@ -916,6 +914,13 @@ impl App {
 
     pub fn clear_all_filters(&mut self) {
         self.filter.clear();
+        // Keep InputBuffers in sync so re-entering a field shows an empty input.
+        self.inputs.log_search.clear();
+        self.inputs.log_search_cursor = 0;
+        self.inputs.log_exclude.clear();
+        self.inputs.log_exclude_cursor = 0;
+        self.inputs.log_tag.clear();
+        self.inputs.log_tag_cursor = 0;
         self.invalidate_filter();
     }
 

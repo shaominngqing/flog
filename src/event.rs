@@ -716,8 +716,21 @@ fn handle_input_mouse(app: &mut App, mouse: MouseEvent) {
             // Task 6 improves this to click-through: clicking another input field switches focus.
             app.exit_input_field();
         }
-        MouseEventKind::ScrollUp => app.move_up(SCROLL_LINES),
-        MouseEventKind::ScrollDown => app.move_down(SCROLL_LINES),
+        MouseEventKind::ScrollUp => {
+            if app.active_tab == ViewTab::Logs {
+                app.move_up(SCROLL_LINES);
+            } else {
+                app.network.move_up(SCROLL_LINES);
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            if app.active_tab == ViewTab::Logs {
+                app.move_down(SCROLL_LINES);
+            } else {
+                let count = app.network.filtered_count(&app.network_store);
+                app.network.move_down(SCROLL_LINES, count);
+            }
+        }
         _ => {}
     }
 }
@@ -1291,6 +1304,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                     app.network.sse_merged_mode = false;
                 } else {
                     app.network.filter.reset();
+                    app.inputs.net_search.clear();
+                    app.inputs.net_search_cursor = 0;
+                    app.inputs.net_exclude.clear();
+                    app.inputs.net_exclude_cursor = 0;
                     app.network.invalidate_filter();
                 }
             }
