@@ -26,13 +26,44 @@ use tokio::sync::Mutex;
 
 use app::App;
 use cli::Cli;
-use input::{ClientMessage, ConnectorEvent, connect, connect_stream};
+use input::{connect, connect_stream, ClientMessage, ConnectorEvent};
 
 /// Pattern: `[LEVEL][Tag] message` — used to parse raw log text.
 /// Optionally preceded by `[epoch_ms]` which is ignored (timestamp comes from the message field).
+/// Applied against the first line only; stack frames on subsequent lines are extracted separately.
 static RAW_LOG_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
     regex::Regex::new(r"^(?:\[\d{10,13}\])?\[(\w+)\]\[([^\]]+)\]\s?(.*)$").unwrap()
 });
+
+/// Detects Dart stack frame lines: `#N ...`.
+static STACK_FRAME_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"^#\d+\s").unwrap());
+
+/// Split a message body into (leading_text, Option<stacktrace>).
+///
+/// The stacktrace begins at the first line matching `#\d+ ` and continues to the end.
+/// Both halves are returned with trailing newlines trimmed.
+fn split_stacktrace(body: &str) -> (String, Option<String>) {
+    let mut split_at: Option<usize> = None;
+    let mut cursor = 0usize;
+    for line in body.split_inclusive('\n') {
+        let line_no_nl = line.strip_suffix('\n').unwrap_or(line);
+        if STACK_FRAME_RE.is_match(line_no_nl) {
+            split_at = Some(cursor);
+            break;
+        }
+        cursor += line.len();
+    }
+    match split_at {
+        Some(idx) => {
+            let head = body[..idx].trim_end_matches(['\n', ' ']).to_string();
+            let stack = body[idx..].trim_end_matches('\n').to_string();
+            let stack_opt = if stack.is_empty() { None } else { Some(stack) };
+            (head, stack_opt)
+        }
+        None => (body.trim_end_matches('\n').to_string(), None),
+    }
+}
 
 /// Convert epoch milliseconds to HH:MM:SS.mmm.
 fn format_ts(ms: u64) -> String {
@@ -61,9 +92,17 @@ fn dispatch_client_message(app: &mut App, msg: ClientMessage) {
             stack_trace,
             timestamp,
         } => {
+            // Match `[LEVEL][Tag] ...` against the first line only; remaining lines may
+            // carry error text and/or a Dart stack trace (`#N ...` + asynchronous suspension).
+            let (first_line, rest) = match message.split_once('\n') {
+                Some((head, tail)) => (head, Some(tail)),
+                None => (message.as_str(), None),
+            };
+
             let entry = if let (Some(level), Some(tag)) = (level, tag) {
                 // Structured log from FlogLogger — level/tag provided explicitly.
-                let log_level = domain::LogLevel::from_str(&level).unwrap_or(domain::LogLevel::Info);
+                let log_level =
+                    domain::LogLevel::from_str(&level).unwrap_or(domain::LogLevel::Info);
                 let mut e = domain::LogEntry::new(log_level, tag, message);
                 e.error = error;
                 e.stacktrace = stack_trace;
@@ -71,20 +110,38 @@ fn dispatch_client_message(app: &mut App, msg: ClientMessage) {
                     e.timestamp = format_ts(ts);
                 }
                 e
-            } else if let Some(caps) = RAW_LOG_RE.captures(&message) {
+            } else if let Some(caps) = RAW_LOG_RE.captures(first_line) {
                 // Raw text matching [LEVEL][Tag] format (e.g. AuraLogger via debugPrint).
                 let level_str = caps.get(1).unwrap().as_str();
                 let tag_str = caps.get(2).unwrap().as_str();
                 let msg_str = caps.get(3).unwrap().as_str();
-                let log_level = domain::LogLevel::from_str(level_str).unwrap_or(domain::LogLevel::Debug);
-                let mut e = domain::LogEntry::new(log_level, tag_str, msg_str);
+                let log_level =
+                    domain::LogLevel::from_str(level_str).unwrap_or(domain::LogLevel::Debug);
+
+                let (extra_body, stacktrace) = match rest {
+                    Some(r) => split_stacktrace(r),
+                    None => (String::new(), None),
+                };
+
+                // Treat non-stack text after the first line as continuation of the message.
+                let full_msg = if extra_body.is_empty() {
+                    msg_str.to_string()
+                } else {
+                    format!("{msg_str}\n{extra_body}")
+                };
+
+                let mut e = domain::LogEntry::new(log_level, tag_str, full_msg);
+                e.stacktrace = stacktrace;
                 if let Some(ts) = timestamp {
                     e.timestamp = format_ts(ts);
                 }
                 e
             } else {
                 // Unstructured raw text (e.g. Flutter framework output via debugPrint).
-                let mut e = domain::LogEntry::new(domain::LogLevel::Debug, "debugPrint", &message);
+                // Still split off `#N ...` stack frames so the list view can collapse them.
+                let (body, stacktrace) = split_stacktrace(&message);
+                let mut e = domain::LogEntry::new(domain::LogLevel::Debug, "debugPrint", body);
+                e.stacktrace = stacktrace;
                 if let Some(ts) = timestamp {
                     e.timestamp = format_ts(ts);
                 }
@@ -132,12 +189,17 @@ async fn main() -> io::Result<()> {
     let active_tasks: Arc<Mutex<std::collections::HashMap<String, tokio::task::JoinHandle<()>>>> =
         Arc::new(Mutex::new(std::collections::HashMap::new()));
 
+    // Track active adb forwards for cleanup on task abort: key = "device_id:port"
+    let adb_forwards: Arc<Mutex<std::collections::HashMap<String, (String, u16)>>> =
+        Arc::new(Mutex::new(std::collections::HashMap::new()));
+
     // Number of ports to scan per device
     const PORT_SCAN_RANGE: u16 = 10;
 
     // Task 1: Device discovery → spawn per-device port-scanning connection tasks
     let app_for_discovery = Arc::clone(&app);
     let active_tasks_c = Arc::clone(&active_tasks);
+    let adb_forwards_c = Arc::clone(&adb_forwards);
     let base_port = cli.port;
     tokio::spawn(async move {
         while let Some(event) = device_rx.recv().await {
@@ -146,7 +208,9 @@ async fn main() -> io::Result<()> {
                     // Sync to App for UI
                     {
                         let mut a = app_for_discovery.lock().await;
-                        a.discovered_devices.entry(device.id.clone()).or_insert_with(|| device.clone());
+                        a.discovered_devices
+                            .entry(device.id.clone())
+                            .or_insert_with(|| device.clone());
                     }
 
                     // Spawn a connection task for each port in range
@@ -164,9 +228,11 @@ async fn main() -> io::Result<()> {
 
                         let device = device.clone();
                         let app_c = Arc::clone(&app_for_discovery);
+                        let adb_fwd = Arc::clone(&adb_forwards_c);
                         let task_key_c = task_key.clone();
 
                         let task = tokio::spawn(async move {
+                            let mut retry_delay_secs: u64 = 2;
                             loop {
                                 // Track adb forward for cleanup
                                 let mut adb_forward_info: Option<(String, u16)> = None;
@@ -177,9 +243,16 @@ async fn main() -> io::Result<()> {
                                         connect(&url).await.map_err(|e| e.to_string())
                                     }
                                     transport::ConnectionMethod::AdbForward { ref serial } => {
-                                        match transport::adb::setup_forward(serial, target_port).await {
+                                        match transport::adb::setup_forward(serial, target_port)
+                                            .await
+                                        {
                                             Some(local_port) => {
-                                                adb_forward_info = Some((serial.clone(), local_port));
+                                                adb_forward_info =
+                                                    Some((serial.clone(), local_port));
+                                                adb_fwd.lock().await.insert(
+                                                    task_key_c.clone(),
+                                                    (serial.clone(), local_port),
+                                                );
                                                 let url = format!("ws://localhost:{}", local_port);
                                                 connect(&url).await.map_err(|e| e.to_string())
                                             }
@@ -187,10 +260,14 @@ async fn main() -> io::Result<()> {
                                         }
                                     }
                                     transport::ConnectionMethod::Usbmuxd { device_id: uid } => {
-                                        match transport::usbmuxd::connect_device(uid, target_port).await {
+                                        match transport::usbmuxd::connect_device(uid, target_port)
+                                            .await
+                                        {
                                             Ok(tunnel) => {
                                                 let url = format!("ws://localhost:{}", target_port);
-                                                connect_stream(tunnel, &url).await.map_err(|e| e.to_string())
+                                                connect_stream(tunnel, &url)
+                                                    .await
+                                                    .map_err(|e| e.to_string())
                                             }
                                             Err(e) => Err(e.to_string()),
                                         }
@@ -198,11 +275,13 @@ async fn main() -> io::Result<()> {
                                 };
 
                                 if let Ok((mut event_rx, handle)) = ws_result {
+                                    retry_delay_secs = 2; // Reset backoff on successful connection
                                     while let Some(evt) = event_rx.recv().await {
                                         let mut a = app_c.lock().await;
                                         match evt {
                                             ConnectorEvent::Connected(info) => {
-                                                let device_name = a.discovered_devices
+                                                let device_name = a
+                                                    .discovered_devices
                                                     .get(&device.id)
                                                     .map(|d| d.name.clone())
                                                     .unwrap_or_else(|| device.name.clone());
@@ -219,20 +298,34 @@ async fn main() -> io::Result<()> {
                                                     handle: handle.clone(),
                                                 };
                                                 a.add_connected_app(app_info);
-                                                a.show_status(format!("Connected: {} ({})", info.app, device_name));
+                                                a.show_status(format!(
+                                                    "Connected: {} ({})",
+                                                    info.app, device_name
+                                                ));
                                                 let json = a.mock_rules.to_json_string();
                                                 handle.send_mock_sync(json);
                                             }
                                             ConnectorEvent::Disconnected => {
-                                                if let Some((ref serial, local_port)) = adb_forward_info {
-                                                    transport::adb::remove_forward(serial, local_port).await;
+                                                if let Some((ref serial, local_port)) =
+                                                    adb_forward_info
+                                                {
+                                                    transport::adb::remove_forward(
+                                                        serial, local_port,
+                                                    )
+                                                    .await;
+                                                    adb_fwd.lock().await.remove(&task_key_c);
                                                 }
                                                 a.remove_connected_app(&task_key_c);
-                                                a.show_status(format!("Disconnected: {}", device.name));
+                                                a.show_status(format!(
+                                                    "Disconnected: {}",
+                                                    device.name
+                                                ));
                                                 break;
                                             }
                                             ConnectorEvent::Message(msg) => {
-                                                if a.active_app_id.as_deref() == Some(task_key_c.as_str()) {
+                                                if a.active_app_id.as_deref()
+                                                    == Some(task_key_c.as_str())
+                                                {
                                                     dispatch_client_message(&mut a, msg);
                                                 }
                                             }
@@ -243,10 +336,12 @@ async fn main() -> io::Result<()> {
                                 // Clean up adb forward on failure
                                 if let Some((ref serial, local_port)) = adb_forward_info {
                                     transport::adb::remove_forward(serial, local_port).await;
+                                    adb_fwd.lock().await.remove(&task_key_c);
                                 }
 
-                                // Retry after delay
-                                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                                // Retry with exponential backoff (2s → 4s → 8s → 16s → 30s cap)
+                                tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
+                                retry_delay_secs = (retry_delay_secs * 2).min(30);
                             }
                         });
 
@@ -256,23 +351,36 @@ async fn main() -> io::Result<()> {
                 transport::DeviceEvent::Removed(id) => {
                     // Cancel all connection tasks for this device (all ports)
                     let mut tasks = active_tasks_c.lock().await;
-                    let keys_to_remove: Vec<String> = tasks.keys()
+                    let keys_to_remove: Vec<String> = tasks
+                        .keys()
                         .filter(|k| k.starts_with(&format!("{}:", id)))
                         .cloned()
                         .collect();
-                    for key in keys_to_remove {
-                        if let Some(task) = tasks.remove(&key) {
+                    for key in &keys_to_remove {
+                        if let Some(task) = tasks.remove(key) {
                             task.abort();
                         }
                     }
                     drop(tasks);
+
+                    // Clean up any adb forwards orphaned by aborted tasks
+                    {
+                        let mut fwds = adb_forwards_c.lock().await;
+                        for key in &keys_to_remove {
+                            if let Some((serial, local_port)) = fwds.remove(key) {
+                                transport::adb::remove_forward(&serial, local_port).await;
+                            }
+                        }
+                    }
 
                     // Clean up app state — remove device and all its connected apps
                     {
                         let mut a = app_for_discovery.lock().await;
                         a.discovered_devices.remove(&id);
                         // Remove all connected apps for this device
-                        let app_ids: Vec<String> = a.connected_apps.iter()
+                        let app_ids: Vec<String> = a
+                            .connected_apps
+                            .iter()
                             .filter(|app| app.device_id == id)
                             .map(|app| app.id.clone())
                             .collect();
@@ -386,5 +494,53 @@ async fn run_loop(
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_stacktrace_finds_first_frame() {
+        let input = "Error: FileSystemException: lock failed\n#0      _checkForErrorResponse (dart:io/common.dart:58:9)\n#1      _RandomAccessFile.lock (dart:io/file_impl.dart:1116:7)\n<asynchronous suspension>";
+        let (body, stack) = split_stacktrace(input);
+        assert_eq!(body, "Error: FileSystemException: lock failed");
+        let stack = stack.expect("stacktrace present");
+        assert!(stack.starts_with("#0      _checkForErrorResponse"));
+        assert!(stack.contains("<asynchronous suspension>"));
+    }
+
+    #[test]
+    fn split_stacktrace_no_frames() {
+        let input = "plain message with no frames";
+        let (body, stack) = split_stacktrace(input);
+        assert_eq!(body, "plain message with no frames");
+        assert!(stack.is_none());
+    }
+
+    #[test]
+    fn split_stacktrace_empty_body() {
+        let input = "#0      foo.bar (package:app/foo.dart:1:1)\n#1      baz.qux (package:app/baz.dart:2:2)";
+        let (body, stack) = split_stacktrace(input);
+        assert_eq!(body, "");
+        assert!(stack.is_some());
+    }
+
+    #[test]
+    fn raw_log_re_matches_first_line_of_multiline() {
+        let first = "[ERROR][Bootstrap] [ZoneError] FileSystemException: lock failed";
+        let caps = RAW_LOG_RE.captures(first).expect("first line should match");
+        assert_eq!(&caps[1], "ERROR");
+        assert_eq!(&caps[2], "Bootstrap");
+        assert!(caps[3].contains("ZoneError"));
+    }
+
+    #[test]
+    fn raw_log_re_rejects_full_multiline_input() {
+        // Documents why we split on the first newline before matching:
+        // the single-line regex cannot match a body that spans multiple lines.
+        let full = "[ERROR][Bootstrap] msg\n#0      foo (a.dart:1:1)";
+        assert!(RAW_LOG_RE.captures(full).is_none());
     }
 }
