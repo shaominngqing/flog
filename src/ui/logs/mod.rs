@@ -232,9 +232,10 @@ fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Pad remaining
     let used: u16 = spans.iter().map(|s| s.content.width() as u16).sum();
-    if used < w {
+    let pad = w.saturating_sub(used);
+    if pad > 0 {
         spans.push(Span::styled(
-            " ".repeat((w - used) as usize),
+            " ".repeat(pad as usize),
             Style::default().bg(bg),
         ));
     }
