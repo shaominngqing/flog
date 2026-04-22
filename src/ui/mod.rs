@@ -94,6 +94,45 @@ pub fn wrap_text(s: &str, max_w: usize, max_lines: usize) -> Vec<String> {
     result
 }
 
+/// Wrap text that may contain literal `\n` into display lines.
+///
+/// Each `\n` starts a new visual line (so a Dart stack trace keeps one frame per row);
+/// within a segment, wrapping is done by display width via [`wrap_text`]. The overall
+/// line count is capped at `max_lines`, with the last line truncated using `...`.
+pub fn wrap_multiline(s: &str, max_w: usize, max_lines: usize) -> Vec<String> {
+    if max_w == 0 || max_lines == 0 {
+        return vec![String::new()];
+    }
+    let mut out: Vec<String> = Vec::new();
+    for (i, segment) in s.split('\n').enumerate() {
+        if i > 0 && out.is_empty() {
+            // preserve a leading blank line if the input starts with '\n'
+            out.push(String::new());
+        }
+        let remaining = max_lines.saturating_sub(out.len());
+        if remaining == 0 {
+            break;
+        }
+        if segment.is_empty() {
+            out.push(String::new());
+            continue;
+        }
+        for wl in wrap_text(segment, max_w, remaining) {
+            out.push(wl);
+            if out.len() >= max_lines {
+                break;
+            }
+        }
+        if out.len() >= max_lines {
+            break;
+        }
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
 pub fn safe_truncate(s: &str, max_w: usize) -> String {
     if max_w == 0 {
         return String::new();
@@ -182,5 +221,39 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     match app.active_tab {
         ViewTab::Logs => logs::draw_logs(f, app, rows[1]),
         ViewTab::Network => network::draw_network(f, app, rows[1]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrap_multiline_splits_on_newline() {
+        let s = "first line\n#0 frame a\n#1 frame b";
+        let out = wrap_multiline(s, 80, 50);
+        assert_eq!(out, vec!["first line", "#0 frame a", "#1 frame b"]);
+    }
+
+    #[test]
+    fn wrap_multiline_wraps_inside_long_segment() {
+        let s = "short\naaaaaaaaaaaaaaaaaaaa";
+        let out = wrap_multiline(s, 10, 50);
+        assert_eq!(out, vec!["short", "aaaaaaaaaa", "aaaaaaaaaa"]);
+    }
+
+    #[test]
+    fn wrap_multiline_preserves_blank_lines() {
+        let s = "a\n\nb";
+        let out = wrap_multiline(s, 10, 50);
+        assert_eq!(out, vec!["a", "", "b"]);
+    }
+
+    #[test]
+    fn wrap_multiline_respects_line_cap() {
+        let s = "a\nb\nc\nd\ne";
+        let out = wrap_multiline(s, 10, 3);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0], "a");
     }
 }
