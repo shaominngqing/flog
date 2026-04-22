@@ -34,6 +34,30 @@ impl Default for FilterState {
     }
 }
 
+/// OR-match helper used by both Search and Exclude.
+///
+/// - If `regex` is `Some`, the regex owns the whole query (including `|`); `plain_parts` is ignored.
+/// - Otherwise, return true if any non-empty entry in `plain_parts` is a case-insensitive
+///   substring of `text`.
+pub(crate) fn matches_multi(regex: Option<&Regex>, plain_parts: &[String], text: &str) -> bool {
+    if let Some(re) = regex {
+        return re.is_match(text);
+    }
+    if plain_parts.is_empty() {
+        return false;
+    }
+    let text_lower = text.to_lowercase();
+    for part in plain_parts {
+        if part.is_empty() {
+            continue;
+        }
+        if text_lower.contains(&part.to_lowercase()) {
+            return true;
+        }
+    }
+    false
+}
+
 impl FilterState {
     /// 设置搜索查询，自动检测正则模式
     pub fn set_search(&mut self, query: &str) {
@@ -198,5 +222,51 @@ impl FilterState {
         self.compiled_regex = None;
         self.tag_regex = false;
         self.min_level = LogLevel::System;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matches_multi_plain_single() {
+        let parts = vec!["timeout".to_string()];
+        assert!(matches_multi(None, &parts, "connection timeout error"));
+        assert!(!matches_multi(None, &parts, "connection ok"));
+    }
+
+    #[test]
+    fn matches_multi_plain_or() {
+        let parts = vec!["timeout".to_string(), "500".to_string(), "refused".to_string()];
+        assert!(matches_multi(None, &parts, "got 500 from server"));
+        assert!(matches_multi(None, &parts, "connection refused"));
+        assert!(!matches_multi(None, &parts, "ok 200"));
+    }
+
+    #[test]
+    fn matches_multi_case_insensitive_plain() {
+        let parts = vec!["TiMeOuT".to_string()];
+        assert!(matches_multi(None, &parts, "hit a Timeout"));
+    }
+
+    #[test]
+    fn matches_multi_regex_owns_pipe() {
+        let re = Regex::new("foo|bar").unwrap();
+        assert!(matches_multi(Some(&re), &[], "hello foo"));
+        assert!(matches_multi(Some(&re), &[], "bar world"));
+        assert!(!matches_multi(Some(&re), &[], "baz"));
+    }
+
+    #[test]
+    fn matches_multi_empty_parts_no_regex_is_false() {
+        assert!(!matches_multi(None, &[], "anything"));
+    }
+
+    #[test]
+    fn matches_multi_skips_empty_parts() {
+        let parts = vec!["".to_string(), "hit".to_string(), "".to_string()];
+        assert!(matches_multi(None, &parts, "go hit target"));
+        assert!(!matches_multi(None, &parts, "miss"));
     }
 }
