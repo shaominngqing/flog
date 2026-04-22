@@ -608,9 +608,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             };
             app.layout.last_click = Some((now, x, y));
 
-            if y == app.layout.toolbar_y {
-                handle_toolbar_click(app, x);
-            } else if y == app.layout.toolbar_op2_y {
+            if y == app.layout.toolbar_op2_y {
                 handle_toolbar_op2_click(app, x);
             } else if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
                 handle_list_click(app, y, is_double);
@@ -630,18 +628,9 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
     }
 }
 
-fn handle_toolbar_click(app: &mut App, x: u16) {
-    // op row 1: search box only
-    if x >= app.layout.search_x.0 && x < app.layout.search_x.1 {
-        app.enter_search();
-    }
-}
-
 fn handle_toolbar_op2_click(app: &mut App, x: u16) {
-    // op row 2: tag filter + level buttons
-    if x >= app.layout.filter_x.0 && x < app.layout.filter_x.1 {
-        app.enter_tag_filter();
-    } else if x >= app.layout.levels_x {
+    // op row 2: level buttons
+    if x >= app.layout.levels_x {
         let offset = x - app.layout.levels_x;
         let btn_idx = offset / LEVEL_BUTTON_WIDTH;
         match btn_idx {

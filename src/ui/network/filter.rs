@@ -86,7 +86,7 @@ pub fn draw_network_op1(f: &mut Frame, app: &mut App, area: Rect, count: usize, 
         spans.extend(out.spans);
         x += out.used_width;
 
-        if i < 1 {
+        if i + 1 < fields.len() {
             spans.push(Span::styled(" ".repeat(gap as usize), Style::default().bg(bg)));
             x += gap;
         }

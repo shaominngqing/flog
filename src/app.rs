@@ -35,18 +35,11 @@ pub enum ViewTab {
 
 // ── Sub-state structs ──
 
-/// Search input and match tracking.
+/// Match tracking for n/N navigation (results of the Search input field).
 #[derive(Default)]
 pub struct SearchState {
-    pub input: String,
     pub matches: Vec<usize>,
     pub match_idx: usize,
-}
-
-/// Tag filter input buffer.
-#[derive(Default)]
-pub struct TagFilterInput {
-    pub input: String,
 }
 
 /// Buffers + cursor for all 5 input fields.
@@ -160,10 +153,6 @@ pub struct NetworkState {
     pub show_mock_rules_panel: bool,
     pub detail_scroll: usize,
     pub filter: crate::domain::NetworkFilter,
-    /// Whether URL search input is active.
-    pub search_active: bool,
-    /// Current search input text.
-    pub search_input: String,
     /// Section names that are collapsed (folded). Sections not in this set are expanded.
     pub collapsed_sections: std::collections::HashSet<String>,
     /// Maps detail panel line index -> section key (for click-to-toggle). Set by renderer.
@@ -242,8 +231,6 @@ impl NetworkState {
             show_mock_rules_panel: false,
             detail_scroll: 0,
             filter: crate::domain::NetworkFilter::new(),
-            search_active: false,
-            search_input: String::new(),
             collapsed_sections: std::collections::HashSet::new(),
             detail_section_map: Vec::new(),
             json_viewer_states: std::collections::HashMap::new(),
@@ -294,8 +281,6 @@ pub struct LayoutCache {
     pub list_y: u16,
     pub list_height: u16,
     pub bottom_y: u16,
-    pub search_x: (u16, u16),
-    pub filter_x: (u16, u16),
     pub levels_x: u16,
     pub bottom_buttons: Vec<(&'static str, u16, u16)>,
     pub width: u16,
@@ -401,7 +386,6 @@ pub struct App {
 
     // Sub-states
     pub search: SearchState,
-    pub tag_filter: TagFilterInput,
     pub inputs: InputBuffers,
     pub detail: DetailState,
     pub bookmarks: BTreeSet<usize>,
@@ -464,7 +448,6 @@ impl App {
             show_detail_panel: false,
             detail_panel_pct: 35,
             search: SearchState::default(),
-            tag_filter: TagFilterInput::default(),
             inputs: InputBuffers::default(),
             detail: DetailState::default(),
             bookmarks: BTreeSet::new(),
@@ -513,7 +496,6 @@ impl App {
         self.scroll_offset = 0;
         self.detail = DetailState::default();
         self.search = SearchState::default();
-        self.tag_filter = TagFilterInput::default();
         self.bookmarks.clear();
         self.auto_scroll = true;
         self.filter_dirty = true;
@@ -854,34 +836,6 @@ impl App {
                 self.network.invalidate_filter();
             }
         }
-    }
-
-    // ── Legacy shims (will be removed in later cleanup) ──
-
-    pub fn enter_search(&mut self) {
-        self.enter_input_field(InputField::LogSearch);
-    }
-
-    pub fn apply_search(&mut self) {
-        self.apply_input_field(InputField::LogSearch);
-        self.exit_input_field();
-    }
-
-    pub fn cancel_search(&mut self) {
-        self.exit_input_field();
-    }
-
-    pub fn enter_tag_filter(&mut self) {
-        self.enter_input_field(InputField::LogTag);
-    }
-
-    pub fn apply_tag_filter(&mut self) {
-        self.apply_input_field(InputField::LogTag);
-        self.exit_input_field();
-    }
-
-    pub fn cancel_tag_filter(&mut self) {
-        self.exit_input_field();
     }
 
     pub fn next_match(&mut self) {
