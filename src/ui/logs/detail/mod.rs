@@ -1,4 +1,11 @@
-//! Detail side panel — shows selected log entry with JSON formatting and fold/unfold.
+//! Detail side panel — chrome (header, block, scrollbar) + section-based body.
+//!
+//! Body content is modelled as an ordered `Vec<Section>` (see `section.rs`);
+//! each section is dispatched to a `SectionRenderer` (see `renderers.rs`)
+//! that knows how to turn it into styled rows.
+
+mod renderers;
+mod section;
 
 use ratatui::{
     layout::Rect,
@@ -12,16 +19,17 @@ use ratatui::{
 
 use crate::app::App;
 use crate::domain::LogLevel;
-use crate::ui::json_viewer;
+
+use renderers::{HeadingRenderer, JsonRenderer, ProseRenderer, StackRenderer};
+use section::{Section, SectionRenderer};
 
 const MANTLE: Color = Color::Rgb(30, 32, 48);
 const SURFACE0: Color = Color::Rgb(54, 58, 79);
 const OVERLAY0: Color = Color::Rgb(110, 115, 141);
-const TEXT: Color = Color::Rgb(202, 211, 245);
 const BLUE: Color = Color::Rgb(138, 173, 244);
 const TEAL: Color = Color::Rgb(139, 213, 202);
-const YELLOW: Color = Color::Rgb(238, 212, 159);
 const RED: Color = Color::Rgb(237, 135, 150);
+const YELLOW: Color = Color::Rgb(238, 212, 159);
 const SAPPHIRE: Color = Color::Rgb(125, 196, 228);
 
 // ══════════════════════════════════════
@@ -107,103 +115,58 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
     // Store header line count for click handling (+ 1 for block border top)
     app.detail.header_lines = all_lines.len() + 1;
 
-    // ── Body with fold/unfold using json_viewer ──
+    // ── Body: section list dispatched to per-type renderers ──
     app.detail.viewer_click_map.clear();
 
-    // Cheap deterministic fingerprint of the body text so we reset fold
-    // state whenever the selected entry actually changes — covers every
-    // caller (keyboard nav, mouse click, search jumps, ring-buffer drain)
-    // without each needing to call `reset_detail_for_selection` explicitly.
+    // When the selected entry changes we want JSON fold state to reset to its
+    // default-depth expansion. Two different entries can coincidentally share
+    // the same node-count, so rely on a fingerprint of the message body rather
+    // than tree shape alone.
     let fingerprint: u64 = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
         full_msg.hash(&mut h);
         h.finish()
     };
-    let entry_changed = app.detail.viewer_text_fingerprint != fingerprint;
-
-    let total_content;
-    match crate::domain::structured_parser::find_and_parse(&full_msg) {
-        Some((json_start, json_end, value)) => {
-            let tree = json_viewer::Tree::from_value(&value);
-            if entry_changed || app.detail.viewer_state.expanded.len() != tree.nodes.len() {
-                app.detail.viewer_state = json_viewer::init_state(&tree, 1);
-                app.detail.viewer_text_fingerprint = fingerprint;
-            }
-
-            // Build the full body: [prefix lines] + [tree lines] + [suffix lines].
-            // Track `Option<u32>` node ids per body row so click handling can
-            // locate foldable rows after scroll. Prefix/suffix rows → None.
-            let mut body_lines: Vec<Line<'static>> = Vec::new();
-            let mut body_click_map: Vec<Option<u32>> = Vec::new();
-
-            // Prefix — non-empty stripped text before the structured region.
-            let prefix = full_msg[..json_start].trim_end();
-            if !prefix.is_empty() {
-                for wl in crate::ui::wrap_text(prefix, inner_w, 50) {
-                    body_lines.push(Line::from(Span::styled(wl, Style::default().fg(TEXT))));
-                    body_click_map.push(None);
-                }
-            }
-
-            // Tree — rendered via json_viewer.
-            let mut tree_click_map: Vec<Option<(String, u32)>> = Vec::new();
-            json_viewer::append_render(
-                &mut body_lines,
-                &mut tree_click_map,
-                &tree,
-                &app.detail.viewer_state,
-                "log_detail",
-                "",
-                inner_w,
-            );
-            body_click_map.extend(
-                tree_click_map
-                    .iter()
-                    .map(|slot| slot.as_ref().map(|(_, id)| *id)),
-            );
-
-            // Suffix — non-empty trimmed text after the structured region.
-            let suffix = full_msg[json_end..].trim();
-            if !suffix.is_empty() {
-                for wl in crate::ui::wrap_text(suffix, inner_w, 50) {
-                    body_lines.push(Line::from(Span::styled(wl, Style::default().fg(TEXT))));
-                    body_click_map.push(None);
-                }
-            }
-
-            let body_height = inner_h.saturating_sub(all_lines.len());
-            let full_body_len = body_lines.len();
-            let scroll = app.detail.scroll.min(full_body_len);
-
-            app.detail.viewer_click_map = body_click_map
-                .iter()
-                .skip(scroll)
-                .take(body_height)
-                .copied()
-                .collect();
-
-            let visible: Vec<Line<'static>> = body_lines
-                .into_iter()
-                .skip(scroll)
-                .take(body_height)
-                .collect();
-            all_lines.extend(visible);
-
-            app.detail.viewer_tree = Some(tree);
-            total_content = app.detail.header_lines + full_body_len;
-        }
-        None => {
-            for wl in crate::ui::wrap_text(&full_msg, inner_w, 500) {
-                all_lines.push(Line::from(Span::styled(
-                    wl,
-                    Style::default().fg(TEXT),
-                )));
-            }
-            app.detail.viewer_tree = None;
-            total_content = all_lines.len();
-        }
+    if app.detail.viewer_text_fingerprint != fingerprint {
+        app.detail.viewer_state = crate::ui::json_viewer::JsonViewerState::default();
+        app.detail.viewer_text_fingerprint = fingerprint;
     }
+    // Clear any cached tree — JsonRenderer re-populates it if a JSON section exists.
+    app.detail.viewer_tree = None;
+
+    let sections = section::build_sections(&full_msg);
+    let mut body_rows: Vec<section::RenderRow> = Vec::new();
+    for sec in &sections {
+        let rows = match sec {
+            Section::Prose(_) => ProseRenderer.render(sec, inner_w, &mut app.detail),
+            Section::Heading(_) => HeadingRenderer.render(sec, inner_w, &mut app.detail),
+            Section::StackTrace(_) => StackRenderer.render(sec, inner_w, &mut app.detail),
+            Section::Json { .. } => JsonRenderer.render(sec, inner_w, &mut app.detail),
+        };
+        body_rows.extend(rows);
+    }
+
+    let body_height = inner_h.saturating_sub(all_lines.len());
+    let full_body_len = body_rows.len();
+    let scroll = app.detail.scroll.min(full_body_len);
+
+    app.detail.viewer_click_map = body_rows
+        .iter()
+        .skip(scroll)
+        .take(body_height)
+        .map(|r| r.click_target)
+        .collect();
+
+    let visible: Vec<Line<'static>> = body_rows
+        .into_iter()
+        .skip(scroll)
+        .take(body_height)
+        .map(|r| r.line)
+        .collect();
+    all_lines.extend(visible);
+
+    let total_content = app.detail.header_lines + full_body_len;
 
     let block = Block::default()
         .title(" Details ")
