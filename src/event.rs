@@ -132,14 +132,17 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
         if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
             let x = mouse.column;
             let y = mouse.row;
-            // Line 1: search
-            if y == app.layout.net_toolbar_y
-                && x >= app.layout.net_search_x.0
-                && x < app.layout.net_search_x.1
-            {
-                app.network.search_active = true;
-                app.network.search_input = app.network.filter.search.clone();
-                return;
+            // Line 1: search + exclude
+            if y == app.layout.net_toolbar_y {
+                use crate::app::InputField;
+                if x >= app.layout.net_search_x.0 && x < app.layout.net_search_x.1 {
+                    app.enter_input_field(InputField::NetSearch);
+                    return;
+                }
+                if x >= app.layout.net_exclude_x.0 && x < app.layout.net_exclude_x.1 {
+                    app.enter_input_field(InputField::NetExclude);
+                    return;
+                }
             }
             // Line 2: filter pills
             if y == app.layout.net_filter_pills_y {
@@ -560,6 +563,28 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
     }
 
     // Logs tab mouse handling
+    if app.active_tab == ViewTab::Logs {
+        if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+            let x = mouse.column;
+            let y = mouse.row;
+            if y == app.layout.input_row_y {
+                use crate::app::InputField;
+                if x >= app.layout.log_search_x.0 && x < app.layout.log_search_x.1 {
+                    app.enter_input_field(InputField::LogSearch);
+                    return;
+                }
+                if x >= app.layout.log_exclude_x.0 && x < app.layout.log_exclude_x.1 {
+                    app.enter_input_field(InputField::LogExclude);
+                    return;
+                }
+                if x >= app.layout.log_tag_x.0 && x < app.layout.log_tag_x.1 {
+                    app.enter_input_field(InputField::LogTag);
+                    return;
+                }
+            }
+        }
+    }
+
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             app.move_up(SCROLL_LINES);
@@ -710,12 +735,39 @@ fn handle_bottom_click(app: &mut App, x: u16) {
 
 fn handle_input_mouse(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left)
-        | MouseEventKind::Down(MouseButton::Right) => {
-            // Any click while in InputActive → exit (buffer already applied on each keystroke).
-            // Task 6 improves this to click-through: clicking another input field switches focus.
+        MouseEventKind::Down(MouseButton::Left) => {
+            let x = mouse.column;
+            let y = mouse.row;
+            if y == app.layout.input_row_y {
+                use crate::app::InputField;
+                if app.active_tab == ViewTab::Logs {
+                    if x >= app.layout.log_search_x.0 && x < app.layout.log_search_x.1 {
+                        app.enter_input_field(InputField::LogSearch);
+                        return;
+                    }
+                    if x >= app.layout.log_exclude_x.0 && x < app.layout.log_exclude_x.1 {
+                        app.enter_input_field(InputField::LogExclude);
+                        return;
+                    }
+                    if x >= app.layout.log_tag_x.0 && x < app.layout.log_tag_x.1 {
+                        app.enter_input_field(InputField::LogTag);
+                        return;
+                    }
+                } else {
+                    if x >= app.layout.net_search_x.0 && x < app.layout.net_search_x.1 {
+                        app.enter_input_field(InputField::NetSearch);
+                        return;
+                    }
+                    if x >= app.layout.net_exclude_x.0 && x < app.layout.net_exclude_x.1 {
+                        app.enter_input_field(InputField::NetExclude);
+                        return;
+                    }
+                }
+            }
+            // Click elsewhere → exit
             app.exit_input_field();
         }
+        MouseEventKind::Down(MouseButton::Right) => app.exit_input_field(),
         MouseEventKind::ScrollUp => {
             if app.active_tab == ViewTab::Logs {
                 app.move_up(SCROLL_LINES);
@@ -1162,29 +1214,6 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
     // Network tab key handling
     if app.active_tab == ViewTab::Network {
-        // URL search input mode
-        if app.network.search_active {
-            match key.code {
-                KeyCode::Enter => {
-                    app.network.filter.set_search(&app.network.search_input);
-                    app.network.search_active = false;
-                    app.network.invalidate_filter();
-                }
-                KeyCode::Esc => {
-                    app.network.search_active = false;
-                    app.network.search_input.clear();
-                }
-                KeyCode::Backspace => {
-                    app.network.search_input.pop();
-                }
-                KeyCode::Char(c) => {
-                    app.network.search_input.push(c);
-                }
-                _ => {}
-            }
-            return;
-        }
-
         match key.code {
             KeyCode::Char('q') => app.should_quit = true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1259,10 +1288,8 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 app.network.show_detail = !app.network.show_detail;
                 app.network.detail_scroll = 0;
             }
-            KeyCode::Char('/') => {
-                app.network.search_active = true;
-                app.network.search_input = app.network.filter.search.clone();
-            }
+            KeyCode::Char('/') => app.enter_input_field(crate::app::InputField::NetSearch),
+            KeyCode::Char('\\') => app.enter_input_field(crate::app::InputField::NetExclude),
             KeyCode::Char('s') => {
                 app.select_mode = true;
                 app.show_status(
@@ -1328,7 +1355,8 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
         KeyCode::PageDown => app.move_down(20),
         KeyCode::Home => app.go_top(),
         KeyCode::End => app.go_bottom(),
-        KeyCode::Char('/') => app.enter_search(),
+        KeyCode::Char('/') => app.enter_input_field(crate::app::InputField::LogSearch),
+        KeyCode::Char('\\') => app.enter_input_field(crate::app::InputField::LogExclude),
         KeyCode::Char('n') => app.next_match(),
         KeyCode::Char('N') => app.prev_match(),
         KeyCode::Enter => app.toggle_detail_panel(),
