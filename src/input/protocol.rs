@@ -92,7 +92,15 @@ mod tests {
         let json = r#"{"type":"hello","app":"com.test","appVersion":"1.0.0","os":"ios","packageName":"com.example.test","port":9753}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::Hello { device, app, app_version, os, package_name, port, .. } => {
+            ClientMessage::Hello {
+                device,
+                app,
+                app_version,
+                os,
+                package_name,
+                port,
+                ..
+            } => {
                 assert_eq!(device, None);
                 assert_eq!(app, "com.test");
                 assert_eq!(app_version, Some("1.0.0".to_string()));
@@ -110,7 +118,13 @@ mod tests {
         let json = r#"{"type":"hello","device":"iPhone 15","app":"com.test","appVersion":"1.0.0","os":"ios"}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::Hello { device, app, package_name, port, .. } => {
+            ClientMessage::Hello {
+                device,
+                app,
+                package_name,
+                port,
+                ..
+            } => {
                 assert_eq!(device, Some("iPhone 15".to_string()));
                 assert_eq!(app, "com.test");
                 assert_eq!(package_name, None);
@@ -125,7 +139,12 @@ mod tests {
         let json = r#"{"type":"log","level":"info","tag":"Net","message":"hello"}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::Log { level, tag, message, .. } => {
+            ClientMessage::Log {
+                level,
+                tag,
+                message,
+                ..
+            } => {
                 assert_eq!(level, Some("info".to_string()));
                 assert_eq!(tag, Some("Net".to_string()));
                 assert_eq!(message, "hello");
@@ -139,7 +158,13 @@ mod tests {
         let json = r#"{"type":"log","message":"[INFO][Network] → GET /api/scene-types","timestamp":1776324216539}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::Log { level, tag, message, timestamp, .. } => {
+            ClientMessage::Log {
+                level,
+                tag,
+                message,
+                timestamp,
+                ..
+            } => {
                 assert_eq!(level, None);
                 assert_eq!(tag, None);
                 assert!(message.contains("[INFO][Network]"));
@@ -154,7 +179,12 @@ mod tests {
         let json = r#"{"type":"log","level":"error","tag":"DB","message":"fail","error":"timeout","stackTrace":"at main.dart:1","timestamp":1713100800000}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
         match msg {
-            ClientMessage::Log { error, stack_trace, timestamp, .. } => {
+            ClientMessage::Log {
+                error,
+                stack_trace,
+                timestamp,
+                ..
+            } => {
                 assert_eq!(error, Some("timeout".to_string()));
                 assert_eq!(stack_trace, Some("at main.dart:1".to_string()));
                 assert_eq!(timestamp, Some(1713100800000));
@@ -172,7 +202,9 @@ mod tests {
 
     #[test]
     fn test_serialize_mock_sync() {
-        let msg = ServerMessage::MockSync { rules: "[]".to_string() };
+        let msg = ServerMessage::MockSync {
+            rules: "[]".to_string(),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("mock_sync"));
         assert!(json.contains("[]"));

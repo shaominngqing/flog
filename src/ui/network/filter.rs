@@ -200,13 +200,13 @@ pub fn draw_network_column_header(f: &mut Frame, area: Rect) {
     let url_w = w.saturating_sub(fixed);
     let text = format!(
         "{}{} {} {}{} {} {}",
-        " ",                                    // cursor (1)
-        crate::ui::safe_pad("PROTO", PROTO_W),  // 6
-        crate::ui::safe_pad("METHOD", METHOD_W),// 8
-        crate::ui::safe_pad("URL", url_w),      // flex
-        crate::ui::safe_pad("STATUS", STATUS_W),// 10
-        crate::ui::safe_pad("TIME", TIME_W),    // 8
-        crate::ui::safe_pad("SIZE", SIZE_W),    // 8
+        " ",                                     // cursor (1)
+        crate::ui::safe_pad("PROTO", PROTO_W),   // 6
+        crate::ui::safe_pad("METHOD", METHOD_W), // 8
+        crate::ui::safe_pad("URL", url_w),       // flex
+        crate::ui::safe_pad("STATUS", STATUS_W), // 10
+        crate::ui::safe_pad("TIME", TIME_W),     // 8
+        crate::ui::safe_pad("SIZE", SIZE_W),     // 8
     );
     let line = Line::from(Span::styled(text, header_style));
     f.render_widget(

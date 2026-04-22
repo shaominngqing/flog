@@ -322,7 +322,8 @@ impl<'a> Parser<'a> {
             return false;
         }
         // Avoid URL-ish `::` or `://` being mistaken for a key colon.
-        if self.src.get(i + 1).copied() == Some(b':') || self.src.get(i + 1).copied() == Some(b'/') {
+        if self.src.get(i + 1).copied() == Some(b':') || self.src.get(i + 1).copied() == Some(b'/')
+        {
             return false;
         }
         true
@@ -490,7 +491,11 @@ mod tests {
         // Root should be an object, NOT absorb the items into itself.
         assert_eq!(v["code"], 0);
         assert_eq!(v["message"], "ok");
-        assert!(v["result"]["items"].is_array(), "items must be an array, got: {:?}", v["result"]["items"]);
+        assert!(
+            v["result"]["items"].is_array(),
+            "items must be an array, got: {:?}",
+            v["result"]["items"]
+        );
         let items = v["result"]["items"].as_array().unwrap();
         assert_eq!(items.len(), 2, "items should have 2 elements");
         assert_eq!(items[0]["id"], 928);
@@ -512,8 +517,10 @@ mod tests {
     #[test]
     fn dart_array_of_bare_string_phrases() {
         // Skills list from the screenshot: multi-word phrases separated by `,`.
-        let v = parse_whole("{skills: [Navigate airport check-in, Ask for directions, Handle hotel check-in]}")
-            .expect("should parse");
+        let v = parse_whole(
+            "{skills: [Navigate airport check-in, Ask for directions, Handle hotel check-in]}",
+        )
+        .expect("should parse");
         let skills = v["skills"].as_array().unwrap();
         assert_eq!(skills.len(), 3);
         assert_eq!(skills[0], "Navigate airport check-in");

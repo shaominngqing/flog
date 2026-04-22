@@ -35,9 +35,8 @@ static PIPE_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Pipe format with epoch timestamp: `1776241660875|LEVEL|Tag|message` (with optional spaces)
-static PIPE_TS_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(\d{10,13})\s*\|\s*(\w+)\s*\|\s*(\S.*?)\s*\|\s?(.*)$").unwrap()
-});
+static PIPE_TS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\d{10,13})\s*\|\s*(\w+)\s*\|\s*(\S.*?)\s*\|\s?(.*)$").unwrap());
 
 /// Convert epoch milliseconds to HH:MM:SS.mmm format.
 fn epoch_ms_to_timestamp(ms_str: &str) -> String {

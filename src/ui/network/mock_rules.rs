@@ -10,7 +10,9 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 
-use super::super::{BASE, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, RED, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW};
+use super::super::{
+    BASE, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, RED, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
+};
 
 pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -29,20 +31,13 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
 
     // Clear underlying content so nothing bleeds through
     f.render_widget(Clear, outer);
-    f.render_widget(
-        Block::default().style(Style::default().bg(BASE)),
-        outer,
-    );
+    f.render_widget(Block::default().style(Style::default().bg(BASE)), outer);
 
     // Draw border block
     let title_text = " Edit Mock Rule ";
     let block = Block::default()
         .title(title_text)
-        .title_style(
-            Style::default()
-                .fg(TEXT)
-                .add_modifier(Modifier::BOLD),
-        )
+        .title_style(Style::default().fg(TEXT).add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(BLUE))
@@ -66,7 +61,12 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
     let label_w: u16 = 18;
     let input_w = inner.width.saturating_sub(label_w + 2);
 
-    let labels = ["URL Pattern:  ", "Method:       ", "Status Code:  ", "Delay (ms):   "];
+    let labels = [
+        "URL Pattern:  ",
+        "Method:       ",
+        "Status Code:  ",
+        "Delay (ms):   ",
+    ];
     let field_names = ["url", "method", "status", "delay"];
 
     let mut y = inner.y;
@@ -128,12 +128,9 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
         );
 
         // Register click region for this field
-        app.layout.mock_edit_regions.push((
-            field_name.to_string(),
-            y,
-            input_x,
-            input_x + input_w,
-        ));
+        app.layout
+            .mock_edit_regions
+            .push((field_name.to_string(), y, input_x, input_x + input_w));
 
         y += 1;
     }
@@ -166,7 +163,12 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
     let _body_rect = ratatui::layout::Rect::new(body_x, y, body_w, body_h);
 
     // Store body CONTENT rect (inside border) for mouse handling
-    app.layout.mock_edit_body_rect = Some((body_x + 1, y + 1, body_w.saturating_sub(2), body_h.saturating_sub(2)));
+    app.layout.mock_edit_body_rect = Some((
+        body_x + 1,
+        y + 1,
+        body_w.saturating_sub(2),
+        body_h.saturating_sub(2),
+    ));
     app.mock_edit_body.visible_height = body_h as usize;
 
     // Draw body border
@@ -211,32 +213,38 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
                     let mut spans: Vec<Span> = Vec::new();
                     if col >= raw.len() {
                         // Cursor at end — render line normally, then a reversed space
-                        spans.extend(line.spans.iter().map(|s| {
-                            Span::styled(s.content.to_string(), s.style)
-                        }));
-                        spans.push(Span::styled(
-                            " ",
-                            Style::default().fg(BASE).bg(TEXT),
-                        ));
+                        spans.extend(
+                            line.spans
+                                .iter()
+                                .map(|s| Span::styled(s.content.to_string(), s.style)),
+                        );
+                        spans.push(Span::styled(" ", Style::default().fg(BASE).bg(TEXT)));
                     } else {
                         // Find the character at cursor position (snap to char boundary)
                         let snap_col = if raw.is_char_boundary(col) {
                             col
                         } else {
                             // Walk backwards to find a valid char boundary
-                            (0..col).rev().find(|&i| raw.is_char_boundary(i)).unwrap_or(0)
+                            (0..col)
+                                .rev()
+                                .find(|&i| raw.is_char_boundary(i))
+                                .unwrap_or(0)
                         };
                         let before = &raw[..snap_col];
-                        let cursor_char = &raw[snap_col..snap_col + raw[snap_col..].chars().next().map_or(1, |c| c.len_utf8())];
+                        let cursor_char = &raw[snap_col
+                            ..snap_col
+                                + raw[snap_col..].chars().next().map_or(1, |c| c.len_utf8())];
                         let after_start = snap_col + cursor_char.len();
                         let after = &raw[after_start..];
 
                         // Re-colorize segments
                         let before_lines = crate::ui::json_viewer::colorize_json_text(before);
                         if let Some(bl) = before_lines.first() {
-                            spans.extend(bl.spans.iter().map(|s| {
-                                Span::styled(s.content.to_string(), s.style)
-                            }));
+                            spans.extend(
+                                bl.spans
+                                    .iter()
+                                    .map(|s| Span::styled(s.content.to_string(), s.style)),
+                            );
                         }
                         // Cursor char with reversed style
                         spans.push(Span::styled(
@@ -246,9 +254,11 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
                         // After cursor
                         let after_lines = crate::ui::json_viewer::colorize_json_text(after);
                         if let Some(al) = after_lines.first() {
-                            spans.extend(al.spans.iter().map(|s| {
-                                Span::styled(s.content.to_string(), s.style)
-                            }));
+                            spans.extend(
+                                al.spans
+                                    .iter()
+                                    .map(|s| Span::styled(s.content.to_string(), s.style)),
+                            );
                         }
                     }
 
@@ -275,14 +285,10 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
         let total = app.mock_edit_body.total_lines();
         if total > visible {
             use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
-            let scrollbar_area = ratatui::layout::Rect::new(
-                body_x + body_w,
-                content_y,
-                1,
-                content_h,
-            );
-            let mut scrollbar_state = ScrollbarState::new(total.saturating_sub(visible))
-                .position(scroll);
+            let scrollbar_area =
+                ratatui::layout::Rect::new(body_x + body_w, content_y, 1, content_h);
+            let mut scrollbar_state =
+                ScrollbarState::new(total.saturating_sub(visible)).position(scroll);
             f.render_stateful_widget(
                 Scrollbar::new(ScrollbarOrientation::VerticalRight)
                     .begin_symbol(None)
@@ -404,7 +410,10 @@ pub fn draw_mock_rules_panel(f: &mut Frame, app: &mut App, area: ratatui::layout
 
         // URL pattern (truncated)
         let method_str = rule.method.as_deref().unwrap_or("*");
-        let info = format!("{}{} {} {}", cursor, method_str, rule.status_code, rule.url_pattern);
+        let info = format!(
+            "{}{} {} {}",
+            cursor, method_str, rule.status_code, rule.url_pattern
+        );
         let info_w = w.saturating_sub(20); // reserve space for buttons
         let info_display = if info.len() > info_w {
             format!("{}...", &info[..info_w.saturating_sub(3)])
@@ -422,26 +431,38 @@ pub fn draw_mock_rules_panel(f: &mut Frame, app: &mut App, area: ratatui::layout
         // Inline buttons
         spans.push(Span::styled(
             "[Edit]",
-            Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(MANTLE)
+                .bg(GREEN)
+                .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(" ", Style::default().bg(row_bg)));
 
         let toggle_text = if rule.enabled { "[Off]" } else { "[On] " };
         spans.push(Span::styled(
             toggle_text,
-            Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(MANTLE)
+                .bg(YELLOW)
+                .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(" ", Style::default().bg(row_bg)));
 
         spans.push(Span::styled(
             "[Del]",
-            Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(MANTLE)
+                .bg(RED)
+                .add_modifier(Modifier::BOLD),
         ));
 
         // Fill remaining
         let used: usize = spans.iter().map(|s| s.content.width()).sum();
         if used < w {
-            spans.push(Span::styled(" ".repeat(w - used), Style::default().bg(row_bg)));
+            spans.push(Span::styled(
+                " ".repeat(w - used),
+                Style::default().bg(row_bg),
+            ));
         }
 
         f.render_widget(
@@ -450,15 +471,23 @@ pub fn draw_mock_rules_panel(f: &mut Frame, app: &mut App, area: ratatui::layout
         );
 
         // Register click regions
-        app.layout.mock_rule_regions.push((i, "select".to_string(), y, inner.x, buttons_x));
+        app.layout
+            .mock_rule_regions
+            .push((i, "select".to_string(), y, inner.x, buttons_x));
 
         let edit_x = buttons_x;
-        app.layout.mock_rule_regions.push((i, "edit".to_string(), y, edit_x, edit_x + 6));
+        app.layout
+            .mock_rule_regions
+            .push((i, "edit".to_string(), y, edit_x, edit_x + 6));
 
         let toggle_x = edit_x + 7;
-        app.layout.mock_rule_regions.push((i, "toggle".to_string(), y, toggle_x, toggle_x + 5));
+        app.layout
+            .mock_rule_regions
+            .push((i, "toggle".to_string(), y, toggle_x, toggle_x + 5));
 
         let del_x = toggle_x + 6;
-        app.layout.mock_rule_regions.push((i, "delete".to_string(), y, del_x, del_x + 5));
+        app.layout
+            .mock_rule_regions
+            .push((i, "delete".to_string(), y, del_x, del_x + 5));
     }
 }

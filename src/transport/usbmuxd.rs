@@ -14,7 +14,8 @@ mod imp {
         pub serial_number: String,
     }
 
-    pub async fn list_devices() -> Result<Vec<UsbDevice>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn list_devices() -> Result<Vec<UsbDevice>, Box<dyn std::error::Error + Send + Sync>>
+    {
         let mut stream = UnixStream::connect(USBMUXD_SOCKET).await?;
 
         let request = plist::Value::Dictionary({
@@ -29,13 +30,29 @@ mod imp {
         let (_, response) = recv_plist(&mut stream).await?;
 
         let mut devices = Vec::new();
-        if let Some(plist::Value::Array(list)) = response.as_dictionary().and_then(|d| d.get("DeviceList")) {
+        if let Some(plist::Value::Array(list)) =
+            response.as_dictionary().and_then(|d| d.get("DeviceList"))
+        {
             for dev in list {
-                if let Some(props) = dev.as_dictionary().and_then(|d| d.get("Properties")).and_then(|p| p.as_dictionary()) {
-                    let device_id = props.get("DeviceID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
-                    let serial = props.get("SerialNumber").and_then(|v| v.as_string()).unwrap_or("").to_string();
+                if let Some(props) = dev
+                    .as_dictionary()
+                    .and_then(|d| d.get("Properties"))
+                    .and_then(|p| p.as_dictionary())
+                {
+                    let device_id = props
+                        .get("DeviceID")
+                        .and_then(|v| v.as_unsigned_integer())
+                        .unwrap_or(0) as u32;
+                    let serial = props
+                        .get("SerialNumber")
+                        .and_then(|v| v.as_string())
+                        .unwrap_or("")
+                        .to_string();
                     if !serial.is_empty() {
-                        devices.push(UsbDevice { device_id, serial_number: serial });
+                        devices.push(UsbDevice {
+                            device_id,
+                            serial_number: serial,
+                        });
                     }
                 }
             }
@@ -43,7 +60,10 @@ mod imp {
         Ok(devices)
     }
 
-    pub async fn connect_device(device_id: u32, port: u16) -> Result<UnixStream, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn connect_device(
+        device_id: u32,
+        port: u16,
+    ) -> Result<UnixStream, Box<dyn std::error::Error + Send + Sync>> {
         let mut stream = UnixStream::connect(USBMUXD_SOCKET).await?;
 
         // usbmuxd expects port as htons(port): u16 byte-swap, zero-extended to u32
@@ -78,7 +98,12 @@ mod imp {
     /// No external tools required — pure usbmuxd + lockdownd protocol.
     pub async fn query_device_name(device_id: u32) -> Option<String> {
         // Timeout the entire query — lockdownd may be slow if device is locked
-        tokio::time::timeout(std::time::Duration::from_secs(3), query_device_name_inner(device_id)).await.ok()?
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            query_device_name_inner(device_id),
+        )
+        .await
+        .ok()?
     }
 
     async fn query_device_name_inner(device_id: u32) -> Option<String> {
@@ -99,8 +124,13 @@ mod imp {
         send_plist(&mut stream, &request, 2).await.ok()?;
 
         let (_, response) = recv_plist(&mut stream).await.ok()?;
-        let code = response.as_dictionary()?.get("Number")?.as_unsigned_integer()?;
-        if code != 0 { return None; }
+        let code = response
+            .as_dictionary()?
+            .get("Number")?
+            .as_unsigned_integer()?;
+        if code != 0 {
+            return None;
+        }
 
         // Query both DeviceName and MarketingName via lockdownd
         let device_name = lockdown_get_value(&mut stream, "DeviceName").await;
@@ -125,7 +155,10 @@ mod imp {
         });
         let mut body = Vec::new();
         req.to_writer_xml(&mut body).ok()?;
-        stream.write_all(&(body.len() as u32).to_be_bytes()).await.ok()?;
+        stream
+            .write_all(&(body.len() as u32).to_be_bytes())
+            .await
+            .ok()?;
         stream.write_all(&body).await.ok()?;
         stream.flush().await.ok()?;
 
@@ -135,10 +168,18 @@ mod imp {
         let mut resp_body = vec![0u8; resp_len];
         stream.read_exact(&mut resp_body).await.ok()?;
         let value = plist::Value::from_reader(std::io::Cursor::new(resp_body)).ok()?;
-        value.as_dictionary()?.get("Value")?.as_string().map(|s| s.to_string())
+        value
+            .as_dictionary()?
+            .get("Value")?
+            .as_string()
+            .map(|s| s.to_string())
     }
 
-    async fn send_plist(stream: &mut UnixStream, value: &plist::Value, tag: u32) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn send_plist(
+        stream: &mut UnixStream,
+        value: &plist::Value,
+        tag: u32,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut body = Vec::new();
         value.to_writer_xml(&mut body)?;
 
@@ -155,7 +196,9 @@ mod imp {
         Ok(())
     }
 
-    async fn recv_plist(stream: &mut UnixStream) -> Result<(u32, plist::Value), Box<dyn std::error::Error + Send + Sync>> {
+    async fn recv_plist(
+        stream: &mut UnixStream,
+    ) -> Result<(u32, plist::Value), Box<dyn std::error::Error + Send + Sync>> {
         let mut header = [0u8; HEADER_SIZE];
         stream.read_exact(&mut header).await?;
 
@@ -184,11 +227,15 @@ pub mod imp {
         pub serial_number: String,
     }
 
-    pub async fn list_devices() -> Result<Vec<UsbDevice>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn list_devices() -> Result<Vec<UsbDevice>, Box<dyn std::error::Error + Send + Sync>>
+    {
         Ok(Vec::new())
     }
 
-    pub async fn connect_device(_device_id: u32, _port: u16) -> Result<tokio::net::TcpStream, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn connect_device(
+        _device_id: u32,
+        _port: u16,
+    ) -> Result<tokio::net::TcpStream, Box<dyn std::error::Error + Send + Sync>> {
         Err("usbmuxd is only available on macOS".into())
     }
 }

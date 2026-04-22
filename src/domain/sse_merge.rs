@@ -97,11 +97,11 @@ pub fn auto_detect_field(chunks_data: &[&str]) -> Option<(Vec<SsePathSegment>, S
 
     // Known LLM streaming patterns (check in order)
     let known_patterns = [
-        "choices[0].delta.content",      // OpenAI Chat Completions
-        "output[0].delta.content",       // OpenAI Responses API
-        "delta.text",                     // Claude API
-        "delta.content",                  // Generic delta
-        "data",                           // Generic SSE
+        "choices[0].delta.content", // OpenAI Chat Completions
+        "output[0].delta.content",  // OpenAI Responses API
+        "delta.text",               // Claude API
+        "delta.content",            // Generic delta
+        "data",                     // Generic SSE
     ];
 
     for pattern in &known_patterns {

@@ -32,8 +32,16 @@ pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
         .add_modifier(Modifier::BOLD);
     let inactive_text = Style::default().fg(OVERLAY0).bg(bg);
 
-    let logs_text = if logs_active { " ▤ Logs " } else { "▤ Logs" };
-    let net_text = if net_active { " ⇄ Network " } else { "⇄ Network" };
+    let logs_text = if logs_active {
+        " ▤ Logs "
+    } else {
+        "▤ Logs"
+    };
+    let net_text = if net_active {
+        " ⇄ Network "
+    } else {
+        "⇄ Network"
+    };
 
     let mut spans1: Vec<Span> = Vec::new();
 
@@ -41,7 +49,11 @@ pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
     spans1.push(Span::styled("  ", Style::default().bg(bg))); // 2-space left margin
     spans1.push(Span::styled(
         logs_text.to_string(),
-        if logs_active { active_pill } else { inactive_text },
+        if logs_active {
+            active_pill
+        } else {
+            inactive_text
+        },
     ));
     let logs_end_col = logs_start_col + logs_text.width();
 
@@ -49,7 +61,11 @@ pub fn draw_tab_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let net_start_col = logs_end_col + 2;
     spans1.push(Span::styled(
         net_text.to_string(),
-        if net_active { active_pill } else { inactive_text },
+        if net_active {
+            active_pill
+        } else {
+            inactive_text
+        },
     ));
     let net_end_col = net_start_col + net_text.width();
 

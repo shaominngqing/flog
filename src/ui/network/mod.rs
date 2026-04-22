@@ -261,21 +261,27 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             // Method (with replay/mock indicator)
             let method_c = method_color(&entry.method);
             let method_text = match entry.source {
-                EntrySource::Replay => if entry.method.is_empty() {
-                    "\u{21bb}-".to_string() // ↻
-                } else {
-                    format!("\u{21bb}{}", entry.method)
-                },
-                EntrySource::Mocked => if entry.method.is_empty() {
-                    "\u{25c6}-".to_string() // ◆
-                } else {
-                    format!("\u{25c6}{}", entry.method)
-                },
-                EntrySource::App => if entry.method.is_empty() {
-                    "-".to_string()
-                } else {
-                    entry.method.clone()
-                },
+                EntrySource::Replay => {
+                    if entry.method.is_empty() {
+                        "\u{21bb}-".to_string() // ↻
+                    } else {
+                        format!("\u{21bb}{}", entry.method)
+                    }
+                }
+                EntrySource::Mocked => {
+                    if entry.method.is_empty() {
+                        "\u{25c6}-".to_string() // ◆
+                    } else {
+                        format!("\u{25c6}{}", entry.method)
+                    }
+                }
+                EntrySource::App => {
+                    if entry.method.is_empty() {
+                        "-".to_string()
+                    } else {
+                        entry.method.clone()
+                    }
+                }
             };
             let method_span = Span::styled(
                 safe_pad(&method_text, METHOD_W),
@@ -286,15 +292,24 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             let source_tag: Option<Span> = match entry.source {
                 EntrySource::Mocked => Some(Span::styled(
                     " MOCK ",
-                    Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(MAUVE)
+                        .add_modifier(Modifier::BOLD),
                 )),
                 EntrySource::Replay => Some(Span::styled(
                     " REPLAY ",
-                    Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(BLUE)
+                        .add_modifier(Modifier::BOLD),
                 )),
                 EntrySource::App => None,
             };
-            let tag_w = source_tag.as_ref().map(|s| s.content.width() + 1).unwrap_or(0);
+            let tag_w = source_tag
+                .as_ref()
+                .map(|s| s.content.width() + 1)
+                .unwrap_or(0);
 
             // URL (takes remaining space) — show path only (strip query) for compact display
             let fixed_width =
@@ -353,13 +368,7 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
 
             let sep = Span::styled(" ", Style::default().bg(row_bg));
 
-            let mut spans = vec![
-                cursor,
-                proto_span,
-                sep.clone(),
-                method_span,
-                sep.clone(),
-            ];
+            let mut spans = vec![cursor, proto_span, sep.clone(), method_span, sep.clone()];
             if let Some(tag) = source_tag {
                 spans.push(tag);
                 spans.push(sep.clone());
@@ -559,10 +568,7 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled(info, Style::default().fg(SUBTEXT0).bg(bg)),
             ];
             if !failed_info.is_empty() {
-                spans.push(Span::styled(
-                    failed_info,
-                    Style::default().fg(RED).bg(bg),
-                ));
+                spans.push(Span::styled(failed_info, Style::default().fg(RED).bg(bg)));
             }
             if !device.is_empty() {
                 spans.push(Span::styled(

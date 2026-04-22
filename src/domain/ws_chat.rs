@@ -271,9 +271,21 @@ mod tests {
     #[test]
     fn test_group_messages_delta_merge() {
         let msgs: Vec<(WsDirection, &str, u64)> = vec![
-            (WsDirection::Recv, r#"{"type":"response.audio_transcript.delta","delta":"Hi"}"#, 50),
-            (WsDirection::Recv, r#"{"type":"response.audio_transcript.delta","delta":" there"}"#, 50),
-            (WsDirection::Recv, r#"{"type":"response.audio_transcript.delta","delta":"!"}"#, 50),
+            (
+                WsDirection::Recv,
+                r#"{"type":"response.audio_transcript.delta","delta":"Hi"}"#,
+                50,
+            ),
+            (
+                WsDirection::Recv,
+                r#"{"type":"response.audio_transcript.delta","delta":" there"}"#,
+                50,
+            ),
+            (
+                WsDirection::Recv,
+                r#"{"type":"response.audio_transcript.delta","delta":"!"}"#,
+                50,
+            ),
         ];
         let groups = group_messages(&msgs);
         assert_eq!(groups.len(), 1);

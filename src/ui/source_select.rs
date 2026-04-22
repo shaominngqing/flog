@@ -4,7 +4,10 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{
+        Block, BorderType, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState,
+    },
     Frame,
 };
 
@@ -65,7 +68,9 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     let device_count = device_order.len();
 
     // ── Size ──
-    let picker_w = (area.width * 2 / 3).max(60).min(area.width.saturating_sub(4));
+    let picker_w = (area.width * 2 / 3)
+        .max(60)
+        .min(area.width.saturating_sub(4));
     let picker_h = (area.height * 3 / 4).max(8);
     let picker_x = (area.width.saturating_sub(picker_w)) / 2;
     let picker_y = (area.height.saturating_sub(picker_h)) / 2;
@@ -78,10 +83,9 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .title(title_top)
         .title_style(Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD))
-        .title_bottom(Line::from(Span::styled(
-            hints,
-            Style::default().fg(OVERLAY0),
-        )).right_aligned())
+        .title_bottom(
+            Line::from(Span::styled(hints, Style::default().fg(OVERLAY0))).right_aligned(),
+        )
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(SURFACE1))
@@ -110,12 +114,19 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
             center_text("Run your Flutter app with flog_dart", SURFACE1),
         ];
         while lines.len() < inner_h {
-            lines.push(Line::from(Span::styled(" ".repeat(inner_w), Style::default().bg(bg))));
+            lines.push(Line::from(Span::styled(
+                " ".repeat(inner_w),
+                Style::default().bg(bg),
+            )));
         }
         f.render_widget(Paragraph::new(lines).block(block), picker_area);
         app.layout.device_picker_items = Vec::new();
-        app.layout.device_picker_rect =
-            Some((picker_area.x, picker_area.y, picker_area.width, picker_area.height));
+        app.layout.device_picker_rect = Some((
+            picker_area.x,
+            picker_area.y,
+            picker_area.width,
+            picker_area.height,
+        ));
         app.layout.device_picker_item_ids = Vec::new();
         app.layout.device_picker_total_lines = 0;
         return;
@@ -151,7 +162,9 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
 
     for (di, device_id) in device_order.iter().enumerate() {
         let dev = app.discovered_devices.get(device_id);
-        let dev_name = dev.map(|d| d.name.clone()).unwrap_or_else(|| device_id.clone());
+        let dev_name = dev
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| device_id.clone());
         let dev_kind = dev.map(|d| d.kind.clone()).unwrap_or(DeviceKind::Local);
 
         // Device header: platform tag + name + connection + short id
@@ -165,7 +178,16 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
         let id_short = shorten_id(device_id);
 
         // Device top border: `╭─ [iOS] iPhone 17 ─── USB · 00008150...401C ─╮`
-        push_device_top(&mut lines, inner_w, dev_w, device_gutter, platform_tag, &dev_name, conn_label, &id_short);
+        push_device_top(
+            &mut lines,
+            inner_w,
+            dev_w,
+            device_gutter,
+            platform_tag,
+            &dev_name,
+            conn_label,
+            &id_short,
+        );
 
         // Inside-device blank row
         push_device_inner_blank(&mut lines, inner_w, dev_w, device_gutter);
@@ -268,7 +290,10 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     for row in 0..visible_h {
         let src_idx = scroll_offset + row;
         if src_idx >= total_lines {
-            out_lines.push(Line::from(Span::styled(" ".repeat(inner_w), Style::default().bg(BASE))));
+            out_lines.push(Line::from(Span::styled(
+                " ".repeat(inner_w),
+                Style::default().bg(BASE),
+            )));
             continue;
         }
         let l = &lines[src_idx];
@@ -295,8 +320,12 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     app.layout.device_picker_items = click_regions;
-    app.layout.device_picker_rect =
-        Some((picker_area.x, picker_area.y, picker_area.width, picker_area.height));
+    app.layout.device_picker_rect = Some((
+        picker_area.x,
+        picker_area.y,
+        picker_area.width,
+        picker_area.height,
+    ));
     app.layout.device_picker_item_ids = selectable_ids;
     app.layout.device_picker_total_lines = total_lines;
 }
@@ -351,8 +380,8 @@ fn push_device_top(
     let interior_w = dev_w.saturating_sub(2);
     let left_fixed = 3; // "─ " (── then space) — actually we use "── " then tag + " " + name + " "
     let right_fixed = 3; // " ──" — " " + "──"
-    let dashes_needed = interior_w
-        .saturating_sub(left_fixed + tag_span_w + right_fixed + right_span_w + 2); // +2 for spaces around right text
+    let dashes_needed =
+        interior_w.saturating_sub(left_fixed + tag_span_w + right_fixed + right_span_w + 2); // +2 for spaces around right text
 
     // Assemble spans:
     let mut spans: Vec<Span<'static>> = Vec::new();
@@ -368,12 +397,18 @@ fn push_device_top(
     ));
     spans.push(Span::styled(
         tag_text,
-        Style::default().fg(SAPPHIRE).bg(dev_bg).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(SAPPHIRE)
+            .bg(dev_bg)
+            .add_modifier(Modifier::BOLD),
     ));
     spans.push(Span::styled(" ".to_string(), Style::default().bg(dev_bg)));
     spans.push(Span::styled(
         name.to_string(),
-        Style::default().fg(text_fg).bg(dev_bg).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(text_fg)
+            .bg(dev_bg)
+            .add_modifier(Modifier::BOLD),
     ));
     spans.push(Span::styled(" ".to_string(), Style::default().bg(dev_bg)));
     spans.push(Span::styled(
@@ -402,7 +437,10 @@ fn push_device_top(
             Style::default().bg(bg),
         ));
     }
-    lines.push(PickerLine { spans, click_target: None });
+    lines.push(PickerLine {
+        spans,
+        click_target: None,
+    });
 }
 
 /// Device bottom border: `╰──...──╯`
@@ -434,7 +472,10 @@ fn push_device_bottom(lines: &mut Vec<PickerLine>, inner_w: usize, dev_w: usize,
             Style::default().bg(bg),
         ));
     }
-    lines.push(PickerLine { spans, click_target: None });
+    lines.push(PickerLine {
+        spans,
+        click_target: None,
+    });
 }
 
 /// Blank row inside a device container: `│` + MANTLE fill + `│`
@@ -447,14 +488,29 @@ fn push_device_inner_blank(lines: &mut Vec<PickerLine>, inner_w: usize, dev_w: u
     let interior_w = dev_w.saturating_sub(2);
     let mut spans: Vec<Span<'static>> = Vec::new();
     spans.push(Span::styled(gutter_s, Style::default().bg(bg)));
-    spans.push(Span::styled("\u{2502}".to_string(), Style::default().fg(border_fg).bg(dev_bg)));
-    spans.push(Span::styled(" ".repeat(interior_w), Style::default().bg(dev_bg)));
-    spans.push(Span::styled("\u{2502}".to_string(), Style::default().fg(border_fg).bg(dev_bg)));
+    spans.push(Span::styled(
+        "\u{2502}".to_string(),
+        Style::default().fg(border_fg).bg(dev_bg),
+    ));
+    spans.push(Span::styled(
+        " ".repeat(interior_w),
+        Style::default().bg(dev_bg),
+    ));
+    spans.push(Span::styled(
+        "\u{2502}".to_string(),
+        Style::default().fg(border_fg).bg(dev_bg),
+    ));
     let used = gutter as usize + dev_w;
     if used < inner_w {
-        spans.push(Span::styled(" ".repeat(inner_w - used), Style::default().bg(bg)));
+        spans.push(Span::styled(
+            " ".repeat(inner_w - used),
+            Style::default().bg(bg),
+        ));
     }
-    lines.push(PickerLine { spans, click_target: None });
+    lines.push(PickerLine {
+        spans,
+        click_target: None,
+    });
 }
 
 /// Waiting row inside a device container.
@@ -472,19 +528,37 @@ fn push_waiting_row(lines: &mut Vec<PickerLine>, inner_w: usize, dev_w: usize, g
 
     let mut spans: Vec<Span<'static>> = Vec::new();
     spans.push(Span::styled(gutter_s, Style::default().bg(bg)));
-    spans.push(Span::styled("\u{2502}".to_string(), Style::default().fg(border_fg).bg(dev_bg)));
-    spans.push(Span::styled(" ".repeat(left_pad), Style::default().bg(dev_bg)));
+    spans.push(Span::styled(
+        "\u{2502}".to_string(),
+        Style::default().fg(border_fg).bg(dev_bg),
+    ));
+    spans.push(Span::styled(
+        " ".repeat(left_pad),
+        Style::default().bg(dev_bg),
+    ));
     spans.push(Span::styled(
         text.to_string(),
         Style::default().fg(OVERLAY0).bg(dev_bg),
     ));
-    spans.push(Span::styled(" ".repeat(right_pad), Style::default().bg(dev_bg)));
-    spans.push(Span::styled("\u{2502}".to_string(), Style::default().fg(border_fg).bg(dev_bg)));
+    spans.push(Span::styled(
+        " ".repeat(right_pad),
+        Style::default().bg(dev_bg),
+    ));
+    spans.push(Span::styled(
+        "\u{2502}".to_string(),
+        Style::default().fg(border_fg).bg(dev_bg),
+    ));
     let used = gutter as usize + dev_w;
     if used < inner_w {
-        spans.push(Span::styled(" ".repeat(inner_w - used), Style::default().bg(bg)));
+        spans.push(Span::styled(
+            " ".repeat(inner_w - used),
+            Style::default().bg(bg),
+        ));
     }
-    lines.push(PickerLine { spans, click_target: None });
+    lines.push(PickerLine {
+        spans,
+        click_target: None,
+    });
 }
 
 /// Push 6 rows for an app card (top, name, Package, Platform, Mode, bottom),
@@ -543,8 +617,7 @@ fn push_app_card(
     let card_bg = MANTLE;
     let (card_border_fg, tl, tr, bl, br, h, v) = if is_active {
         (
-            SAPPHIRE,
-            '\u{2554}', // ╔
+            SAPPHIRE, '\u{2554}', // ╔
             '\u{2557}', // ╗
             '\u{255a}', // ╚
             '\u{255d}', // ╝
@@ -553,8 +626,7 @@ fn push_app_card(
         )
     } else {
         (
-            SURFACE0,
-            '\u{250c}', // ┌
+            SURFACE0, '\u{250c}', // ┌
             '\u{2510}', // ┐
             '\u{2514}', // └
             '\u{2518}', // ┘
@@ -609,7 +681,10 @@ fn push_app_card(
     top_spans.push(device_border_span.clone());
     push_left_indent(&mut top_spans);
     // card top-left corner
-    top_spans.push(Span::styled(tl.to_string(), Style::default().fg(card_border_fg).bg(dev_bg)));
+    top_spans.push(Span::styled(
+        tl.to_string(),
+        Style::default().fg(card_border_fg).bg(dev_bg),
+    ));
     // "─ "
     top_spans.push(Span::styled(
         format!("{}{}", h, ' '),
@@ -618,19 +693,28 @@ fn push_app_card(
     // dot
     top_spans.push(Span::styled(
         dot.to_string(),
-        Style::default().fg(dot_fg).bg(card_bg).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(dot_fg)
+            .bg(card_bg)
+            .add_modifier(Modifier::BOLD),
     ));
     // " " + label
     top_spans.push(Span::styled(" ".to_string(), Style::default().bg(card_bg)));
     top_spans.push(Span::styled(
         label.clone(),
-        Style::default().fg(TEXT).bg(card_bg).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(TEXT)
+            .bg(card_bg)
+            .add_modifier(Modifier::BOLD),
     ));
     if is_active {
         top_spans.push(Span::styled("  ".to_string(), Style::default().bg(card_bg)));
         top_spans.push(Span::styled(
             active_pill.to_string(),
-            Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(MANTLE)
+                .bg(GREEN)
+                .add_modifier(Modifier::BOLD),
         ));
     }
     // dashes
@@ -655,7 +739,10 @@ fn push_app_card(
         tr.to_string(),
         Style::default().fg(card_border_fg).bg(dev_bg),
     ));
-    top_spans.push(Span::styled(right_card_gutter.clone(), Style::default().bg(dev_bg)));
+    top_spans.push(Span::styled(
+        right_card_gutter.clone(),
+        Style::default().bg(dev_bg),
+    ));
     top_spans.push(device_border_span.clone());
     if !right_tail.is_empty() {
         top_spans.push(Span::styled(right_tail.clone(), Style::default().bg(bg)));
@@ -687,15 +774,30 @@ fn push_app_card(
         spans.push(Span::styled(gutter_s.clone(), Style::default().bg(bg)));
         spans.push(device_border_span.clone());
         push_left_indent(&mut spans);
-        spans.push(Span::styled(v.to_string(), Style::default().fg(card_border_fg).bg(card_bg)));
-        spans.push(Span::styled(" ".repeat(card_inner_w), Style::default().bg(card_bg)));
-        spans.push(Span::styled(v.to_string(), Style::default().fg(card_border_fg).bg(card_bg)));
-        spans.push(Span::styled(right_card_gutter.clone(), Style::default().bg(dev_bg)));
+        spans.push(Span::styled(
+            v.to_string(),
+            Style::default().fg(card_border_fg).bg(card_bg),
+        ));
+        spans.push(Span::styled(
+            " ".repeat(card_inner_w),
+            Style::default().bg(card_bg),
+        ));
+        spans.push(Span::styled(
+            v.to_string(),
+            Style::default().fg(card_border_fg).bg(card_bg),
+        ));
+        spans.push(Span::styled(
+            right_card_gutter.clone(),
+            Style::default().bg(dev_bg),
+        ));
         spans.push(device_border_span.clone());
         if !right_tail.is_empty() {
             spans.push(Span::styled(right_tail.clone(), Style::default().bg(bg)));
         }
-        lines.push(PickerLine { spans, click_target: Some(sel_idx) });
+        lines.push(PickerLine {
+            spans,
+            click_target: Some(sel_idx),
+        });
     }
 
     // Skipping the breathing row changes our total to 6 — we already pushed 1 (top)
@@ -719,24 +821,49 @@ fn push_app_card(
         spans.push(Span::styled(gutter_s.clone(), Style::default().bg(bg)));
         spans.push(device_border_span.clone());
         push_left_indent(&mut spans);
-        spans.push(Span::styled(v.to_string(), Style::default().fg(card_border_fg).bg(card_bg)));
-        spans.push(Span::styled("    ".to_string(), Style::default().bg(card_bg)));
+        spans.push(Span::styled(
+            v.to_string(),
+            Style::default().fg(card_border_fg).bg(card_bg),
+        ));
+        spans.push(Span::styled(
+            "    ".to_string(),
+            Style::default().bg(card_bg),
+        ));
         spans.push(Span::styled(
             label_padded,
             Style::default().fg(label_fg).bg(card_bg),
         ));
         spans.push(Span::styled(
             display,
-            Style::default().fg(fg).bg(card_bg).add_modifier(if is_active { Modifier::BOLD } else { Modifier::empty() }),
+            Style::default()
+                .fg(fg)
+                .bg(card_bg)
+                .add_modifier(if is_active {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
         ));
-        spans.push(Span::styled(" ".repeat(pad_right), Style::default().bg(card_bg)));
-        spans.push(Span::styled(v.to_string(), Style::default().fg(card_border_fg).bg(card_bg)));
-        spans.push(Span::styled(right_card_gutter.clone(), Style::default().bg(dev_bg)));
+        spans.push(Span::styled(
+            " ".repeat(pad_right),
+            Style::default().bg(card_bg),
+        ));
+        spans.push(Span::styled(
+            v.to_string(),
+            Style::default().fg(card_border_fg).bg(card_bg),
+        ));
+        spans.push(Span::styled(
+            right_card_gutter.clone(),
+            Style::default().bg(dev_bg),
+        ));
         spans.push(device_border_span.clone());
         if !right_tail.is_empty() {
             spans.push(Span::styled(right_tail.clone(), Style::default().bg(bg)));
         }
-        lines.push(PickerLine { spans, click_target: Some(sel_idx) });
+        lines.push(PickerLine {
+            spans,
+            click_target: Some(sel_idx),
+        });
     }
 
     // ── Bottom border ──
@@ -744,13 +871,22 @@ fn push_app_card(
     bot_spans.push(Span::styled(gutter_s.clone(), Style::default().bg(bg)));
     bot_spans.push(device_border_span.clone());
     push_left_indent(&mut bot_spans);
-    bot_spans.push(Span::styled(bl.to_string(), Style::default().fg(card_border_fg).bg(dev_bg)));
+    bot_spans.push(Span::styled(
+        bl.to_string(),
+        Style::default().fg(card_border_fg).bg(dev_bg),
+    ));
     bot_spans.push(Span::styled(
         h.to_string().repeat(card_inner_w),
         Style::default().fg(card_border_fg).bg(card_bg),
     ));
-    bot_spans.push(Span::styled(br.to_string(), Style::default().fg(card_border_fg).bg(dev_bg)));
-    bot_spans.push(Span::styled(right_card_gutter.clone(), Style::default().bg(dev_bg)));
+    bot_spans.push(Span::styled(
+        br.to_string(),
+        Style::default().fg(card_border_fg).bg(dev_bg),
+    ));
+    bot_spans.push(Span::styled(
+        right_card_gutter.clone(),
+        Style::default().bg(dev_bg),
+    ));
     bot_spans.push(device_border_span.clone());
     if !right_tail.is_empty() {
         bot_spans.push(Span::styled(right_tail.clone(), Style::default().bg(bg)));
@@ -760,4 +896,3 @@ fn push_app_card(
         click_target: Some(sel_idx),
     });
 }
-

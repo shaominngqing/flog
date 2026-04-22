@@ -160,7 +160,13 @@ mod tests {
     #[test]
     fn test_find_match_respects_method() {
         let mut store = MockRuleStore::new();
-        store.add("/api/users".into(), Some("POST".into()), 201, "{}".into(), 0);
+        store.add(
+            "/api/users".into(),
+            Some("POST".into()),
+            201,
+            "{}".into(),
+            0,
+        );
 
         // GET should NOT match
         let matched = store.find_match("https://example.com/api/users", "GET");

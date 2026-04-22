@@ -84,8 +84,10 @@ fn level_pill(level: LogLevel, row_bg: Color) -> Span<'static> {
     let (fg, bg, bold) = level_badge(level);
     // On highlighted rows (error/warning bg), pull level pill bg down to MANTLE for contrast.
     let pill_bg = if (row_bg == ERROR_ROW_BG || row_bg == WARNING_ROW_BG)
-        && matches!(level, LogLevel::Debug | LogLevel::Verbose | LogLevel::System)
-    {
+        && matches!(
+            level,
+            LogLevel::Debug | LogLevel::Verbose | LogLevel::System
+        ) {
         MANTLE
     } else {
         bg
@@ -255,7 +257,11 @@ fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
             format!(" {}", spark),
             Style::default().fg(LAVENDER).bg(bg),
         ));
-        let info = format!(" {}/{} ", app.search.match_idx + 1, app.search.matches.len());
+        let info = format!(
+            " {}/{} ",
+            app.search.match_idx + 1,
+            app.search.matches.len()
+        );
         spans.push(Span::styled(info, Style::default().fg(YELLOW).bg(bg)));
         spans.push(Span::styled("<", Style::default().fg(BLUE).bg(bg)));
         spans.push(Span::styled(">", Style::default().fg(BLUE).bg(bg)));
@@ -267,10 +273,19 @@ fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
     let count_text = format!(" {}/{} ", app.filtered_count(), app.store.len());
     let cw = count_text.width() as u16;
     let pad = w.saturating_sub(used + cw);
-    spans.push(Span::styled(" ".repeat(pad as usize), Style::default().bg(bg)));
-    spans.push(Span::styled(count_text, Style::default().fg(SUBTEXT0).bg(bg)));
+    spans.push(Span::styled(
+        " ".repeat(pad as usize),
+        Style::default().bg(bg),
+    ));
+    spans.push(Span::styled(
+        count_text,
+        Style::default().fg(SUBTEXT0).bg(bg),
+    ));
 
-    f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)), area);
+    f.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
+        area,
+    );
 }
 
 fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
@@ -316,7 +331,10 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
     app.layout.filter_x = (filter_start_x, x);
 
     // Separator
-    spans.push(Span::styled("   │   ", Style::default().fg(SURFACE1).bg(bg)));
+    spans.push(Span::styled(
+        "   │   ",
+        Style::default().fg(SURFACE1).bg(bg),
+    ));
     x += 7;
 
     app.layout.levels_x = x;
@@ -330,15 +348,19 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
     ] {
         let (fg, bg_c, bold) = level_badge(*level);
         let style = if app.filter.min_level == *level {
-            let mut s = Style::default()
-                .fg(fg)
-                .bg(if bg_c == Color::Reset { SURFACE1 } else { bg_c });
+            let mut s =
+                Style::default()
+                    .fg(fg)
+                    .bg(if bg_c == Color::Reset { SURFACE1 } else { bg_c });
             if bold {
                 s = s.add_modifier(Modifier::BOLD);
             }
             s
         } else if app.filter.min_level > *level {
-            Style::default().fg(SURFACE0).bg(bg).add_modifier(Modifier::DIM)
+            Style::default()
+                .fg(SURFACE0)
+                .bg(bg)
+                .add_modifier(Modifier::DIM)
         } else {
             Style::default().fg(level_color(*level)).bg(bg)
         };
@@ -354,10 +376,16 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
 
     let rem = area.width.saturating_sub(x);
     if rem > 0 {
-        spans.push(Span::styled(" ".repeat(rem as usize), Style::default().bg(bg)));
+        spans.push(Span::styled(
+            " ".repeat(rem as usize),
+            Style::default().bg(bg),
+        ));
     }
 
-    f.render_widget(Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)), area);
+    f.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
+        area,
+    );
 }
 
 fn draw_column_header(f: &mut Frame, area: Rect) {
@@ -365,11 +393,11 @@ fn draw_column_header(f: &mut Frame, area: Rect) {
     let header_style = Style::default().fg(OVERLAY0).bg(MANTLE);
     let text = format!(
         "{}{}{} {} {} {}",
-        " ",                                // cursor (1)
-        "  ",                               // bookmark (2)
-        safe_pad("TIME", TIME_WIDTH),       // 12
-        safe_pad("LEVEL", LEVEL_WIDTH),     // 9
-        safe_pad("TAG", TAG_WIDTH),         // 14
+        " ",                            // cursor (1)
+        "  ",                           // bookmark (2)
+        safe_pad("TIME", TIME_WIDTH),   // 12
+        safe_pad("LEVEL", LEVEL_WIDTH), // 9
+        safe_pad("TAG", TAG_WIDTH),     // 14
         "MESSAGE",
     );
     let w = area.width as usize;
@@ -401,7 +429,10 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 vec![
                     Span::styled(
                         ok_text,
-                        Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(MANTLE)
+                            .bg(GREEN)
+                            .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(msg_text, Style::default().fg(TEXT).bg(bg)),
                 ],
@@ -418,12 +449,18 @@ fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 (
                     format!(" {} LIVE ", dot),
-                    Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(GREEN)
+                        .add_modifier(Modifier::BOLD),
                 )
             } else if app.new_logs_since_pause > 0 {
                 (
                     format!(" {} new ", app.new_logs_since_pause),
-                    Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(YELLOW)
+                        .add_modifier(Modifier::BOLD),
                 )
             } else {
                 let total = app.filtered_count();
@@ -667,7 +704,11 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             let base = Style::default().fg(mc).bg(row_bg);
             let dim_s = Style::default().fg(SURFACE1).bg(row_bg);
 
-            let cursor_color = if entry.level == LogLevel::Error { RED } else { BLUE };
+            let cursor_color = if entry.level == LogLevel::Error {
+                RED
+            } else {
+                BLUE
+            };
             let cursor = if is_selected {
                 Span::styled("▎", Style::default().fg(cursor_color).bg(row_bg))
             } else {
@@ -758,14 +799,8 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 let bar_display_len = bar_str.width();
                 // +1 for the space between bar and message
                 let split_at = (bar_display_len + 1).min(first_text.width());
-                let bar_part: String = first_text
-                    .chars()
-                    .take(split_at)
-                    .collect();
-                let msg_part: String = first_text
-                    .chars()
-                    .skip(split_at)
-                    .collect();
+                let bar_part: String = first_text.chars().take(split_at).collect();
+                let msg_part: String = first_text.chars().skip(split_at).collect();
                 if !bar_part.is_empty() {
                     spans.push(Span::styled(bar_part, Style::default().fg(PINK).bg(row_bg)));
                 }
@@ -866,7 +901,10 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
             // Stack trace preview (error + collapsed stacktrace)
             if entry.error.is_some() || entry.stacktrace.is_some() {
                 let (preview, remaining) = entry.stack_preview_lines(MAX_STACK_PREVIEW_LINES);
-                let err_style = Style::default().fg(RED).bg(row_bg).add_modifier(Modifier::DIM);
+                let err_style = Style::default()
+                    .fg(RED)
+                    .bg(row_bg)
+                    .add_modifier(Modifier::DIM);
                 let frame_style = Style::default().fg(OVERLAY0).bg(row_bg);
 
                 for (pi, pline) in preview.iter().enumerate() {
@@ -879,10 +917,7 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                     } else {
                         frame_style // Stack frames → OVERLAY0
                     };
-                    ps.push(Span::styled(
-                        safe_pad(pline, wrap_width),
-                        style,
-                    ));
+                    ps.push(Span::styled(safe_pad(pline, wrap_width), style));
                     let used: usize = ps.iter().map(|s| s.content.width()).sum();
                     if used < total_width {
                         ps.push(Span::styled(
@@ -898,7 +933,10 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                     let mut ts = empty_prefix(is_selected, row_bg);
                     ts.push(Span::styled(
                         format!("... {} more frames", remaining),
-                        Style::default().fg(OVERLAY0).bg(row_bg).add_modifier(Modifier::ITALIC),
+                        Style::default()
+                            .fg(OVERLAY0)
+                            .bg(row_bg)
+                            .add_modifier(Modifier::ITALIC),
                     ));
                     let used: usize = ts.iter().map(|s| s.content.width()).sum();
                     if used < total_width {
@@ -1277,10 +1315,7 @@ fn draw_no_matching_logs(f: &mut Frame, app: &App, area: Rect) {
         for r in &filter_rows {
             lines.push(Line::from(vec![
                 Span::styled("    │", Style::default().fg(SURFACE0)),
-                Span::styled(
-                    safe_pad(r, 34),
-                    Style::default().fg(SUBTEXT0),
-                ),
+                Span::styled(safe_pad(r, 34), Style::default().fg(SUBTEXT0)),
                 Span::styled("│", Style::default().fg(SURFACE0)),
             ]));
         }

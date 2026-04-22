@@ -204,7 +204,8 @@ mod tests {
     #[test]
     fn test_push_entry() {
         let mut store = NetworkStore::new();
-        let mut entry = NetworkEntry::new_http(999, "GET".into(), "https://test.com".into(), String::new());
+        let mut entry =
+            NetworkEntry::new_http(999, "GET".into(), "https://test.com".into(), String::new());
         entry.source = EntrySource::Replay;
 
         store.push_entry(entry);

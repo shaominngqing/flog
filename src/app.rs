@@ -472,7 +472,6 @@ impl App {
             // Another app connected while we already have an active one — no-op,
             // just register. User can switch to it manually.
         }
-
     }
 
     /// Remove a disconnected app.
@@ -525,14 +524,18 @@ impl App {
     /// Update the source_name display for the given app ID.
     fn update_source_name(&mut self, id: &str) {
         if let Some(app_info) = self.connected_apps.iter().find(|a| a.id == id) {
-            let dev_name = self.discovered_devices
+            let dev_name = self
+                .discovered_devices
                 .get(&app_info.device_id)
                 .map(|d| d.name.as_str())
                 .unwrap_or(&app_info.device_name);
             if app_info.app_version.is_empty() {
                 self.source_name = format!("{} ({})", app_info.app_name, dev_name);
             } else {
-                self.source_name = format!("{} v{} ({})", app_info.app_name, app_info.app_version, dev_name);
+                self.source_name = format!(
+                    "{} v{} ({})",
+                    app_info.app_name, app_info.app_version, dev_name
+                );
             }
         }
     }
@@ -540,7 +543,10 @@ impl App {
     /// Get the ConnectorHandle for a specific app (for sending mock/replay).
     pub fn get_active_handle(&self) -> Option<&ConnectorHandle> {
         let id = self.active_app_id.as_deref()?;
-        self.connected_apps.iter().find(|a| a.id == id).map(|a| &a.handle)
+        self.connected_apps
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| &a.handle)
     }
 
     // ── Data Input ──
@@ -932,7 +938,9 @@ impl App {
                 rule.delay_ms.to_string(),
             ];
             // Pretty-print JSON body for readability
-            let pretty_body = if let Ok(val) = serde_json::from_str::<serde_json::Value>(&rule.response_body) {
+            let pretty_body = if let Ok(val) =
+                serde_json::from_str::<serde_json::Value>(&rule.response_body)
+            {
                 serde_json::to_string_pretty(&val).unwrap_or_else(|_| rule.response_body.clone())
             } else {
                 rule.response_body.clone()

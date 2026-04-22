@@ -100,18 +100,23 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     }
     // Divider line with [Mock] button (VM Service only)
     {
-        let mock_btn = if app.has_connected_client() && entry.protocol == Protocol::Http { " [Mock] " } else { "" };
+        let mock_btn = if app.has_connected_client() && entry.protocol == Protocol::Http {
+            " [Mock] "
+        } else {
+            ""
+        };
         let divider_w = inner_w.saturating_sub(mock_btn.len());
-        let mut divider_spans = vec![
-            Span::styled(
-                "\u{2500}".repeat(divider_w),
-                Style::default().fg(SURFACE0),
-            ),
-        ];
+        let mut divider_spans = vec![Span::styled(
+            "\u{2500}".repeat(divider_w),
+            Style::default().fg(SURFACE0),
+        )];
         if !mock_btn.is_empty() {
             divider_spans.push(Span::styled(
                 mock_btn,
-                Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(MANTLE)
+                    .bg(MAUVE)
+                    .add_modifier(Modifier::BOLD),
             ));
             // Register click region — will be offset by area.x+1 and the content_y + line_idx
             // We store the raw line index; the click handler translates using detail_content_y + scroll
@@ -364,7 +369,9 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         let has_rule = app.network.sse_merge_rules.contains_key(&rule_key);
 
         // Check if chunks contain JSON (merged mode is available)
-        let has_json_chunks = entry.sse_chunks.first()
+        let has_json_chunks = entry
+            .sse_chunks
+            .first()
             .map(|c| serde_json::from_str::<serde_json::Value>(&c.data).is_ok())
             .unwrap_or(false);
 
@@ -375,10 +382,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
             // Section header with pill toggle + clear button
             {
-                let events_pill = Span::styled(
-                    " Events ",
-                    Style::default().fg(OVERLAY0).bg(SURFACE0),
-                );
+                let events_pill =
+                    Span::styled(" Events ", Style::default().fg(OVERLAY0).bg(SURFACE0));
                 let merged_pill = Span::styled(
                     " Merged ",
                     Style::default()
@@ -386,16 +391,9 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                         .bg(SAPPHIRE)
                         .add_modifier(Modifier::BOLD),
                 );
-                let clear_pill = Span::styled(
-                    " \u{00d7} ",
-                    Style::default().fg(RED).bg(SURFACE0),
-                );
+                let clear_pill = Span::styled(" \u{00d7} ", Style::default().fg(RED).bg(SURFACE0));
                 let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
-                let header_text = format!(
-                    " {} SSE Events ({})  ",
-                    icon,
-                    entry.sse_chunks.len()
-                );
+                let header_text = format!(" {} SSE Events ({})  ", icon, entry.sse_chunks.len());
                 all_lines.push(Line::from(vec![
                     Span::styled(
                         header_text.clone(),
@@ -423,9 +421,10 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     let candidates = sse_merge::extract_field_paths(&chunks_data);
 
                     // Render field selector
-                    let selected_idx = app.network.sse_merged_field_idx.min(
-                        candidates.len().saturating_sub(1),
-                    );
+                    let selected_idx = app
+                        .network
+                        .sse_merged_field_idx
+                        .min(candidates.len().saturating_sub(1));
                     for (fi, (_, display)) in candidates.iter().enumerate() {
                         let is_active = fi == selected_idx;
                         let marker = if is_active { "\u{2023} " } else { "  " };
@@ -492,10 +491,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                         .bg(SAPPHIRE)
                         .add_modifier(Modifier::BOLD),
                 );
-                let merged_pill = Span::styled(
-                    " Merged ",
-                    Style::default().fg(OVERLAY0).bg(SURFACE0),
-                );
+                let merged_pill =
+                    Span::styled(" Merged ", Style::default().fg(OVERLAY0).bg(SURFACE0));
                 let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
                 let header_text = format!(" {} {}  ", icon, sec_name);
                 all_lines.push(Line::from(vec![
@@ -582,8 +579,16 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     // ── WebSocket Messages ──
     if entry.protocol == Protocol::Ws && !entry.ws_messages.is_empty() {
-        let sent = entry.ws_messages.iter().filter(|m| m.direction == WsDirection::Send).count();
-        let recv = entry.ws_messages.iter().filter(|m| m.direction == WsDirection::Recv).count();
+        let sent = entry
+            .ws_messages
+            .iter()
+            .filter(|m| m.direction == WsDirection::Send)
+            .count();
+        let recv = entry
+            .ws_messages
+            .iter()
+            .filter(|m| m.direction == WsDirection::Recv)
+            .count();
         let sec_name = format!("Messages ({}\u{2191} {}\u{2193})", sent, recv);
         let sec_key = "WS Messages";
         let is_collapsed = app.network.collapsed_sections.contains(sec_key);
@@ -591,19 +596,34 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         // Header with Chat/Raw pills
         {
             let chat_pill = if app.network.ws_chat_mode {
-                Span::styled(" Chat ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD))
+                Span::styled(
+                    " Chat ",
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(SAPPHIRE)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
                 Span::styled(" Chat ", Style::default().fg(OVERLAY0).bg(SURFACE0))
             };
             let raw_pill = if !app.network.ws_chat_mode {
-                Span::styled(" Raw ", Style::default().fg(MANTLE).bg(SAPPHIRE).add_modifier(Modifier::BOLD))
+                Span::styled(
+                    " Raw ",
+                    Style::default()
+                        .fg(MANTLE)
+                        .bg(SAPPHIRE)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
                 Span::styled(" Raw ", Style::default().fg(OVERLAY0).bg(SURFACE0))
             };
             let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
             let header_text = format!(" {} {}  ", icon, sec_name);
             all_lines.push(Line::from(vec![
-                Span::styled(header_text.clone(), Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    header_text.clone(),
+                    Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
+                ),
                 chat_pill,
                 Span::raw(" "),
                 raw_pill,
@@ -631,17 +651,27 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     let (pill_text, pill_style, row_bg) = match group.direction {
                         WsDirection::Send => (
                             " \u{2192} SEND ",
-                            Style::default().fg(MANTLE).bg(GREEN).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(MANTLE)
+                                .bg(GREEN)
+                                .add_modifier(Modifier::BOLD),
                             SURFACE0,
                         ),
                         WsDirection::Recv => (
                             " \u{2190} RECV ",
-                            Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(MANTLE)
+                                .bg(BLUE)
+                                .add_modifier(Modifier::BOLD),
                             SURFACE1,
                         ),
                     };
                     let count = group.msg_indices.len();
-                    let count_str = if count > 1 { format!(" (\u{00d7}{})", count) } else { String::new() };
+                    let count_str = if count > 1 {
+                        format!(" (\u{00d7}{})", count)
+                    } else {
+                        String::new()
+                    };
 
                     // Track start of this group's lines so we can apply bg
                     let lines_start = all_lines.len();
@@ -652,7 +682,10 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                         all_lines.push(Line::from(vec![
                             Span::styled(pill_text, pill_style),
                             Span::styled(
-                                format!(" {}{} [binary {}]", group.type_label, count_str, total_size),
+                                format!(
+                                    " {}{} [binary {}]",
+                                    group.type_label, count_str, total_size
+                                ),
                                 Style::default().fg(OVERLAY0),
                             ),
                         ]));
@@ -737,7 +770,11 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                     };
                     let msg_key = format!("WS#{}", i);
                     let msg_collapsed = app.network.collapsed_sections.contains(&msg_key);
-                    let prefix = if msg_collapsed { "\u{25b6}" } else { "\u{25bc}" };
+                    let prefix = if msg_collapsed {
+                        "\u{25b6}"
+                    } else {
+                        "\u{25bc}"
+                    };
                     let ws_prefix_text = format!("  {} {} ", prefix, arrow);
                     let ws_preview_w = inner_w.saturating_sub(ws_prefix_text.len() + 1);
                     all_lines.push(Line::from(vec![

@@ -27,22 +27,32 @@ async fn test_connector_connects_and_receives_messages() {
     // Send Hello (simulating flog_dart sending hello on connect)
     sink.send(Message::Text(
         r#"{"type":"hello","device":"TestDevice","app":"com.test","os":"android"}"#.into(),
-    )).await.unwrap();
+    ))
+    .await
+    .unwrap();
 
     // Connector should succeed and return events + handle
     let (mut event_rx, handle) = connector_task.await.unwrap().unwrap();
 
     // Should receive Connected event
     let event = event_rx.recv().await.unwrap();
-    assert!(matches!(event, flog::input::connector::ConnectorEvent::Connected(_)));
+    assert!(matches!(
+        event,
+        flog::input::connector::ConnectorEvent::Connected(_)
+    ));
 
     // Send a Log message (simulating flog_dart pushing data)
     sink.send(Message::Text(
         r#"{"type":"log","level":"info","tag":"Test","message":"hello"}"#.into(),
-    )).await.unwrap();
+    ))
+    .await
+    .unwrap();
 
     let event = event_rx.recv().await.unwrap();
-    assert!(matches!(event, flog::input::connector::ConnectorEvent::Message(_)));
+    assert!(matches!(
+        event,
+        flog::input::connector::ConnectorEvent::Message(_)
+    ));
 
     // Test downstream: send mock_sync from flog to device
     handle.send_mock_sync("[]".to_string());

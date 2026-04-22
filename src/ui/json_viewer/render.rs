@@ -628,10 +628,9 @@ mod tests {
     #[test]
     fn collapsed_object_fits_within_max_width() {
         // Symmetric sweep for objects (no count suffix, but still should fit).
-        let t = tree::parse(
-            r#"{"code":200,"message":"ok","trace_id":"abc-def-1234","user":"alice"}"#,
-        )
-        .unwrap();
+        let t =
+            tree::parse(r#"{"code":200,"message":"ok","trace_id":"abc-def-1234","user":"alice"}"#)
+                .unwrap();
         let mut s = state::init_state(&t, 0);
         s.expanded[0] = false;
         for max_w in 10..=80 {
