@@ -18,3 +18,6 @@ flog_dart/build/
 flog_dart/.flutter-plugins-dependencies
 flog_dart/.flutter-plugins
 flog_dart/.packages
+# flog_dart is a library package published to pub.dev — pubspec.lock is
+# per-consumer and should not be committed for libraries.
+flog_dart/pubspec.lock
