@@ -1,8 +1,15 @@
 //! Raw JSON text syntax highlighter.
 //!
 //! Character-by-character tokenizer that colorizes arbitrary text containing
-//! JSON-like fragments. Used by `logs/detail.rs` for inline JSON embedded in
-//! log messages. Not the tree viewer.
+//! JSON-like fragments. Tolerates any input — unterminated strings, missing
+//! brackets, mid-edit gibberish — and keeps colorizing through errors.
+//!
+//! Used by the Mock rule body editor (`ui/network/mock_rules.rs`) to live-
+//! highlight user input while they type. Shares the palette with the AST-based
+//! tree viewer so the two look visually consistent.
+//!
+//! Not the tree viewer — that one lives in `tree.rs` / `render.rs`, requires
+//! valid JSON, and supports folding. Use it for display-only JSON.
 
 use ratatui::{
     style::{Modifier, Style},
