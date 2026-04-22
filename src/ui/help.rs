@@ -171,9 +171,10 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(kv("PgUp/Dn", "Scroll 20 entries"));
     lines.push(kv("Home", "Jump to top"));
     lines.push(kv("G / End", "Jump to bottom (resume LIVE)"));
-    lines.push(kv("/", "Search (supports /regex/i)"));
+    lines.push(kv("/", "Focus Search field (live, a|b, /regex/i)"));
+    lines.push(kv("\\", "Focus Exclude field (live, a|b, /regex/i)"));
     lines.push(kv("n / N", "Next / previous match"));
-    lines.push(kv("t", "Enter tag filter (comma-sep, -tag to exclude)"));
+    lines.push(kv("t", "Focus Tag filter (live, +inc|-exc)"));
     lines.push(kv("Enter", "Toggle detail panel"));
     lines.push(kv("c", "Copy selected log to clipboard"));
     lines.push(kv("e", "Export filtered logs to file"));
@@ -345,7 +346,8 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(kv("j / k", "Move selection up/down"));
     lines.push(kv("G / End", "Jump to bottom (resume LIVE)"));
     lines.push(kv("Enter", "Toggle detail panel"));
-    lines.push(kv("/", "Filter by URL"));
+    lines.push(kv("/", "Focus Search field (live, a|b, /regex/i)"));
+    lines.push(kv("\\", "Focus Exclude field (live, a|b, /regex/i)"));
     lines.push(kv("c", "Copy as cURL (HTTP only)"));
     lines.push(kv("y", "Copy response body / SSE merged / WS chat"));
     lines.push(kv("r", "Replay selected request (HTTP only)"));
