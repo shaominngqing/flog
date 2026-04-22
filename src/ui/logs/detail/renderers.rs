@@ -39,9 +39,6 @@ impl SectionRenderer for ProseRenderer {
             return Vec::new();
         };
         let mut out = Vec::new();
-        // Prose inside the detail body may still carry `Error: ...` hints from
-        // `LogEntry::full_message()`. Color just the leading keyword red so
-        // the eye lands on it without having to read every line.
         for wl in crate::ui::wrap_multiline(text, inner_w, 500) {
             out.push(row(style_prose_line(wl)));
         }
@@ -49,26 +46,43 @@ impl SectionRenderer for ProseRenderer {
     }
 }
 
+/// Style a single wrapped prose line.
+///
+/// Delegates to `auto_highlight` for the same HTTP method / status code /
+/// URL / duration coloring used by the list view. Lines whose trimmed text
+/// begins with `Error:` / `Exception:` get an extra RED+bold keyword span
+/// (highlight rules alone miss the `:`), then the remainder still flows
+/// through `auto_highlight` so any embedded URL/status/method is colored.
 fn style_prose_line(text: String) -> Line<'static> {
+    let base = Style::default().fg(TEXT);
     let trimmed = text.trim_start();
-    if let Some(rest) = trimmed
-        .strip_prefix("Error:")
-        .or_else(|| trimmed.strip_prefix("Exception:"))
-    {
+
+    let keyword = if trimmed.starts_with("Error:") {
+        Some("Error:")
+    } else if trimmed.starts_with("Exception:") {
+        Some("Exception:")
+    } else {
+        None
+    };
+
+    if let Some(kw) = keyword {
         let indent_len = text.len() - trimmed.len();
         let indent: String = text.chars().take(indent_len).collect();
-        let keyword_len = trimmed.len() - rest.len();
-        let keyword: String = trimmed.chars().take(keyword_len).collect();
-        return Line::from(vec![
-            Span::styled(indent, Style::default().fg(TEXT)),
-            Span::styled(
-                keyword,
-                Style::default().fg(RED).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(rest.to_string(), Style::default().fg(RED)),
-        ]);
+        let rest_start = indent_len + kw.len();
+        let rest: String = text.chars().skip(rest_start).collect();
+        let mut spans: Vec<Span<'static>> = Vec::with_capacity(3);
+        if !indent.is_empty() {
+            spans.push(Span::styled(indent, base));
+        }
+        spans.push(Span::styled(
+            kw.to_string(),
+            Style::default().fg(RED).add_modifier(Modifier::BOLD),
+        ));
+        spans.extend(crate::ui::logs::highlight::auto_highlight(&rest, base));
+        return Line::from(spans);
     }
-    Line::from(Span::styled(text, Style::default().fg(TEXT)))
+
+    Line::from(crate::ui::logs::highlight::auto_highlight(&text, base))
 }
 
 // ── Heading ──
@@ -121,6 +135,19 @@ impl SectionRenderer for StackRenderer {
     }
 }
 
+/// Classify a stack frame location by its source origin.
+///
+/// `dart:*` and `package:flutter/**` are considered SDK/framework noise —
+/// rendered extra-dim so the eye can skip past them. Everything else
+/// (user code, third-party libraries like dio/hive) keeps full color.
+fn is_sdk_frame_loc(loc: &str) -> bool {
+    // loc looks like `(dart:io/common.dart:58:9)` or `(package:flutter/src/...)`.
+    let inner = loc.trim_start_matches('(');
+    inner.starts_with("dart:")
+        || inner.starts_with("package:flutter/")
+        || inner.starts_with("package:flutter_")
+}
+
 fn style_stack_line(line: &str, _inner_w: usize) -> Line<'static> {
     // Async markers — italicized, dim.
     if line.trim() == "<asynchronous suspension>" {
@@ -143,6 +170,8 @@ fn style_stack_line(line: &str, _inner_w: usize) -> Line<'static> {
 
     // Typical frame: `#N      ClassName.method (package:app/foo.dart:25:3)`
     // Spans: [# + number] dim, [gap + function] TEAL, [(package:...)] SAPPHIRE
+    // SDK frames (dart:*, package:flutter*) get rendered in OVERLAY0 across the
+    // board so user-code frames visually pop.
     let trimmed = line.trim_start();
     if trimmed.starts_with('#') {
         let indent_len = line.len() - trimmed.len();
@@ -170,18 +199,24 @@ fn style_stack_line(line: &str, _inner_w: usize) -> Line<'static> {
             None => (after_gap, ""),
         };
 
+        let is_sdk = is_sdk_frame_loc(loc);
+        let (hash_fg, func_fg, loc_fg) = if is_sdk {
+            // Entire SDK frame dimmed — hash, name, location all OVERLAY0 so
+            // runs of framework frames recede into the background.
+            (OVERLAY0, OVERLAY0, OVERLAY0)
+        } else {
+            (OVERLAY0, TEAL, SAPPHIRE)
+        };
+
         let mut spans = Vec::with_capacity(5);
         if !indent.is_empty() {
             spans.push(Span::raw(indent));
         }
-        spans.push(Span::styled(
-            hash_part.to_string(),
-            Style::default().fg(OVERLAY0),
-        ));
+        spans.push(Span::styled(hash_part.to_string(), Style::default().fg(hash_fg)));
         spans.push(Span::raw(gap.to_string()));
-        spans.push(Span::styled(func.to_string(), Style::default().fg(TEAL)));
+        spans.push(Span::styled(func.to_string(), Style::default().fg(func_fg)));
         if !loc.is_empty() {
-            spans.push(Span::styled(loc.to_string(), Style::default().fg(SAPPHIRE)));
+            spans.push(Span::styled(loc.to_string(), Style::default().fg(loc_fg)));
         }
         return Line::from(spans);
     }
@@ -256,6 +291,32 @@ mod tests {
     }
 
     #[test]
+    fn prose_auto_highlights_http_line() {
+        let mut state = DetailState::default();
+        let section = Section::Prose("GET /api/users 200 (42ms)");
+        let rows = ProseRenderer.render(&section, 80, &mut state);
+        assert_eq!(rows.len(), 1);
+        // auto_highlight must split the line: method + path + status + duration
+        // should each land in their own span (4+ tokens, ≥4 spans with gaps).
+        assert!(
+            rows[0].line.spans.len() >= 4,
+            "expected multi-span line, got {} spans",
+            rows[0].line.spans.len()
+        );
+    }
+
+    #[test]
+    fn prose_auto_highlights_error_rest() {
+        // Even after the Error: keyword, trailing URL / status should be colored.
+        let mut state = DetailState::default();
+        let section = Section::Prose("Error: request https://api.example.com failed with 500");
+        let rows = ProseRenderer.render(&section, 200, &mut state);
+        assert_eq!(rows.len(), 1);
+        // Expect: keyword span + at least URL + status highlighted in the rest
+        assert!(rows[0].line.spans.len() >= 3);
+    }
+
+    #[test]
     fn stack_renderer_splits_frame_into_spans() {
         let mut state = DetailState::default();
         let section = Section::StackTrace(
@@ -282,6 +343,39 @@ mod tests {
         assert_eq!(rows.len(), 1);
         let text = rows[0].line.spans.iter().map(|s| s.content.clone()).collect::<String>();
         assert!(text.contains("× 3"));
+    }
+
+    #[test]
+    fn stack_renderer_dims_sdk_frames() {
+        let mut state = DetailState::default();
+        let section = Section::StackTrace(
+            "#0      _checkForErrorResponse (dart:io/common.dart:58:9)\n\
+             #1      MyApp.bootstrap (package:aura_lang_flutter/bootstrap.dart:23:7)\n\
+             #2      StatelessWidget.build (package:flutter/src/widgets/framework.dart:400:1)"
+        );
+        let rows = StackRenderer.render(&section, 80, &mut state);
+        assert_eq!(rows.len(), 3);
+
+        // Collect the location-span color from each frame row. User code uses
+        // SAPPHIRE; SDK frames use OVERLAY0.
+        let loc_colors: Vec<_> = rows
+            .iter()
+            .map(|r| r.line.spans.last().unwrap().style.fg)
+            .collect();
+        assert_eq!(loc_colors[0], Some(OVERLAY0)); // dart:* → dim
+        assert_eq!(loc_colors[1], Some(SAPPHIRE)); // user package → bright
+        assert_eq!(loc_colors[2], Some(OVERLAY0)); // package:flutter → dim
+    }
+
+    #[test]
+    fn sdk_frame_classifier() {
+        assert!(is_sdk_frame_loc("(dart:async/zone.dart:48:47)"));
+        assert!(is_sdk_frame_loc("(dart:io/common.dart:58:9)"));
+        assert!(is_sdk_frame_loc("(package:flutter/src/widgets/framework.dart:1:1)"));
+        assert!(is_sdk_frame_loc("(package:flutter_test/flutter_test.dart:1:1)"));
+        assert!(!is_sdk_frame_loc("(package:aura_lang_flutter/bootstrap.dart:23:7)"));
+        assert!(!is_sdk_frame_loc("(package:hive/src/backend_vm.dart:81:5)"));
+        assert!(!is_sdk_frame_loc("(package:dio/src/dio.dart:10:1)"));
     }
 
     #[test]
