@@ -33,8 +33,12 @@ pub enum ConnectionMethod {
 impl Device {
     pub fn connection_method(&self) -> ConnectionMethod {
         match &self.kind {
-            DeviceKind::Android => ConnectionMethod::AdbForward { serial: self.id.clone() },
-            DeviceKind::IosUsb { device_id } => ConnectionMethod::Usbmuxd { device_id: *device_id },
+            DeviceKind::Android => ConnectionMethod::AdbForward {
+                serial: self.id.clone(),
+            },
+            DeviceKind::IosUsb { device_id } => ConnectionMethod::Usbmuxd {
+                device_id: *device_id,
+            },
             DeviceKind::Local => ConnectionMethod::Localhost,
         }
     }
@@ -156,7 +160,11 @@ async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
                     }));
                 }
             }
-            let removed: Vec<String> = known.iter().filter(|s| !current.contains(*s)).cloned().collect();
+            let removed: Vec<String> = known
+                .iter()
+                .filter(|s| !current.contains(*s))
+                .cloned()
+                .collect();
             for serial in removed {
                 known.remove(&serial);
                 let _ = tx.send(DeviceEvent::Removed(serial));
@@ -201,7 +209,11 @@ async fn adb_getprop(serial: &str, prop: &str) -> Option<String> {
         .ok()?;
     if output.status.success() {
         let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if val.is_empty() { None } else { Some(val) }
+        if val.is_empty() {
+            None
+        } else {
+            Some(val)
+        }
     } else {
         None
     }
@@ -237,7 +249,8 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
         let (mut read_half, mut write_half) = stream.into_split();
 
         // Track usbmuxd DeviceID → serial, and known serials for dedup
-        let mut device_id_map: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        let mut device_id_map: std::collections::HashMap<u32, String> =
+            std::collections::HashMap::new();
         let mut known_serials: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         // Send Listen request
@@ -258,7 +271,9 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
         header.extend_from_slice(&1u32.to_le_bytes());
         header.extend_from_slice(&8u32.to_le_bytes());
         header.extend_from_slice(&1u32.to_le_bytes());
-        if write_half.write_all(&header).await.is_err() || write_half.write_all(&body).await.is_err() {
+        if write_half.write_all(&header).await.is_err()
+            || write_half.write_all(&body).await.is_err()
+        {
             continue;
         }
 
@@ -284,13 +299,27 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
                 None => continue,
             };
 
-            let msg_type = dict.get("MessageType").and_then(|v| v.as_string()).unwrap_or("");
+            let msg_type = dict
+                .get("MessageType")
+                .and_then(|v| v.as_string())
+                .unwrap_or("");
             match msg_type {
                 "Attached" => {
                     if let Some(props) = dict.get("Properties").and_then(|v| v.as_dictionary()) {
-                        let device_id = props.get("DeviceID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
-                        let serial = props.get("SerialNumber").and_then(|v| v.as_string()).unwrap_or("").to_string();
-                        let device_name = props.get("DeviceName").and_then(|v| v.as_string()).unwrap_or("").to_string();
+                        let device_id = props
+                            .get("DeviceID")
+                            .and_then(|v| v.as_unsigned_integer())
+                            .unwrap_or(0) as u32;
+                        let serial = props
+                            .get("SerialNumber")
+                            .and_then(|v| v.as_string())
+                            .unwrap_or("")
+                            .to_string();
+                        let device_name = props
+                            .get("DeviceName")
+                            .and_then(|v| v.as_string())
+                            .unwrap_or("")
+                            .to_string();
                         if !serial.is_empty() {
                             // Track DeviceID → serial mapping for Detached events
                             device_id_map.insert(device_id, serial.clone());
@@ -301,7 +330,8 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
                                     device_name
                                 } else {
                                     // Query lockdownd for real device name + model
-                                    super::usbmuxd::query_device_name(device_id).await
+                                    super::usbmuxd::query_device_name(device_id)
+                                        .await
                                         .unwrap_or_else(|| "iPhone".to_string())
                                 };
                                 let _ = tx.send(DeviceEvent::Added(Device {
@@ -314,7 +344,10 @@ async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
                     }
                 }
                 "Detached" => {
-                    let device_id = dict.get("DeviceID").and_then(|v| v.as_unsigned_integer()).unwrap_or(0) as u32;
+                    let device_id = dict
+                        .get("DeviceID")
+                        .and_then(|v| v.as_unsigned_integer())
+                        .unwrap_or(0) as u32;
                     // Look up serial by DeviceID, remove only when all connections for this serial are gone
                     if let Some(serial) = device_id_map.remove(&device_id) {
                         if !device_id_map.values().any(|s| s == &serial) {
@@ -341,12 +374,14 @@ async fn probe_localhost(tx: mpsc::UnboundedSender<DeviceEvent>, port: u16) {
 
     loop {
         // Quick TCP probe — just check if something is listening
-        let reachable = tokio::time::timeout(
-            std::time::Duration::from_millis(200),
-            tokio::net::TcpStream::connect(&addr),
-        )
-        .await
-        .is_ok();
+        let reachable = matches!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(200),
+                tokio::net::TcpStream::connect(&addr),
+            )
+            .await,
+            Ok(Ok(_))
+        );
 
         if reachable && !was_reachable {
             let name = detect_local_device_name().await;

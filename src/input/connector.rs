@@ -1,6 +1,9 @@
 //! WebSocket client that connects to flog_dart's server on a device.
 
-use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
+use futures_util::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
@@ -36,7 +39,12 @@ impl ConnectorHandle {
         headers: Option<String>,
         body: Option<String>,
     ) {
-        let msg = ServerMessage::Replay { method, url, headers, body };
+        let msg = ServerMessage::Replay {
+            method,
+            url,
+            headers,
+            body,
+        };
         if let Ok(json) = serde_json::to_string(&msg) {
             let _ = self.tx.send(json);
         }
@@ -97,24 +105,33 @@ where
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<String>();
 
-    // Read first message — should be Hello from the app
-    let client_info = match ws_read.next().await {
-        Some(Ok(Message::Text(text))) => {
-            match serde_json::from_str::<ClientMessage>(&text) {
-                Ok(ClientMessage::Hello { app, app_version, os, package_name, port, build_mode, .. }) => ClientInfo {
-                    id: 1,
-                    app,
-                    app_version: app_version.unwrap_or_default(),
-                    os,
-                    package_name: package_name.unwrap_or_default(),
-                    port: port.unwrap_or(0),
-                    build_mode: build_mode.unwrap_or_default(),
-                    connected_at: std::time::Instant::now(),
-                },
-                _ => return Err("First message was not Hello".into()),
-            }
-        }
-        _ => return Err("No Hello received".into()),
+    // Read first message — should be Hello from the app (3s timeout)
+    let client_info = match tokio::time::timeout(std::time::Duration::from_secs(3), ws_read.next())
+        .await
+    {
+        Ok(Some(Ok(Message::Text(text)))) => match serde_json::from_str::<ClientMessage>(&text) {
+            Ok(ClientMessage::Hello {
+                app,
+                app_version,
+                os,
+                package_name,
+                port,
+                build_mode,
+                ..
+            }) => ClientInfo {
+                id: 1,
+                app,
+                app_version: app_version.unwrap_or_default(),
+                os,
+                package_name: package_name.unwrap_or_default(),
+                port: port.unwrap_or(0),
+                build_mode: build_mode.unwrap_or_default(),
+                connected_at: std::time::Instant::now(),
+            },
+            _ => return Err("First message was not Hello".into()),
+        },
+        Ok(_) => return Err("No Hello received".into()),
+        Err(_) => return Err("Hello timeout (not a flog server?)".into()),
     };
 
     let _ = event_tx.send(ConnectorEvent::Connected(client_info));
