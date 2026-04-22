@@ -864,6 +864,13 @@ fn handle_detail_panel_click(app: &mut App, mouse: &MouseEvent) {
         MouseEventKind::ScrollUp => app.detail_scroll_up(SCROLL_LINES),
         MouseEventKind::ScrollDown => app.detail_scroll_down(SCROLL_LINES),
         MouseEventKind::Down(MouseButton::Left) => {
+            // [ c Copy ] pill pinned to the title row.
+            if let Some((btn_y, x0, x1)) = app.layout.detail_copy_btn {
+                if mouse.row == btn_y && mouse.column >= x0 && mouse.column < x1 {
+                    copy_current_log(app);
+                    return;
+                }
+            }
             let panel_row = mouse.row.saturating_sub(app.layout.list_y);
             let header = app.detail.header_lines.max(2) as u16;
             if panel_row >= header {

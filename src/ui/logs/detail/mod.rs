@@ -40,6 +40,7 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let store_idx = match app.selected_store_index() {
         Some(idx) => idx,
         None => {
+            app.layout.detail_copy_btn = None;
             let block = Block::default()
                 .title(" Details ")
                 .borders(Borders::LEFT)
@@ -168,9 +169,30 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
 
     let total_content = app.detail.header_lines + full_body_len;
 
+    // Clickable [ c Copy ] pill pinned to the right side of the title row.
+    // The BLUE pill sits on top of the border (y == area.y), so record its
+    // screen rect so the mouse handler can route hits to copy_current_log.
+    let copy_label = " Copy ";
+    let copy_w = copy_label.chars().count() as u16;
+    let copy_x_end = area.x + area.width;
+    let copy_x_start = copy_x_end.saturating_sub(copy_w);
+    app.layout.detail_copy_btn = Some((area.y, copy_x_start, copy_x_end));
+
     let block = Block::default()
-        .title(" Details ")
-        .title_style(Style::default().fg(BLUE).add_modifier(Modifier::BOLD))
+        .title(Span::styled(
+            " Details ",
+            Style::default().fg(BLUE).add_modifier(Modifier::BOLD),
+        ))
+        .title(
+            Line::from(Span::styled(
+                copy_label,
+                Style::default()
+                    .fg(MANTLE)
+                    .bg(SAPPHIRE)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .right_aligned(),
+        )
         .borders(Borders::LEFT)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(SURFACE0))

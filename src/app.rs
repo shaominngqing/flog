@@ -257,6 +257,8 @@ pub struct LayoutCache {
     pub net_detail_content_y: u16,
     /// Click region for [Mock] button in detail panel header: (y, x_start, x_end)
     pub detail_mock_btn: Option<(u16, u16, u16)>,
+    /// Click region for [Copy] button in Logs detail panel title: (y, x_start, x_end)
+    pub detail_copy_btn: Option<(u16, u16, u16)>,
     /// SSE pill line: (all_lines_index, header_text_width) for computing pill click positions.
     pub sse_pill_line: Option<(usize, usize)>,
     /// WS pill line: (all_lines_index, header_text_width) for computing pill click positions.
