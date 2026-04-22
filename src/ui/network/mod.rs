@@ -140,6 +140,7 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     app.layout.net_toolbar_y = rows[1].y;
+    app.layout.input_row_y = rows[1].y;
     app.layout.net_col_header_y = rows[4].y;
     app.layout.toolbar_y = rows[1].y;
     app.layout.list_y = rows[5].y;

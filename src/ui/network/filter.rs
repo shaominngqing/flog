@@ -11,10 +11,9 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
-use crate::ui::safe_pad;
 
 use super::super::{
-    BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, RED, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
+    BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, RED, SUBTEXT0, SURFACE1, YELLOW,
 };
 
 /// Render a filter pill: selected = bright colored bg, unselected = outline only (MANTLE bg).
@@ -35,52 +34,71 @@ fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'
     }
 }
 
-/// Row 1: "/" + search box + (right-aligned) count.
+/// Row 1: Search + Exclude input fields + (right-aligned) count.
 pub fn draw_network_op1(f: &mut Frame, app: &mut App, area: Rect, count: usize, total: usize) {
+    use crate::app::{AppMode, InputField};
+    use crate::ui::input_field::{render_input_field, InputFieldProps};
+
     let bg = MANTLE;
     let w = area.width as u16;
-    let is_searching = app.network.search_active;
 
-    let mut spans: Vec<Span> = Vec::new();
-    spans.push(Span::styled(" ", Style::default().bg(bg)));
-
-    let si = if is_searching {
-        Style::default().fg(MANTLE).bg(YELLOW)
-    } else {
-        Style::default().fg(OVERLAY0).bg(bg)
-    };
-    spans.push(Span::styled("/", si));
-
-    let sw: usize = 40;
-    let s = if is_searching {
-        format!("{}_", app.network.search_input)
-    } else if app.network.filter.search.is_empty() {
-        "filter url...".to_string()
-    } else {
-        app.network.filter.search.clone()
-    };
-    let ss = if is_searching {
-        Style::default().fg(TEXT).bg(SURFACE0)
-    } else if !app.network.filter.search.is_empty() {
-        Style::default().fg(YELLOW).bg(bg)
-    } else {
-        Style::default().fg(OVERLAY0).bg(bg)
-    };
-    app.layout.net_search_x = (1, 1 + 1 + sw as u16);
-    spans.push(Span::styled(safe_pad(&s, sw), ss));
-
-    let used: u16 = spans.iter().map(|x| x.content.width() as u16).sum();
+    // Reserve right side for count text
     let count_text = format!(" {}/{} ", count, total);
     let cw = count_text.width() as u16;
+
+    let avail = w.saturating_sub(cw + 1);
+    let gap: u16 = 1;
+    let inner = avail.saturating_sub(gap);
+    let per = inner / 2;
+    let widths = [per, inner - per];
+
+    let mut spans: Vec<Span> = Vec::new();
+    let mut x: u16 = 0;
+
+    let fields: [(InputField, &str, &str); 2] = [
+        (InputField::NetSearch, "Search", "(a|b)"),
+        (InputField::NetExclude, "Exclude", "(a|b)"),
+    ];
+
+    for (i, (field, label, hint)) in fields.iter().enumerate() {
+        let active = matches!(app.mode, AppMode::InputActive(f) if f == *field);
+        let value = app.inputs.buffer(*field).to_string();
+        let cursor_byte = app.inputs.cursor(*field);
+
+        let out = render_input_field(
+            InputFieldProps {
+                label,
+                hint,
+                value: &value,
+                active,
+                cursor_byte,
+                total_width: widths[i],
+            },
+            x,
+        );
+
+        match field {
+            InputField::NetSearch => app.layout.net_search_x = out.hit_x,
+            InputField::NetExclude => app.layout.net_exclude_x = out.hit_x,
+            _ => {}
+        }
+
+        spans.extend(out.spans);
+        x += out.used_width;
+
+        if i < 1 {
+            spans.push(Span::styled(" ".repeat(gap as usize), Style::default().bg(bg)));
+            x += gap;
+        }
+    }
+
+    // Pad then count (right-aligned)
+    let used: u16 = spans.iter().map(|s| s.content.width() as u16).sum();
     let pad = w.saturating_sub(used + cw);
-    spans.push(Span::styled(
-        " ".repeat(pad as usize),
-        Style::default().bg(bg),
-    ));
-    spans.push(Span::styled(
-        count_text,
-        Style::default().fg(SUBTEXT0).bg(bg),
-    ));
+    if pad > 0 {
+        spans.push(Span::styled(" ".repeat(pad as usize), Style::default().bg(bg)));
+    }
+    spans.push(Span::styled(count_text, Style::default().fg(SUBTEXT0).bg(bg)));
 
     f.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
