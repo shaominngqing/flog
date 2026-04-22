@@ -1169,7 +1169,7 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
         if app.network.search_active {
             match key.code {
                 KeyCode::Enter => {
-                    app.network.filter.search = app.network.search_input.clone();
+                    app.network.filter.set_search(&app.network.search_input);
                     app.network.search_active = false;
                     app.network.invalidate_filter();
                 }
