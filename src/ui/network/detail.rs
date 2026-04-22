@@ -988,6 +988,8 @@ fn render_json_section(
 /// Like [`render_json_section`] but overrides the initial expansion depth.
 /// Use `0` to show only the root expanded (e.g. for headers where metadata
 /// is usually collapsed by default).
+// Phase 3 redesign — see Audit UI-037: extract parameter struct.
+#[allow(clippy::too_many_arguments)]
 fn render_json_section_with_depth(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,

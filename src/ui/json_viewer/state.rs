@@ -46,37 +46,6 @@ pub fn toggle(tree: &Tree, state: &mut JsonViewerState, node_id: u32) -> bool {
     true
 }
 
-/// Expand every container. Auto-resizes `state.expanded` to match the tree
-/// so a stale (shorter) state won't panic — it just extends with `false`.
-#[allow(dead_code)]
-pub fn expand_all(tree: &Tree, state: &mut JsonViewerState) {
-    if state.expanded.len() < tree.nodes.len() {
-        state.expanded.resize(tree.nodes.len(), false);
-    }
-    for (i, node) in tree.nodes.iter().enumerate() {
-        if matches!(node.kind, NodeKind::Object | NodeKind::Array) {
-            state.expanded[i] = true;
-        }
-    }
-}
-
-/// Collapse every container **except the root** — the root stays expanded
-/// so the panel always shows at least its top-level keys (otherwise the
-/// user sees just `{…}` with nothing clickable).
-///
-/// Auto-resizes `state.expanded` to match the tree, same as `expand_all`.
-#[allow(dead_code)]
-pub fn collapse_all(tree: &Tree, state: &mut JsonViewerState) {
-    if state.expanded.len() < tree.nodes.len() {
-        state.expanded.resize(tree.nodes.len(), false);
-    }
-    for (i, node) in tree.nodes.iter().enumerate() {
-        if matches!(node.kind, NodeKind::Object | NodeKind::Array) {
-            state.expanded[i] = i == 0;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::tree::parse;
@@ -123,41 +92,5 @@ mod tests {
         let t = parse(r#"{}"#).unwrap();
         let mut s = init_state(&t, 0);
         assert!(!toggle(&t, &mut s, 99));
-    }
-
-    #[test]
-    fn expand_all_sets_all_containers() {
-        let t = parse(r#"{"a": {"b": {"c": 1}}}"#).unwrap();
-        let mut s = init_state(&t, 0);
-        expand_all(&t, &mut s);
-        assert!(s.expanded[0]);
-        assert!(s.expanded[1]);
-        assert!(s.expanded[2]);
-    }
-
-    #[test]
-    fn collapse_all_leaves_root_expanded() {
-        let t = parse(r#"{"a": {"b": 1}}"#).unwrap();
-        let mut s = init_state(&t, 5);
-        collapse_all(&t, &mut s);
-        assert!(s.expanded[0]); // root stays
-        assert!(!s.expanded[1]); // a collapses
-    }
-
-    #[test]
-    fn bulk_ops_tolerate_stale_shorter_state() {
-        // Build state against a small tree, then use it with a larger tree.
-        let small = parse("{}").unwrap();
-        let mut s = init_state(&small, 5);
-        assert_eq!(s.expanded.len(), 1);
-        let big = parse(r#"{"a": {"b": 1}}"#).unwrap();
-        // Must not panic; must resize.
-        expand_all(&big, &mut s);
-        assert_eq!(s.expanded.len(), big.nodes.len());
-        assert!(s.expanded[0]); // root
-        assert!(s.expanded[1]); // "a" object
-        collapse_all(&big, &mut s);
-        assert!(s.expanded[0]);
-        assert!(!s.expanded[1]);
     }
 }

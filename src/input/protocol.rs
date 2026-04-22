@@ -19,6 +19,11 @@ pub struct ClientInfo {
 }
 
 /// Messages from Dart client → flog server (upstream).
+// Phase 3 redesign — see Audit (Transport step): decide whether to box
+// FlogNetMessage. Net variant is ~352 bytes, Hello ~148 bytes. Current
+// layout favors cache locality and no allocation per message, at the cost
+// of padding all variants to 352 bytes.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {

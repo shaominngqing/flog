@@ -41,7 +41,7 @@ pub fn draw_network_op1(f: &mut Frame, app: &mut App, area: Rect, count: usize, 
     use crate::ui::input_field::{render_input_field, InputFieldProps};
 
     let bg = MANTLE;
-    let w = area.width as u16;
+    let w = area.width;
 
     // Reserve right side for count text
     let count_text = format!(" {}/{} ", count, total);
@@ -88,7 +88,10 @@ pub fn draw_network_op1(f: &mut Frame, app: &mut App, area: Rect, count: usize, 
         x += out.used_width;
 
         if i + 1 < fields.len() {
-            spans.push(Span::styled(" ".repeat(gap as usize), Style::default().bg(bg)));
+            spans.push(Span::styled(
+                " ".repeat(gap as usize),
+                Style::default().bg(bg),
+            ));
             x += gap;
         }
     }
@@ -97,9 +100,15 @@ pub fn draw_network_op1(f: &mut Frame, app: &mut App, area: Rect, count: usize, 
     let used: u16 = spans.iter().map(|s| s.content.width() as u16).sum();
     let pad = w.saturating_sub(used + cw);
     if pad > 0 {
-        spans.push(Span::styled(" ".repeat(pad as usize), Style::default().bg(bg)));
+        spans.push(Span::styled(
+            " ".repeat(pad as usize),
+            Style::default().bg(bg),
+        ));
     }
-    spans.push(Span::styled(count_text, Style::default().fg(SUBTEXT0).bg(bg)));
+    spans.push(Span::styled(
+        count_text,
+        Style::default().fg(SUBTEXT0).bg(bg),
+    ));
 
     f.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),

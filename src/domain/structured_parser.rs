@@ -458,11 +458,11 @@ mod tests {
 
     #[test]
     fn typed_bare_literals() {
-        let v = parse_str("{a: null, b: true, c: false, d: 3.14}");
+        let v = parse_str("{a: null, b: true, c: false, d: 3.25}");
         assert!(v["a"].is_null());
         assert_eq!(v["b"], true);
         assert_eq!(v["c"], false);
-        assert!((v["d"].as_f64().unwrap() - 3.14).abs() < 1e-9);
+        assert!((v["d"].as_f64().unwrap() - 3.25).abs() < 1e-9);
     }
 
     #[test]

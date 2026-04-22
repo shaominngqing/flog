@@ -46,13 +46,3 @@ pub async fn remove_forward(serial: &str, local_port: u16) {
         .output()
         .await;
 }
-
-/// Check if adb is available.
-pub async fn is_available() -> bool {
-    Command::new("adb")
-        .arg("version")
-        .output()
-        .await
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}

@@ -10,9 +10,9 @@ use super::{MANTLE, OVERLAY0, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW};
 
 /// Inputs for rendering one input field.
 pub struct InputFieldProps<'a> {
-    pub label: &'a str,           // e.g., "Search"
-    pub hint: &'a str,            // e.g., "(a|b)" shown when idle+empty
-    pub value: &'a str,           // full buffer
+    pub label: &'a str, // e.g., "Search"
+    pub hint: &'a str,  // e.g., "(a|b)" shown when idle+empty
+    pub value: &'a str, // full buffer
     pub active: bool,
     /// Cursor byte offset into `value` (ignored when !active).
     pub cursor_byte: usize,

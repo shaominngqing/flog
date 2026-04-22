@@ -268,6 +268,12 @@ impl NetworkState {
     }
 }
 
+impl Default for NetworkState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// UI layout coordinate cache (written by renderer, read by event handler).
 #[derive(Default)]
 pub struct LayoutCache {
@@ -353,7 +359,6 @@ pub struct LayoutCache {
 // ── App ──
 
 /// Per-app data that gets swapped when switching between connected apps.
-
 /// Info about a connected app.
 #[derive(Clone)]
 pub struct ConnectedApp {
@@ -1149,6 +1154,12 @@ impl App {
             }
         }
         None
+    }
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

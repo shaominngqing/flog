@@ -160,18 +160,6 @@ impl LogLineParser for GenericParser {
 
         None
     }
-
-    fn try_continuation(&self, line: &str) -> Option<String> {
-        let caps = FLUTTER_PLAIN_RE.captures(line)?;
-        let raw = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-        let content = ANSI_RE.replace_all(raw, "").to_string();
-
-        // Indented content that doesn't match [LEVEL] format → continuation
-        if content.starts_with("  ") && !BRACKET_LEVEL_RE.is_match(content.trim_start()) {
-            return Some(content);
-        }
-        None
-    }
 }
 
 #[cfg(test)]
@@ -240,47 +228,6 @@ mod tests {
         let entry = p.try_parse("I/System.out(1234): some output").unwrap();
         assert_eq!(entry.tag, "System.out");
         assert_eq!(entry.level, LogLevel::Info);
-    }
-
-    // ── Continuation tests ──
-
-    #[test]
-    fn continuation_indented_query() {
-        let p = GenericParser;
-        let line = "I/flutter (20294):   query: {_productId: 66000001}";
-        let cont = p.try_continuation(line).unwrap();
-        assert!(cont.contains("query"));
-    }
-
-    #[test]
-    fn continuation_indented_body() {
-        let p = GenericParser;
-        let line = "I/flutter (20294):   body:  {messages: [{role: user}]}";
-        let cont = p.try_continuation(line).unwrap();
-        assert!(cont.contains("body"));
-    }
-
-    #[test]
-    fn no_continuation_for_bracket_level() {
-        let p = GenericParser;
-        // [INFO][Clog] lines should NOT be treated as continuation
-        let line = "I/flutter (20294): [INFO][Clog] /network/request {status: 200}";
-        assert!(p.try_continuation(line).is_none());
-    }
-
-    #[test]
-    fn no_continuation_for_non_indented() {
-        let p = GenericParser;
-        let line = "I/flutter (20294): some plain message";
-        assert!(p.try_continuation(line).is_none());
-    }
-
-    #[test]
-    fn continuation_vm_service_indented() {
-        let p = GenericParser;
-        let line = "flutter:   query: {version: 1.0.0}";
-        let cont = p.try_continuation(line).unwrap();
-        assert!(cont.contains("query"));
     }
 
     // VM Service stdout format tests (flutter: prefix instead of I/flutter (PID):)

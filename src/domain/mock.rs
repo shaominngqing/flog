@@ -124,6 +124,7 @@ impl MockRuleStore {
     }
 
     /// Number of enabled rules.
+    #[cfg(test)]
     pub fn enabled_count(&self) -> usize {
         self.rules.iter().filter(|r| r.enabled).count()
     }

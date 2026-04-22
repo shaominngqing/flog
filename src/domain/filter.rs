@@ -236,7 +236,7 @@ impl FilterState {
         self.compiled_tag_exclude.clear();
         self.tag_regex = input.contains('*') || input.contains('.');
 
-        for part in input.split(|c: char| c == ',' || c == '|') {
+        for part in input.split([',', '|']) {
             let trimmed = part.trim();
             if trimmed.is_empty() {
                 continue;
@@ -296,7 +296,11 @@ mod tests {
 
     #[test]
     fn matches_multi_plain_or() {
-        let parts = vec!["timeout".to_string(), "500".to_string(), "refused".to_string()];
+        let parts = vec![
+            "timeout".to_string(),
+            "500".to_string(),
+            "refused".to_string(),
+        ];
         assert!(matches_multi(None, &parts, "got 500 from server"));
         assert!(matches_multi(None, &parts, "connection refused"));
         assert!(!matches_multi(None, &parts, "ok 200"));

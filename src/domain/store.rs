@@ -45,14 +45,6 @@ impl LogStore {
         drained
     }
 
-    /// Append a continuation line to the most recent entry.
-    #[allow(dead_code)]
-    pub fn append_continuation(&mut self, content: String) {
-        if let Some(last) = self.entries.back_mut() {
-            last.extra_lines.push(content);
-        }
-    }
-
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -68,8 +60,10 @@ impl LogStore {
     pub fn iter(&self) -> impl Iterator<Item = &LogEntry> {
         self.entries.iter()
     }
+}
 
-    pub fn clear(&mut self) {
-        self.entries.clear();
+impl Default for LogStore {
+    fn default() -> Self {
+        Self::new()
     }
 }

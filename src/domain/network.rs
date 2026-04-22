@@ -9,17 +9,6 @@ pub enum Protocol {
     Ws,
 }
 
-impl Protocol {
-    #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Http => "HTTP",
-            Self::Sse => "SSE",
-            Self::Ws => "WS",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkStatus {
     Pending,
@@ -37,7 +26,6 @@ pub enum WsDirection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntrySource {
     App,
-    #[allow(dead_code)]
     Replay,
     Mocked,
 }
@@ -64,7 +52,6 @@ pub struct WsMessage {
 pub struct NetworkEntry {
     pub id: u64,
     pub protocol: Protocol,
-    #[allow(dead_code)]
     pub timestamp: String,
     pub method: String,
     pub url: String,

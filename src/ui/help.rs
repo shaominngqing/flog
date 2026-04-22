@@ -295,15 +295,24 @@ pub fn draw_help(f: &mut Frame) {
         Span::styled(" D ", Style::default().fg(TEXT).bg(SURFACE0)),
         Span::styled(
             " I ",
-            Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(MANTLE)
+                .bg(BLUE)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             " W ",
-            Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(MANTLE)
+                .bg(YELLOW)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             " E ",
-            Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(MANTLE)
+                .bg(RED)
+                .add_modifier(Modifier::BOLD),
         ),
         dim("  (row 2) to set minimum level"),
     ]));

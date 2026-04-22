@@ -473,21 +473,6 @@ fn draw_empty_network(f: &mut Frame, app: &mut App, area: Rect) {
 //  Status Bar
 // ══════════════════════════════════════
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_duration_color() {
-        assert_eq!(duration_color(100), GREEN);
-        assert_eq!(duration_color(500), GREEN);
-        assert_eq!(duration_color(501), YELLOW);
-        assert_eq!(duration_color(1000), YELLOW);
-        assert_eq!(duration_color(1001), RED);
-        assert_eq!(duration_color(5000), RED);
-    }
-}
-
 fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
 
@@ -697,4 +682,19 @@ fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
         area,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_duration_color() {
+        assert_eq!(duration_color(100), GREEN);
+        assert_eq!(duration_color(500), GREEN);
+        assert_eq!(duration_color(501), YELLOW);
+        assert_eq!(duration_color(1000), YELLOW);
+        assert_eq!(duration_color(1001), RED);
+        assert_eq!(duration_color(5000), RED);
+    }
 }

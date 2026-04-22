@@ -602,6 +602,39 @@ proposed_action: |
 risk: low
 ```
 
+```yaml
+id: DOM-025
+label: D
+location: src/domain/network.rs SseChunk + WsMessage
+title: SseChunk.seq/size/timestamp and WsMessage.timestamp are write-only fields
+evidence: |
+  Discovered during Phase 2 Task 2 execution.
+  Fields constructed at src/domain/network_store.rs (SseChunk.seq,
+  SseChunk.size, SseChunk.timestamp) and WsMessage.timestamp, but grep
+  shows zero read sites anywhere in src/. The Phase 2 subagent
+  correctly refused to delete them (would require protocol payload
+  shape decision) and restored the #[allow(dead_code)] markers.
+
+  The originating audit entry DOM-009 claimed these were live based on
+  a pattern match for `.timestamp` / `.size` that was actually hitting
+  different types (LogEntry.timestamp, NetworkEntry.timestamp,
+  WsMessage.size — the LAST of which IS live). The SseChunk.seq/size/
+  timestamp and WsMessage.timestamp triad is truly write-only.
+proposed_action: |
+  Phase 3 (Domain step) decide:
+  Option 1: remove fields + remove the corresponding payload fields in
+    the WS protocol (FlogNetMessage chunk/message variants). This is a
+    protocol shape change — verify with flog_dart that it does not rely
+    on the fields either.
+  Option 2: wire the fields into rendering. WsMessage.timestamp could
+    show per-message timestamps in the WS chat view.
+  Option 3: rename `seq` to `_seq` (etc.) and keep as reserved — not
+    ideal, just documentation-as-code.
+  Recommended: Option 1 — write-only protocol fields are a symptom of a
+    protocol that evolved faster than consumers. Prune them.
+risk: low
+```
+
 ## Summary
 
 | label | count |
@@ -609,5 +642,5 @@ risk: low
 | A | 5 |
 | B | 2 |
 | C | 0 |
-| D | 13 |
+| D | 14 |
 | E | 4 |

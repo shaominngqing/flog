@@ -23,6 +23,8 @@ impl LogLevel {
         }
     }
 
+    // Phase 3 redesign — see Audit DOM (entry.rs): implement std::str::FromStr.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.trim().to_uppercase().as_str() {
             "VERBOSE" | "V" => Some(Self::Verbose),
@@ -121,8 +123,6 @@ impl LogEntry {
 pub enum ParseResult {
     /// A new log entry was recognized.
     NewEntry(LogEntry),
-    /// A continuation line belonging to the previous entry.
-    Continuation(String),
     /// The line was not recognized / should be ignored.
     Ignored,
 }

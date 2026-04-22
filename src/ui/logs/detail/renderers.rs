@@ -34,7 +34,12 @@ fn row(line: Line<'static>) -> RenderRow {
 pub struct ProseRenderer;
 
 impl SectionRenderer for ProseRenderer {
-    fn render(&self, section: &Section, inner_w: usize, _state: &mut DetailState) -> Vec<RenderRow> {
+    fn render(
+        &self,
+        section: &Section,
+        inner_w: usize,
+        _state: &mut DetailState,
+    ) -> Vec<RenderRow> {
         let Section::Prose(text) = section else {
             return Vec::new();
         };
@@ -90,7 +95,12 @@ fn style_prose_line(text: String) -> Line<'static> {
 pub struct HeadingRenderer;
 
 impl SectionRenderer for HeadingRenderer {
-    fn render(&self, section: &Section, inner_w: usize, _state: &mut DetailState) -> Vec<RenderRow> {
+    fn render(
+        &self,
+        section: &Section,
+        inner_w: usize,
+        _state: &mut DetailState,
+    ) -> Vec<RenderRow> {
         let Section::Heading(text) = section else {
             return Vec::new();
         };
@@ -99,17 +109,12 @@ impl SectionRenderer for HeadingRenderer {
         let label = text.trim_matches(['─', ' ']);
         let label_span = Span::styled(
             format!(" {} ", label),
-            Style::default()
-                .fg(MAUVE)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
         );
         let left = Span::styled("── ", Style::default().fg(SURFACE0));
         let label_w = 3 + label.chars().count() + 2 + 3;
         let right_w = inner_w.saturating_sub(label_w);
-        let right = Span::styled(
-            "─".repeat(right_w.max(3)),
-            Style::default().fg(SURFACE0),
-        );
+        let right = Span::styled("─".repeat(right_w.max(3)), Style::default().fg(SURFACE0));
         vec![
             row(Line::from("")),
             row(Line::from(vec![left, label_span, right])),
@@ -122,7 +127,12 @@ impl SectionRenderer for HeadingRenderer {
 pub struct StackRenderer;
 
 impl SectionRenderer for StackRenderer {
-    fn render(&self, section: &Section, inner_w: usize, _state: &mut DetailState) -> Vec<RenderRow> {
+    fn render(
+        &self,
+        section: &Section,
+        inner_w: usize,
+        _state: &mut DetailState,
+    ) -> Vec<RenderRow> {
         let Section::StackTrace(text) = section else {
             return Vec::new();
         };
@@ -173,15 +183,12 @@ fn style_stack_line(line: &str, _inner_w: usize) -> Line<'static> {
     // SDK frames (dart:*, package:flutter*) get rendered in OVERLAY0 across the
     // board so user-code frames visually pop.
     let trimmed = line.trim_start();
-    if trimmed.starts_with('#') {
+    if let Some(stripped) = trimmed.strip_prefix('#') {
         let indent_len = line.len() - trimmed.len();
         let indent: String = line.chars().take(indent_len).collect();
 
         // hash + digits
-        let hash_digits_end = 1 + trimmed[1..]
-            .chars()
-            .take_while(|c| c.is_ascii_digit())
-            .count();
+        let hash_digits_end = 1 + stripped.chars().take_while(|c| c.is_ascii_digit()).count();
         let (hash_part, after_num) = trimmed.split_at(hash_digits_end);
 
         // whitespace gap
@@ -212,7 +219,10 @@ fn style_stack_line(line: &str, _inner_w: usize) -> Line<'static> {
         if !indent.is_empty() {
             spans.push(Span::raw(indent));
         }
-        spans.push(Span::styled(hash_part.to_string(), Style::default().fg(hash_fg)));
+        spans.push(Span::styled(
+            hash_part.to_string(),
+            Style::default().fg(hash_fg),
+        ));
         spans.push(Span::raw(gap.to_string()));
         spans.push(Span::styled(func.to_string(), Style::default().fg(func_fg)));
         if !loc.is_empty() {
@@ -257,7 +267,7 @@ impl SectionRenderer for JsonRenderer {
 
         lines
             .into_iter()
-            .zip(click_map.into_iter())
+            .zip(click_map)
             .map(|(line, slot)| RenderRow {
                 line,
                 click_target: slot.map(|(_, id)| id),
@@ -336,12 +346,17 @@ mod tests {
         let section = Section::StackTrace(
             "#0      Foo._emit (package:app/foo.dart:25:3)\n\
              #1      Foo._emit (package:app/foo.dart:25:3)\n\
-             #2      Foo._emit (package:app/foo.dart:25:3)"
+             #2      Foo._emit (package:app/foo.dart:25:3)",
         );
         let rows = StackRenderer.render(&section, 80, &mut state);
         // collapse_stack_frames compresses 3 identical frames into 1 "× 3" row.
         assert_eq!(rows.len(), 1);
-        let text = rows[0].line.spans.iter().map(|s| s.content.clone()).collect::<String>();
+        let text = rows[0]
+            .line
+            .spans
+            .iter()
+            .map(|s| s.content.clone())
+            .collect::<String>();
         assert!(text.contains("× 3"));
     }
 
@@ -351,7 +366,7 @@ mod tests {
         let section = Section::StackTrace(
             "#0      _checkForErrorResponse (dart:io/common.dart:58:9)\n\
              #1      MyApp.bootstrap (package:aura_lang_flutter/bootstrap.dart:23:7)\n\
-             #2      StatelessWidget.build (package:flutter/src/widgets/framework.dart:400:1)"
+             #2      StatelessWidget.build (package:flutter/src/widgets/framework.dart:400:1)",
         );
         let rows = StackRenderer.render(&section, 80, &mut state);
         assert_eq!(rows.len(), 3);
@@ -371,9 +386,15 @@ mod tests {
     fn sdk_frame_classifier() {
         assert!(is_sdk_frame_loc("(dart:async/zone.dart:48:47)"));
         assert!(is_sdk_frame_loc("(dart:io/common.dart:58:9)"));
-        assert!(is_sdk_frame_loc("(package:flutter/src/widgets/framework.dart:1:1)"));
-        assert!(is_sdk_frame_loc("(package:flutter_test/flutter_test.dart:1:1)"));
-        assert!(!is_sdk_frame_loc("(package:aura_lang_flutter/bootstrap.dart:23:7)"));
+        assert!(is_sdk_frame_loc(
+            "(package:flutter/src/widgets/framework.dart:1:1)"
+        ));
+        assert!(is_sdk_frame_loc(
+            "(package:flutter_test/flutter_test.dart:1:1)"
+        ));
+        assert!(!is_sdk_frame_loc(
+            "(package:aura_lang_flutter/bootstrap.dart:23:7)"
+        ));
         assert!(!is_sdk_frame_loc("(package:hive/src/backend_vm.dart:81:5)"));
         assert!(!is_sdk_frame_loc("(package:dio/src/dio.dart:10:1)"));
     }

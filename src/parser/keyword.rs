@@ -60,10 +60,6 @@ impl LogLineParser for KeywordParser {
             stacktrace: None,
         })
     }
-
-    fn try_continuation(&self, _line: &str) -> Option<String> {
-        None
-    }
 }
 
 #[cfg(test)]

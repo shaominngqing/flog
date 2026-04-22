@@ -8,58 +8,6 @@ mod imp {
     const USBMUXD_SOCKET: &str = "/var/run/usbmuxd";
     const HEADER_SIZE: usize = 16;
 
-    #[derive(Debug, Clone)]
-    pub struct UsbDevice {
-        pub device_id: u32,
-        pub serial_number: String,
-    }
-
-    pub async fn list_devices() -> Result<Vec<UsbDevice>, Box<dyn std::error::Error + Send + Sync>>
-    {
-        let mut stream = UnixStream::connect(USBMUXD_SOCKET).await?;
-
-        let request = plist::Value::Dictionary({
-            let mut d = plist::Dictionary::new();
-            d.insert("MessageType".into(), "ListDevices".into());
-            d.insert("ClientVersionString".into(), "flog".into());
-            d.insert("ProgName".into(), "flog".into());
-            d
-        });
-        send_plist(&mut stream, &request, 1).await?;
-
-        let (_, response) = recv_plist(&mut stream).await?;
-
-        let mut devices = Vec::new();
-        if let Some(plist::Value::Array(list)) =
-            response.as_dictionary().and_then(|d| d.get("DeviceList"))
-        {
-            for dev in list {
-                if let Some(props) = dev
-                    .as_dictionary()
-                    .and_then(|d| d.get("Properties"))
-                    .and_then(|p| p.as_dictionary())
-                {
-                    let device_id = props
-                        .get("DeviceID")
-                        .and_then(|v| v.as_unsigned_integer())
-                        .unwrap_or(0) as u32;
-                    let serial = props
-                        .get("SerialNumber")
-                        .and_then(|v| v.as_string())
-                        .unwrap_or("")
-                        .to_string();
-                    if !serial.is_empty() {
-                        devices.push(UsbDevice {
-                            device_id,
-                            serial_number: serial,
-                        });
-                    }
-                }
-            }
-        }
-        Ok(devices)
-    }
-
     pub async fn connect_device(
         device_id: u32,
         port: u16,
@@ -221,17 +169,6 @@ pub use imp::*;
 // Stub for non-macOS platforms
 #[cfg(not(target_os = "macos"))]
 pub mod imp {
-    #[derive(Debug, Clone)]
-    pub struct UsbDevice {
-        pub device_id: u32,
-        pub serial_number: String,
-    }
-
-    pub async fn list_devices() -> Result<Vec<UsbDevice>, Box<dyn std::error::Error + Send + Sync>>
-    {
-        Ok(Vec::new())
-    }
-
     pub async fn connect_device(
         _device_id: u32,
         _port: u16,

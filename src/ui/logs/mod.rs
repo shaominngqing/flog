@@ -20,8 +20,8 @@ use highlight::auto_highlight;
 
 // Import shared palette from parent
 use super::{
-    safe_pad, wrap_text, BASE, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, PINK, RED,
-    SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
+    safe_pad, wrap_text, BASE, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, PINK, RED, SAPPHIRE,
+    SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
 };
 
 // Logs-specific colors
@@ -183,7 +183,7 @@ fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::ui::input_field::{render_input_field, InputFieldProps};
 
     let bg = MANTLE;
-    let w = area.width as u16;
+    let w = area.width;
 
     // Split width into 3 equal-ish slices for Search | Exclude | Tag, with 4-col gaps.
     let gap: u16 = 4;
@@ -233,7 +233,10 @@ fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
         x += out.used_width;
 
         if i < 2 {
-            spans.push(Span::styled(" ".repeat(gap as usize), Style::default().bg(bg)));
+            spans.push(Span::styled(
+                " ".repeat(gap as usize),
+                Style::default().bg(bg),
+            ));
             x += gap;
         }
     }
@@ -264,7 +267,10 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
 
     // "Level: " label
     let level_label = "Level: ";
-    spans.push(Span::styled(level_label, Style::default().fg(SUBTEXT0).bg(bg)));
+    spans.push(Span::styled(
+        level_label,
+        Style::default().fg(SUBTEXT0).bg(bg),
+    ));
     x += level_label.width() as u16;
 
     app.layout.levels_x = x;
@@ -314,7 +320,10 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
     let cw = count_text.width() as u16;
     spans.push(Span::styled(
         count_text,
-        Style::default().fg(TEXT).bg(bg).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(TEXT)
+            .bg(bg)
+            .add_modifier(Modifier::BOLD),
     ));
     x += cw;
 
@@ -328,15 +337,14 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(SUBTEXT0).bg(bg),
         ));
         x += match_label.width() as u16;
-        let match_text = format!(
-            "{}/{}",
-            app.search.match_idx + 1,
-            app.search.matches.len()
-        );
+        let match_text = format!("{}/{}", app.search.match_idx + 1, app.search.matches.len());
         let mw = match_text.width() as u16;
         spans.push(Span::styled(
             match_text,
-            Style::default().fg(YELLOW).bg(bg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(YELLOW)
+                .bg(bg)
+                .add_modifier(Modifier::BOLD),
         ));
         x += mw;
     }

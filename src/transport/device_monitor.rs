@@ -244,9 +244,11 @@ mod adb_source {
             || getprop(serial, "ro.kernel.qemu").await.as_deref() == Some("1");
 
         if is_emulator {
-            let avd = getprop(serial, "ro.boot.qemu.avd_name")
-                .await
-                .or(getprop(serial, "ro.kernel.qemu.avd_name").await);
+            let avd = getprop(serial, "ro.boot.qemu.avd_name").await.or(getprop(
+                serial,
+                "ro.kernel.qemu.avd_name",
+            )
+            .await);
             let api = getprop(serial, "ro.build.version.sdk").await;
             return match (avd, api) {
                 (Some(a), Some(api)) => format!("{} (API {}, Emulator)", a.replace('_', " "), api),
@@ -579,10 +581,11 @@ mod local_source {
         use tokio_tungstenite::tungstenite::Message;
 
         let url = format!("ws://127.0.0.1:{}", port);
-        let (ws, _) = tokio::time::timeout(HANDSHAKE_TIMEOUT, tokio_tungstenite::connect_async(&url))
-            .await
-            .ok()?
-            .ok()?;
+        let (ws, _) =
+            tokio::time::timeout(HANDSHAKE_TIMEOUT, tokio_tungstenite::connect_async(&url))
+                .await
+                .ok()?
+                .ok()?;
         let (_sink, mut read) = ws.split();
 
         let first = tokio::time::timeout(HANDSHAKE_TIMEOUT, read.next())

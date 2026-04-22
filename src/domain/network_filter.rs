@@ -23,28 +23,6 @@ impl StatusFilter {
             Self::Failed => status == NetworkStatus::Failed,
         }
     }
-
-    #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Pending => "Pending",
-            Self::Active => "Active",
-            Self::Completed => "Completed",
-            Self::Failed => "Failed",
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn next(&self) -> Self {
-        match self {
-            Self::All => Self::Completed,
-            Self::Completed => Self::Failed,
-            Self::Failed => Self::Pending,
-            Self::Pending => Self::Active,
-            Self::Active => Self::All,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,30 +46,6 @@ impl MethodFilter {
             Self::Patch => method.eq_ignore_ascii_case("PATCH"),
         }
     }
-
-    #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Get => "GET",
-            Self::Post => "POST",
-            Self::Put => "PUT",
-            Self::Delete => "DELETE",
-            Self::Patch => "PATCH",
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn next(&self) -> Self {
-        match self {
-            Self::All => Self::Get,
-            Self::Get => Self::Post,
-            Self::Post => Self::Put,
-            Self::Put => Self::Delete,
-            Self::Delete => Self::Patch,
-            Self::Patch => Self::All,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,26 +63,6 @@ impl ProtocolFilter {
             Self::Http => protocol == Protocol::Http,
             Self::Sse => protocol == Protocol::Sse,
             Self::Ws => protocol == Protocol::Ws,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Http => "HTTP",
-            Self::Sse => "SSE",
-            Self::Ws => "WS",
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn next(&self) -> Self {
-        match self {
-            Self::All => Self::Http,
-            Self::Http => Self::Sse,
-            Self::Sse => Self::Ws,
-            Self::Ws => Self::All,
         }
     }
 }
@@ -169,7 +103,11 @@ impl NetworkFilter {
             } else {
                 (body, false)
             };
-            let full = if ci { format!("(?i){}", pattern) } else { pattern.to_string() };
+            let full = if ci {
+                format!("(?i){}", pattern)
+            } else {
+                pattern.to_string()
+            };
             return (Regex::new(&full).ok(), Vec::new());
         }
         let parts: Vec<String> = query
@@ -206,28 +144,25 @@ impl NetworkFilter {
         }
         if !self.search.is_empty() {
             let url_hit = matches_multi(self.search_regex.as_ref(), &self.search_plain, &entry.url);
-            let path_hit = matches_multi(self.search_regex.as_ref(), &self.search_plain, &entry.path);
+            let path_hit =
+                matches_multi(self.search_regex.as_ref(), &self.search_plain, &entry.path);
             if !url_hit && !path_hit {
                 return false;
             }
         }
         if !self.exclude.is_empty() {
-            let url_hit = matches_multi(self.exclude_regex.as_ref(), &self.exclude_plain, &entry.url);
-            let path_hit = matches_multi(self.exclude_regex.as_ref(), &self.exclude_plain, &entry.path);
+            let url_hit =
+                matches_multi(self.exclude_regex.as_ref(), &self.exclude_plain, &entry.url);
+            let path_hit = matches_multi(
+                self.exclude_regex.as_ref(),
+                &self.exclude_plain,
+                &entry.path,
+            );
             if url_hit || path_hit {
                 return false;
             }
         }
         true
-    }
-
-    #[allow(dead_code)]
-    pub fn is_active(&self) -> bool {
-        self.status != StatusFilter::All
-            || self.method != MethodFilter::All
-            || self.protocol != ProtocolFilter::All
-            || !self.search.is_empty()
-            || !self.exclude.is_empty()
     }
 
     pub fn reset(&mut self) {
@@ -240,6 +175,12 @@ impl NetworkFilter {
         self.search_plain.clear();
         self.exclude_regex = None;
         self.exclude_plain.clear();
+    }
+}
+
+impl Default for NetworkFilter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

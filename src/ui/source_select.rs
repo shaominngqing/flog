@@ -348,6 +348,8 @@ fn shorten_id(id: &str) -> String {
 }
 
 /// Device top border:  `╭─ [Tag] Name ───────── Conn · id ─╮`
+// Phase 3 redesign — see Audit UI-015/UI-014: extract parameter struct.
+#[allow(clippy::too_many_arguments)]
 fn push_device_top(
     lines: &mut Vec<PickerLine>,
     inner_w: usize,
@@ -384,51 +386,49 @@ fn push_device_top(
         interior_w.saturating_sub(left_fixed + tag_span_w + right_fixed + right_span_w + 2); // +2 for spaces around right text
 
     // Assemble spans:
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    spans.push(Span::styled(gutter_s.clone(), Style::default().bg(bg)));
-    spans.push(Span::styled(
-        "\u{256d}".to_string(), // ╭
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
-    // left fill: "── " then tag + " " + name + " "
-    spans.push(Span::styled(
-        "\u{2500}\u{2500} ".to_string(),
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        tag_text,
-        Style::default()
-            .fg(SAPPHIRE)
-            .bg(dev_bg)
-            .add_modifier(Modifier::BOLD),
-    ));
-    spans.push(Span::styled(" ".to_string(), Style::default().bg(dev_bg)));
-    spans.push(Span::styled(
-        name.to_string(),
-        Style::default()
-            .fg(text_fg)
-            .bg(dev_bg)
-            .add_modifier(Modifier::BOLD),
-    ));
-    spans.push(Span::styled(" ".to_string(), Style::default().bg(dev_bg)));
-    spans.push(Span::styled(
-        "\u{2500}".repeat(dashes_needed),
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
-    spans.push(Span::styled(" ".to_string(), Style::default().bg(dev_bg)));
-    spans.push(Span::styled(
-        right_text,
-        Style::default().fg(subtle_fg).bg(dev_bg),
-    ));
-    spans.push(Span::styled(" ".to_string(), Style::default().bg(dev_bg)));
-    spans.push(Span::styled(
-        "\u{2500}\u{2500}".to_string(),
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        "\u{256e}".to_string(), // ╮
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled(gutter_s.clone(), Style::default().bg(bg)),
+        Span::styled(
+            "\u{256d}".to_string(), // ╭
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+        // left fill: "── " then tag + " " + name + " "
+        Span::styled(
+            "\u{2500}\u{2500} ".to_string(),
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+        Span::styled(
+            tag_text,
+            Style::default()
+                .fg(SAPPHIRE)
+                .bg(dev_bg)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" ".to_string(), Style::default().bg(dev_bg)),
+        Span::styled(
+            name.to_string(),
+            Style::default()
+                .fg(text_fg)
+                .bg(dev_bg)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" ".to_string(), Style::default().bg(dev_bg)),
+        Span::styled(
+            "\u{2500}".repeat(dashes_needed),
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+        Span::styled(" ".to_string(), Style::default().bg(dev_bg)),
+        Span::styled(right_text, Style::default().fg(subtle_fg).bg(dev_bg)),
+        Span::styled(" ".to_string(), Style::default().bg(dev_bg)),
+        Span::styled(
+            "\u{2500}\u{2500}".to_string(),
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+        Span::styled(
+            "\u{256e}".to_string(), // ╮
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+    ];
     // Right gutter of BASE
     let used = gutter as usize + dev_w;
     if used < inner_w {
@@ -451,20 +451,21 @@ fn push_device_bottom(lines: &mut Vec<PickerLine>, inner_w: usize, dev_w: usize,
     let gutter_s = " ".repeat(gutter as usize);
 
     let interior_w = dev_w.saturating_sub(2);
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    spans.push(Span::styled(gutter_s, Style::default().bg(bg)));
-    spans.push(Span::styled(
-        "\u{2570}".to_string(), // ╰
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        "\u{2500}".repeat(interior_w),
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        "\u{256f}".to_string(), // ╯
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled(gutter_s, Style::default().bg(bg)),
+        Span::styled(
+            "\u{2570}".to_string(), // ╰
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+        Span::styled(
+            "\u{2500}".repeat(interior_w),
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+        Span::styled(
+            "\u{256f}".to_string(), // ╯
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+    ];
     let used = gutter as usize + dev_w;
     if used < inner_w {
         spans.push(Span::styled(
@@ -486,20 +487,18 @@ fn push_device_inner_blank(lines: &mut Vec<PickerLine>, inner_w: usize, dev_w: u
     let gutter_s = " ".repeat(gutter as usize);
 
     let interior_w = dev_w.saturating_sub(2);
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    spans.push(Span::styled(gutter_s, Style::default().bg(bg)));
-    spans.push(Span::styled(
-        "\u{2502}".to_string(),
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        " ".repeat(interior_w),
-        Style::default().bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        "\u{2502}".to_string(),
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled(gutter_s, Style::default().bg(bg)),
+        Span::styled(
+            "\u{2502}".to_string(),
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+        Span::styled(" ".repeat(interior_w), Style::default().bg(dev_bg)),
+        Span::styled(
+            "\u{2502}".to_string(),
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+    ];
     let used = gutter as usize + dev_w;
     if used < inner_w {
         spans.push(Span::styled(
@@ -526,28 +525,20 @@ fn push_waiting_row(lines: &mut Vec<PickerLine>, inner_w: usize, dev_w: usize, g
     let left_pad = 3usize;
     let right_pad = interior_w.saturating_sub(left_pad + text_w);
 
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    spans.push(Span::styled(gutter_s, Style::default().bg(bg)));
-    spans.push(Span::styled(
-        "\u{2502}".to_string(),
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        " ".repeat(left_pad),
-        Style::default().bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        text.to_string(),
-        Style::default().fg(OVERLAY0).bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        " ".repeat(right_pad),
-        Style::default().bg(dev_bg),
-    ));
-    spans.push(Span::styled(
-        "\u{2502}".to_string(),
-        Style::default().fg(border_fg).bg(dev_bg),
-    ));
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled(gutter_s, Style::default().bg(bg)),
+        Span::styled(
+            "\u{2502}".to_string(),
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+        Span::styled(" ".repeat(left_pad), Style::default().bg(dev_bg)),
+        Span::styled(text.to_string(), Style::default().fg(OVERLAY0).bg(dev_bg)),
+        Span::styled(" ".repeat(right_pad), Style::default().bg(dev_bg)),
+        Span::styled(
+            "\u{2502}".to_string(),
+            Style::default().fg(border_fg).bg(dev_bg),
+        ),
+    ];
     let used = gutter as usize + dev_w;
     if used < inner_w {
         spans.push(Span::styled(

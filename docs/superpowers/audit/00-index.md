@@ -9,10 +9,13 @@ gate entry to Phase 2.
 | Scope | A | B | C | D | E | Total |
 |---|---|---|---|---|---|---|
 | 01-transport | 6 | 1 | 0 | 6 | 2 | 15 |
-| 02-domain    | 5 | 2 | 0 | 13 | 4 | 24 |
+| 02-domain    | 5 | 2 | 0 | 14 | 4 | 25 |
 | 03-ui        | 13 | 0 | 0 | 26 | 1 | 40 |
 | 04-flog-dart | 3 | 9 | 0 | 18 | 2 | 32 |
-| **Total**    | **27** | **12** | **0** | **63** | **9** | **111** |
+| **Total**    | **27** | **12** | **0** | **64** | **9** | **112** |
+
+**DOM-025 added during Phase 2 Task 2** — see "Addenda" section at the
+end of this file.
 
 C = 0 as required: all C-class entries resolved with user in Task 3 and
 reclassified into A/B/D/E.
@@ -56,7 +59,7 @@ the tests first (making them the expected behavior) or treat them as stale.
 
 ## Phase 3 redesign scope — D-class by module
 
-63 architecture findings grouped by target module to feed Phase 3 step
+64 architecture findings grouped by target module to feed Phase 3 step
 planning directly.
 
 ### Parser layer (src/parser/)
@@ -67,7 +70,7 @@ planning directly.
 - `DOM-017` — Keyword parser uses three LazyLock Regex for inference; no priority/weighting  (`src/parser/keyword.rs:12-21`)
 
 ### Domain layer (src/domain/)
-8 findings.
+9 findings.
 
 - `DOM-001` — Three separate enums (StatusFilter, MethodFilter, ProtocolFilter) duplicate identical structure  (`src/domain/network_filter.rs:7-134`)
 - `DOM-002` — State machine for FlogNetMessage has no validation of transition order  (`src/domain/network_store.rs:22-35`)
@@ -77,6 +80,7 @@ planning directly.
 - `DOM-011` — LogStore.add_entry() implements 1-entry ring buffer but no consecutive-dup folding on drain  (`src/domain/store.rs:37-45`)
 - `DOM-019` — Three parallel implementations of filter logic (level, tag+search, tag+search) not unified  (`src/domain/network_filter.rs:136-161, src/domain/filter.rs:117-197`)
 - `DOM-024` — NetworkEntry factory methods (new_http, new_sse, new_ws) repeat boilerplate  (`src/domain/network.rs:90-117, src/domain/network_store.rs:74-106`)
+- `DOM-025` — SseChunk.seq/size/timestamp and WsMessage.timestamp are write-only fields  (`src/domain/network.rs`)  *(discovered during Phase 2 Task 2)*
 
 ### Transport layer (src/transport/ + src/input/ + main.rs lifecycle)
 6 findings.
@@ -225,3 +229,17 @@ Concrete downstream impact:
 - **Phase 3 flog_dart step** — DART-001 + DART-002 resolution is simply
   "make `dart test flog_dart/` pass, without changing the test file's
   expectations."
+
+## Addenda
+
+### DOM-025 — discovered Phase 2 Task 2
+
+Full detail in `02-domain.md`. Short version:
+
+- `SseChunk.seq`, `SseChunk.size`, `SseChunk.timestamp`, `WsMessage.timestamp`
+  are constructed but never read.
+- Originating audit entry DOM-009 mis-identified them as live because of
+  sloppy grep matching (different types with same field names are live).
+- Phase 2 kept the fields with `#[allow(dead_code)]` markers. Phase 3
+  Domain step must decide: prune protocol fields, or wire them into the
+  render layer.

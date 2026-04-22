@@ -151,11 +151,6 @@ impl LogLineParser for StructuredParser {
 
         None
     }
-
-    fn try_continuation(&self, _line: &str) -> Option<String> {
-        // No continuation — every structured-format line is self-contained
-        None
-    }
 }
 
 #[cfg(test)]
