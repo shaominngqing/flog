@@ -53,7 +53,7 @@ pub fn visible_window(
     }
 
     if !active {
-        // Head + ellipsis suffix: take chars until box_width-1 cols, caller adds '…'
+        // Head + ellipsis suffix: take chars until box_width-1 cols, embed '…'
         let mut out = String::new();
         let mut used = 0usize;
         for ch in value.chars() {
@@ -64,6 +64,7 @@ pub fn visible_window(
             out.push(ch);
             used += w;
         }
+        out.push('…'); // embed the ellipsis so the caller gets a ready-to-paint string
         return (out, false, true);
     }
 
@@ -94,10 +95,15 @@ pub fn visible_window(
         if ellipsis_left && !started {
             out.push('…');
             started = true;
-            // skip partial char that overlaps the ellipsis column
-            if ch_end - left_edge <= 1 {
+            // Ellipsis just consumed 1 col at left_edge; drop the partial char that straddled it.
+            if ch_start < left_edge {
                 continue;
             }
+        }
+        // Width budget check: will this char overflow box_width?
+        let consumed_so_far: usize = out.chars().map(|c| c.width().unwrap_or(0)).sum();
+        if consumed_so_far + w > box_width {
+            break;
         }
         out.push(ch);
     }
@@ -121,6 +127,24 @@ pub fn render_input_field(props: InputFieldProps<'_>, x_offset: u16) -> Rendered
 
     let box_width = props.total_width.saturating_sub(label_w) as usize;
     let box_width = box_width.max(4); // minimum usable
+
+    // Guard: if total_width is too small to fit label + min box, emit a degraded single-char box.
+    if (label_w as usize) + box_width > props.total_width as usize {
+        let out_bg = if props.active { SURFACE1 } else { SURFACE0 };
+        let width = props.total_width as usize;
+        let mut body = String::new();
+        for _ in 0..width {
+            body.push(' ');
+        }
+        if width >= 1 {
+            body.replace_range(0..1, "…");
+        }
+        return RenderedInputField {
+            spans: vec![Span::styled(body, Style::default().fg(OVERLAY0).bg(out_bg))],
+            hit_x: (x_offset, x_offset + props.total_width),
+            used_width: props.total_width,
+        };
+    }
 
     let has_text = !props.value.is_empty();
     let (label_style, box_bg, text_fg) = if props.active {
@@ -168,7 +192,7 @@ pub fn render_input_field(props: InputFieldProps<'_>, x_offset: u16) -> Rendered
 
     RenderedInputField {
         spans,
-        hit_x: (x_offset + label_w, x_offset + label_w + box_width as u16),
+        hit_x: (x_offset, x_offset + label_w + box_width as u16),
         used_width: label_w + box_width as u16,
     }
 }
@@ -187,10 +211,58 @@ mod tests {
     #[test]
     fn visible_window_idle_truncates_tail() {
         let (out, l, r) = visible_window("abcdefghij", 0, 5, false);
-        // box_width=5 → keep 4 chars + '…' added by renderer via r=true
-        assert_eq!(out, "abcd");
+        // box_width=5 → keep 4 chars + '…' embedded, total 5 cols
+        assert_eq!(out, "abcd…");
         assert!(!l);
         assert!(r);
+    }
+
+    #[test]
+    fn visible_window_active_wide_char_no_overflow() {
+        // "ab中de" where 中 has width 2. cursor at end (byte 7, width 6).
+        // box_width=3, active=true → right_edge=7, left_edge=4
+        let (out, _l, _r) = visible_window("ab中de", 7, 3, true);
+        // Output must be <= 3 columns wide
+        let out_w: usize = out
+            .chars()
+            .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(0))
+            .sum();
+        assert!(out_w <= 3, "got '{}' width {}", out, out_w);
+    }
+
+    #[test]
+    fn render_input_field_narrow_fallback() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "Search",
+                hint: "(a|b)",
+                value: "",
+                active: false,
+                cursor_byte: 0,
+                total_width: 5,
+            },
+            0,
+        );
+        assert_eq!(r.used_width, 5);
+        assert_eq!(r.hit_x, (0, 5));
+    }
+
+    #[test]
+    fn render_input_field_hit_x_covers_label() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "Search",
+                hint: "(a|b)",
+                value: "",
+                active: false,
+                cursor_byte: 0,
+                total_width: 30,
+            },
+            5,
+        );
+        // hit_x should start at x_offset (5), not at x_offset+label_w
+        assert_eq!(r.hit_x.0, 5);
+        assert_eq!(r.hit_x.1, 5 + r.used_width);
     }
 
     #[test]
