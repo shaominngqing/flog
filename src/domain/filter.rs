@@ -11,6 +11,12 @@ pub struct FilterState {
     pub search_query: String,
     pub search_regex: bool,
     compiled_regex: Option<Regex>,
+    /// Plain-mode parts split by '|'. Empty when search is empty or in regex mode.
+    compiled_search_plain: Vec<String>,
+    pub exclude_query: String,
+    pub exclude_regex: bool,
+    compiled_exclude: Option<Regex>,
+    compiled_exclude_plain: Vec<String>,
     pub tag_regex: bool,
     /// 预编译的 tag include 正则
     compiled_tag_include: Vec<Regex>,
@@ -27,6 +33,11 @@ impl Default for FilterState {
             search_query: String::new(),
             search_regex: false,
             compiled_regex: None,
+            compiled_search_plain: Vec::new(),
+            exclude_query: String::new(),
+            exclude_regex: false,
+            compiled_exclude: None,
+            compiled_exclude_plain: Vec::new(),
             tag_regex: false,
             compiled_tag_include: Vec::new(),
             compiled_tag_exclude: Vec::new(),
@@ -34,9 +45,33 @@ impl Default for FilterState {
     }
 }
 
+/// OR-match helper used by both Search and Exclude.
+///
+/// - If `regex` is `Some`, the regex owns the whole query (including `|`); `plain_parts` is ignored.
+/// - Otherwise, return true if any non-empty entry in `plain_parts` is a case-insensitive
+///   substring of `text`.
+pub(crate) fn matches_multi(regex: Option<&Regex>, plain_parts: &[String], text: &str) -> bool {
+    if let Some(re) = regex {
+        return re.is_match(text);
+    }
+    if plain_parts.is_empty() {
+        return false;
+    }
+    let text_lower = text.to_lowercase();
+    for part in plain_parts {
+        if part.is_empty() {
+            continue;
+        }
+        if text_lower.contains(&part.to_lowercase()) {
+            return true;
+        }
+    }
+    false
+}
+
 impl FilterState {
-    /// 设置搜索查询，自动检测正则模式
-    pub fn set_search(&mut self, query: &str) {
+    fn compile_query(query: &str) -> (bool, Option<Regex>, Vec<String>) {
+        // Regex mode: /pattern/ or /pattern/i
         if let Some(regex_body) = query.strip_prefix('/') {
             let (pattern, case_insensitive) = if let Some(p) = regex_body.strip_suffix("/i") {
                 (p, true)
@@ -45,19 +80,39 @@ impl FilterState {
             } else {
                 (regex_body, false)
             };
-            let full_pattern = if case_insensitive {
+            let full = if case_insensitive {
                 format!("(?i){}", pattern)
             } else {
                 pattern.to_string()
             };
-            self.search_regex = true;
-            self.compiled_regex = Regex::new(&full_pattern).ok();
-            self.search_query = query.to_string();
-        } else {
-            self.search_regex = false;
-            self.compiled_regex = None;
-            self.search_query = query.to_string();
+            let compiled = Regex::new(&full).ok();
+            return (true, compiled, Vec::new());
         }
+        // Plain multi-term mode: split by '|', trim, drop empties
+        let parts: Vec<String> = query
+            .split('|')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        (false, None, parts)
+    }
+
+    /// Set the Search query. Supports `/regex/` (optionally `/regex/i`) or `a|b|c` OR syntax.
+    pub fn set_search(&mut self, query: &str) {
+        let (is_regex, compiled, parts) = Self::compile_query(query);
+        self.search_query = query.to_string();
+        self.search_regex = is_regex;
+        self.compiled_regex = compiled;
+        self.compiled_search_plain = parts;
+    }
+
+    /// Set the Exclude query. Same syntax as set_search.
+    pub fn set_exclude(&mut self, query: &str) {
+        let (is_regex, compiled, parts) = Self::compile_query(query);
+        self.exclude_query = query.to_string();
+        self.exclude_regex = is_regex;
+        self.compiled_exclude = compiled;
+        self.compiled_exclude_plain = parts;
     }
 
     /// 判断一条日志是否通过过滤
@@ -104,22 +159,37 @@ impl FilterState {
             }
         }
 
-        // 搜索过滤
+        // Search (OR across message and tag)
         if !self.search_query.is_empty() {
             let full = entry.full_message();
-            if self.search_regex {
-                if let Some(ref re) = self.compiled_regex {
-                    if !re.is_match(&full) && !re.is_match(tag) {
-                        return false;
-                    }
-                }
-            } else {
-                let query_lower = self.search_query.to_lowercase();
-                let msg_lower = full.to_lowercase();
-                let tag_lower = tag.to_lowercase();
-                if !msg_lower.contains(&query_lower) && !tag_lower.contains(&query_lower) {
-                    return false;
-                }
+            let hit = matches_multi(
+                self.compiled_regex.as_ref(),
+                &self.compiled_search_plain,
+                &full,
+            ) || matches_multi(
+                self.compiled_regex.as_ref(),
+                &self.compiled_search_plain,
+                tag,
+            );
+            if !hit {
+                return false;
+            }
+        }
+
+        // Exclude (any hit on message or tag → drop)
+        if !self.exclude_query.is_empty() {
+            let full = entry.full_message();
+            let kill = matches_multi(
+                self.compiled_exclude.as_ref(),
+                &self.compiled_exclude_plain,
+                &full,
+            ) || matches_multi(
+                self.compiled_exclude.as_ref(),
+                &self.compiled_exclude_plain,
+                tag,
+            );
+            if kill {
+                return false;
             }
         }
 
@@ -139,18 +209,22 @@ impl FilterState {
             return Vec::new();
         }
 
-        let query_lower = self.search_query.to_lowercase();
         let text_lower = text.to_lowercase();
         let mut positions = Vec::new();
-        let mut start = 0;
-
-        while let Some(pos) = text_lower[start..].find(&query_lower) {
-            let abs_start = start + pos;
-            let abs_end = abs_start + query_lower.len();
-            positions.push(abs_start..abs_end);
-            start = abs_end;
+        for part in &self.compiled_search_plain {
+            if part.is_empty() {
+                continue;
+            }
+            let needle = part.to_lowercase();
+            let mut start = 0;
+            while let Some(pos) = text_lower[start..].find(&needle) {
+                let abs_start = start + pos;
+                let abs_end = abs_start + needle.len();
+                positions.push(abs_start..abs_end);
+                start = abs_end;
+            }
         }
-
+        positions.sort_by_key(|r| r.start);
         positions
     }
 
@@ -162,7 +236,7 @@ impl FilterState {
         self.compiled_tag_exclude.clear();
         self.tag_regex = input.contains('*') || input.contains('.');
 
-        for part in input.split(',') {
+        for part in input.split(|c: char| c == ',' || c == '|') {
             let trimmed = part.trim();
             if trimmed.is_empty() {
                 continue;
@@ -177,10 +251,13 @@ impl FilterState {
                     }
                 }
             } else {
-                self.tag_include.push(trimmed.to_string());
-                if self.tag_regex {
-                    if let Ok(re) = Regex::new(&format!("(?i){}", trimmed)) {
-                        self.compiled_tag_include.push(re);
+                let tag = trimmed.strip_prefix('+').unwrap_or(trimmed);
+                if !tag.is_empty() {
+                    self.tag_include.push(tag.to_string());
+                    if self.tag_regex {
+                        if let Ok(re) = Regex::new(&format!("(?i){}", tag)) {
+                            self.compiled_tag_include.push(re);
+                        }
                     }
                 }
             }
@@ -196,7 +273,148 @@ impl FilterState {
         self.search_query.clear();
         self.search_regex = false;
         self.compiled_regex = None;
+        self.compiled_search_plain.clear();
+        self.exclude_query.clear();
+        self.exclude_regex = false;
+        self.compiled_exclude = None;
+        self.compiled_exclude_plain.clear();
         self.tag_regex = false;
         self.min_level = LogLevel::System;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matches_multi_plain_single() {
+        let parts = vec!["timeout".to_string()];
+        assert!(matches_multi(None, &parts, "connection timeout error"));
+        assert!(!matches_multi(None, &parts, "connection ok"));
+    }
+
+    #[test]
+    fn matches_multi_plain_or() {
+        let parts = vec!["timeout".to_string(), "500".to_string(), "refused".to_string()];
+        assert!(matches_multi(None, &parts, "got 500 from server"));
+        assert!(matches_multi(None, &parts, "connection refused"));
+        assert!(!matches_multi(None, &parts, "ok 200"));
+    }
+
+    #[test]
+    fn matches_multi_case_insensitive_plain() {
+        let parts = vec!["TiMeOuT".to_string()];
+        assert!(matches_multi(None, &parts, "hit a Timeout"));
+    }
+
+    #[test]
+    fn matches_multi_regex_owns_pipe() {
+        let re = Regex::new("foo|bar").unwrap();
+        assert!(matches_multi(Some(&re), &[], "hello foo"));
+        assert!(matches_multi(Some(&re), &[], "bar world"));
+        assert!(!matches_multi(Some(&re), &[], "baz"));
+    }
+
+    #[test]
+    fn matches_multi_empty_parts_no_regex_is_false() {
+        assert!(!matches_multi(None, &[], "anything"));
+    }
+
+    #[test]
+    fn matches_multi_skips_empty_parts() {
+        let parts = vec!["".to_string(), "hit".to_string(), "".to_string()];
+        assert!(matches_multi(None, &parts, "go hit target"));
+        assert!(!matches_multi(None, &parts, "miss"));
+    }
+
+    fn entry(tag: &str, msg: &str) -> LogEntry {
+        LogEntry {
+            timestamp: String::new(),
+            level: LogLevel::Info,
+            tag: tag.to_string(),
+            message: msg.to_string(),
+            extra_lines: Vec::new(),
+            error: None,
+            stacktrace: None,
+            repeat_count: 1,
+            source: super::super::entry::InputSource::DirectSocket,
+        }
+    }
+
+    #[test]
+    fn search_plain_multi_or() {
+        let mut f = FilterState::default();
+        f.set_search("timeout|500");
+        assert!(f.matches(&entry("net", "connection timeout")));
+        assert!(f.matches(&entry("net", "got 500 back")));
+        assert!(!f.matches(&entry("net", "all good")));
+    }
+
+    #[test]
+    fn search_regex_passes_pipe_through() {
+        let mut f = FilterState::default();
+        f.set_search("/foo|bar/");
+        assert!(f.matches(&entry("t", "foo world")));
+        assert!(f.matches(&entry("t", "bar world")));
+        assert!(!f.matches(&entry("t", "baz")));
+    }
+
+    #[test]
+    fn exclude_plain_removes_matches() {
+        let mut f = FilterState::default();
+        f.set_exclude("heartbeat|ping");
+        assert!(f.matches(&entry("t", "real work")));
+        assert!(!f.matches(&entry("t", "heartbeat tick")));
+        assert!(!f.matches(&entry("t", "ping 30ms")));
+    }
+
+    #[test]
+    fn exclude_regex_supported() {
+        let mut f = FilterState::default();
+        f.set_exclude("/^hb_/");
+        assert!(!f.matches(&entry("t", "hb_start")));
+        assert!(f.matches(&entry("t", "other_start")));
+    }
+
+    #[test]
+    fn search_and_exclude_intersect() {
+        let mut f = FilterState::default();
+        f.set_search("error");
+        f.set_exclude("heartbeat");
+        assert!(f.matches(&entry("t", "got error 500")));
+        assert!(!f.matches(&entry("t", "heartbeat error")));
+        assert!(!f.matches(&entry("t", "all good")));
+    }
+
+    #[test]
+    fn exclude_empty_does_nothing() {
+        let mut f = FilterState::default();
+        f.set_exclude("");
+        assert!(f.matches(&entry("t", "anything")));
+    }
+
+    #[test]
+    fn clear_resets_exclude() {
+        let mut f = FilterState::default();
+        f.set_exclude("noise");
+        f.clear();
+        assert!(f.matches(&entry("t", "noise was here")));
+    }
+
+    #[test]
+    fn parse_tag_filter_accepts_pipe_and_plus_prefix() {
+        let mut f = FilterState::default();
+        f.parse_tag_filter("+network|-flog_net");
+        assert_eq!(f.tag_include, vec!["network".to_string()]);
+        assert_eq!(f.tag_exclude, vec!["flog_net".to_string()]);
+    }
+
+    #[test]
+    fn parse_tag_filter_comma_still_works() {
+        let mut f = FilterState::default();
+        f.parse_tag_filter("foo,-bar");
+        assert_eq!(f.tag_include, vec!["foo".to_string()]);
+        assert_eq!(f.tag_exclude, vec!["bar".to_string()]);
     }
 }

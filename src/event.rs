@@ -12,19 +12,18 @@ const LEVEL_BUTTON_WIDTH: u16 = 3;
 const DOUBLE_CLICK_MS: u128 = 400;
 
 pub fn handle_key(app: &mut App, key: KeyEvent) {
-    match app.mode {
+    match app.mode.clone() {
         AppMode::Normal => handle_normal_key(app, key),
-        AppMode::Search => handle_search_key(app, key),
-        AppMode::TagFilter => handle_filter_key(app, key),
+        AppMode::InputActive(field) => handle_input_key(app, field, key),
         AppMode::Help | AppMode::Stats => handle_overlay_key(app, key),
         AppMode::MockRuleEdit => handle_mock_edit_key(app, key),
     }
 }
 
 pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
-    match app.mode {
+    match app.mode.clone() {
         AppMode::Normal => handle_normal_mouse(app, mouse),
-        AppMode::Search | AppMode::TagFilter => handle_input_mouse(app, mouse),
+        AppMode::InputActive(_) => handle_input_mouse(app, mouse),
         AppMode::Help | AppMode::Stats => handle_overlay_mouse(app, mouse),
         AppMode::MockRuleEdit => handle_mock_edit_mouse(app, mouse),
     }
@@ -133,14 +132,17 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
         if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
             let x = mouse.column;
             let y = mouse.row;
-            // Line 1: search
-            if y == app.layout.net_toolbar_y
-                && x >= app.layout.net_search_x.0
-                && x < app.layout.net_search_x.1
-            {
-                app.network.search_active = true;
-                app.network.search_input = app.network.filter.search.clone();
-                return;
+            // Line 1: search + exclude
+            if y == app.layout.net_toolbar_y {
+                use crate::app::InputField;
+                if x >= app.layout.net_search_x.0 && x < app.layout.net_search_x.1 {
+                    app.enter_input_field(InputField::NetSearch);
+                    return;
+                }
+                if x >= app.layout.net_exclude_x.0 && x < app.layout.net_exclude_x.1 {
+                    app.enter_input_field(InputField::NetExclude);
+                    return;
+                }
             }
             // Line 2: filter pills
             if y == app.layout.net_filter_pills_y {
@@ -660,6 +662,28 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
     }
 
     // Logs tab mouse handling
+    if app.active_tab == ViewTab::Logs {
+        if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+            let x = mouse.column;
+            let y = mouse.row;
+            if y == app.layout.input_row_y {
+                use crate::app::InputField;
+                if x >= app.layout.log_search_x.0 && x < app.layout.log_search_x.1 {
+                    app.enter_input_field(InputField::LogSearch);
+                    return;
+                }
+                if x >= app.layout.log_exclude_x.0 && x < app.layout.log_exclude_x.1 {
+                    app.enter_input_field(InputField::LogExclude);
+                    return;
+                }
+                if x >= app.layout.log_tag_x.0 && x < app.layout.log_tag_x.1 {
+                    app.enter_input_field(InputField::LogTag);
+                    return;
+                }
+            }
+        }
+    }
+
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             app.move_up(SCROLL_LINES);
@@ -683,9 +707,7 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
             };
             app.layout.last_click = Some((now, x, y));
 
-            if y == app.layout.toolbar_y {
-                handle_toolbar_click(app, x);
-            } else if y == app.layout.toolbar_op2_y {
+            if y == app.layout.toolbar_op2_y {
                 handle_toolbar_op2_click(app, x);
             } else if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
                 handle_list_click(app, y, is_double);
@@ -705,18 +727,9 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
     }
 }
 
-fn handle_toolbar_click(app: &mut App, x: u16) {
-    // op row 1: search box only
-    if x >= app.layout.search_x.0 && x < app.layout.search_x.1 {
-        app.enter_search();
-    }
-}
-
 fn handle_toolbar_op2_click(app: &mut App, x: u16) {
-    // op row 2: tag filter + level buttons
-    if x >= app.layout.filter_x.0 && x < app.layout.filter_x.1 {
-        app.enter_tag_filter();
-    } else if x >= app.layout.levels_x {
+    // op row 2: level buttons
+    if x >= app.layout.levels_x {
         let offset = x - app.layout.levels_x;
         let btn_idx = offset / LEVEL_BUTTON_WIDTH;
         match btn_idx {
@@ -816,28 +829,53 @@ fn handle_bottom_click(app: &mut App, x: u16) {
 fn handle_input_mouse(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => {
+            let x = mouse.column;
             let y = mouse.row;
-            if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
-                match app.mode {
-                    AppMode::Search => app.apply_search(),
-                    AppMode::TagFilter => app.apply_tag_filter(),
-                    _ => {}
-                }
-            } else if y == app.layout.toolbar_y || y == app.layout.toolbar_op2_y {
-                match app.mode {
-                    AppMode::Search => app.cancel_search(),
-                    AppMode::TagFilter => app.cancel_tag_filter(),
-                    _ => {}
+            if y == app.layout.input_row_y {
+                use crate::app::InputField;
+                if app.active_tab == ViewTab::Logs {
+                    if x >= app.layout.log_search_x.0 && x < app.layout.log_search_x.1 {
+                        app.enter_input_field(InputField::LogSearch);
+                        return;
+                    }
+                    if x >= app.layout.log_exclude_x.0 && x < app.layout.log_exclude_x.1 {
+                        app.enter_input_field(InputField::LogExclude);
+                        return;
+                    }
+                    if x >= app.layout.log_tag_x.0 && x < app.layout.log_tag_x.1 {
+                        app.enter_input_field(InputField::LogTag);
+                        return;
+                    }
+                } else {
+                    if x >= app.layout.net_search_x.0 && x < app.layout.net_search_x.1 {
+                        app.enter_input_field(InputField::NetSearch);
+                        return;
+                    }
+                    if x >= app.layout.net_exclude_x.0 && x < app.layout.net_exclude_x.1 {
+                        app.enter_input_field(InputField::NetExclude);
+                        return;
+                    }
                 }
             }
+            // Click elsewhere → exit
+            app.exit_input_field();
         }
-        MouseEventKind::Down(MouseButton::Right) => match app.mode {
-            AppMode::Search => app.cancel_search(),
-            AppMode::TagFilter => app.cancel_tag_filter(),
-            _ => {}
-        },
-        MouseEventKind::ScrollUp => app.move_up(SCROLL_LINES),
-        MouseEventKind::ScrollDown => app.move_down(SCROLL_LINES),
+        MouseEventKind::Down(MouseButton::Right) => app.exit_input_field(),
+        MouseEventKind::ScrollUp => {
+            if app.active_tab == ViewTab::Logs {
+                app.move_up(SCROLL_LINES);
+            } else {
+                app.network.move_up(SCROLL_LINES);
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            if app.active_tab == ViewTab::Logs {
+                app.move_down(SCROLL_LINES);
+            } else {
+                let count = app.network.filtered_count(&app.network_store);
+                app.network.move_down(SCROLL_LINES, count);
+            }
+        }
         _ => {}
     }
 }
@@ -1296,29 +1334,6 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
 
     // Network tab key handling
     if app.active_tab == ViewTab::Network {
-        // URL search input mode
-        if app.network.search_active {
-            match key.code {
-                KeyCode::Enter => {
-                    app.network.filter.search = app.network.search_input.clone();
-                    app.network.search_active = false;
-                    app.network.invalidate_filter();
-                }
-                KeyCode::Esc => {
-                    app.network.search_active = false;
-                    app.network.search_input.clear();
-                }
-                KeyCode::Backspace => {
-                    app.network.search_input.pop();
-                }
-                KeyCode::Char(c) => {
-                    app.network.search_input.push(c);
-                }
-                _ => {}
-            }
-            return;
-        }
-
         match key.code {
             KeyCode::Char('q') => app.should_quit = true,
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1420,10 +1435,8 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 app.network.show_detail = !app.network.show_detail;
                 app.network.detail_scroll = 0;
             }
-            KeyCode::Char('/') => {
-                app.network.search_active = true;
-                app.network.search_input = app.network.filter.search.clone();
-            }
+            KeyCode::Char('/') => app.enter_input_field(crate::app::InputField::NetSearch),
+            KeyCode::Char('\\') => app.enter_input_field(crate::app::InputField::NetExclude),
             KeyCode::Char('s') => {
                 app.select_mode = true;
                 app.show_status(
@@ -1465,6 +1478,10 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                     app.network.sse_merged_mode = false;
                 } else {
                     app.network.filter.reset();
+                    app.inputs.net_search.clear();
+                    app.inputs.net_search_cursor = 0;
+                    app.inputs.net_exclude.clear();
+                    app.inputs.net_exclude_cursor = 0;
                     app.network.invalidate_filter();
                 }
             }
@@ -1485,7 +1502,8 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
         KeyCode::PageDown => app.move_down(20),
         KeyCode::Home => app.go_top(),
         KeyCode::End => app.go_bottom(),
-        KeyCode::Char('/') => app.enter_search(),
+        KeyCode::Char('/') => app.enter_input_field(crate::app::InputField::LogSearch),
+        KeyCode::Char('\\') => app.enter_input_field(crate::app::InputField::LogExclude),
         KeyCode::Char('n') => app.next_match(),
         KeyCode::Char('N') => app.prev_match(),
         KeyCode::Enter => app.toggle_detail_panel(),
@@ -1507,26 +1525,23 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_search_key(app: &mut App, key: KeyEvent) {
+fn handle_input_key(app: &mut App, field: crate::app::InputField, key: KeyEvent) {
     match key.code {
-        KeyCode::Enter => app.apply_search(),
-        KeyCode::Esc => app.cancel_search(),
+        KeyCode::Enter | KeyCode::Esc => app.exit_input_field(),
         KeyCode::Backspace => {
-            app.search.input.pop();
+            let buf = app.inputs.buffer_mut(field);
+            if buf.pop().is_some() {
+                let len = buf.len();
+                let c = app.inputs.cursor_mut(field);
+                *c = (*c).min(len);
+            }
+            app.apply_input_field(field);
         }
-        KeyCode::Char(c) => app.search.input.push(c),
-        _ => {}
-    }
-}
-
-fn handle_filter_key(app: &mut App, key: KeyEvent) {
-    match key.code {
-        KeyCode::Enter => app.apply_tag_filter(),
-        KeyCode::Esc => app.cancel_tag_filter(),
-        KeyCode::Backspace => {
-            app.tag_filter.input.pop();
+        KeyCode::Char(c) => {
+            app.inputs.buffer_mut(field).push(c);
+            *app.inputs.cursor_mut(field) = app.inputs.buffer(field).len();
+            app.apply_input_field(field);
         }
-        KeyCode::Char(c) => app.tag_filter.input.push(c),
         _ => {}
     }
 }

@@ -20,7 +20,7 @@ use highlight::auto_highlight;
 
 // Import shared palette from parent
 use super::{
-    safe_pad, wrap_text, BASE, BLUE, GREEN, LAVENDER, MANTLE, MAUVE, OVERLAY0, PEACH, PINK, RED,
+    safe_pad, wrap_text, BASE, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, PINK, RED,
     SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
 };
 
@@ -104,54 +104,9 @@ fn level_pill(level: LogLevel, row_bg: Color) -> Span<'static> {
     Span::styled(text, style)
 }
 
-// ── Search sparkline ──
-
-fn search_sparkline(matches: &[usize], total: usize, width: usize) -> String {
-    if total == 0 || width == 0 || matches.is_empty() {
-        return String::new();
-    }
-    let bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-    let bs = (total as f64 / width as f64).ceil().max(1.0) as usize;
-    let mut buckets = vec![0u32; width];
-    for &m in matches {
-        buckets[(m / bs).min(width - 1)] += 1;
-    }
-    let mx = *buckets.iter().max().unwrap_or(&1).max(&1);
-    buckets
-        .iter()
-        .map(|&c| {
-            if c == 0 {
-                ' '
-            } else {
-                bars[((c as f64 / mx as f64) * 7.0) as usize]
-            }
-        })
-        .collect()
-}
-
 fn repeat_bar(count: usize, max_w: usize) -> String {
     let len = (count.min(50) * max_w) / 50;
     format!("x{} {}", count, "█".repeat(len.min(max_w)))
-}
-
-fn tag_pill_spans(filter: &crate::domain::FilterState) -> Vec<Span<'static>> {
-    let colors = [BLUE, GREEN, PEACH, MAUVE, SAPPHIRE];
-    let mut spans = Vec::new();
-    for (ci, tag) in filter.tag_include.iter().enumerate() {
-        spans.push(Span::styled(
-            format!(" +{} ", tag),
-            Style::default().fg(MANTLE).bg(colors[ci % colors.len()]),
-        ));
-        spans.push(Span::styled(" ", Style::default().bg(MANTLE)));
-    }
-    for tag in &filter.tag_exclude {
-        spans.push(Span::styled(
-            format!(" -{} ", tag),
-            Style::default().fg(TEXT).bg(RED),
-        ));
-        spans.push(Span::styled(" ", Style::default().bg(MANTLE)));
-    }
-    spans
 }
 
 // ══════════════════════════════════════
@@ -159,13 +114,14 @@ fn tag_pill_spans(filter: &crate::domain::FilterState) -> Vec<Span<'static>> {
 // ══════════════════════════════════════
 
 pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
-    // Layout: 7 rows — sep | op1 | op2 | sep | col_header | main | status
+    // Layout: 8 rows — sep | op1 | gap | op2 | sep | col_header | main | status
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // sep below tab bar
-            Constraint::Length(1), // op row 1: search + count
-            Constraint::Length(1), // op row 2: T tag + levels
+            Constraint::Length(1), // op row 1: inputs
+            Constraint::Length(1), // blank spacer between op1 and op2
+            Constraint::Length(1), // op row 2: levels + counts
             Constraint::Length(1), // sep below ops
             Constraint::Length(1), // column header
             Constraint::Min(3),    // main
@@ -173,16 +129,22 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
         ])
         .split(area);
 
-    app.layout.toolbar_y = rows[1].y; // op row 1 (search)
-    app.layout.toolbar_op2_y = rows[2].y; // op row 2 (tag + levels)
-    app.layout.col_header_y = rows[4].y;
-    app.layout.bottom_y = rows[6].y;
+    app.layout.toolbar_y = rows[1].y; // op row 1 (inputs)
+    app.layout.toolbar_op2_y = rows[3].y; // op row 2 (levels + counts)
+    app.layout.input_row_y = rows[1].y;
+    app.layout.col_header_y = rows[5].y;
+    app.layout.bottom_y = rows[7].y;
 
     crate::ui::draw_separator_rule(f, rows[0]);
     draw_toolbar_op1(f, app, rows[1]);
-    draw_toolbar_op2(f, app, rows[2]);
-    crate::ui::draw_separator_rule(f, rows[3]);
-    draw_column_header(f, rows[4]);
+    // rows[2] is a blank spacer — paint just the MANTLE bg to match toolbar.
+    f.render_widget(
+        Paragraph::new("").style(Style::default().bg(MANTLE)),
+        rows[2],
+    );
+    draw_toolbar_op2(f, app, rows[3]);
+    crate::ui::draw_separator_rule(f, rows[4]);
+    draw_column_header(f, rows[5]);
 
     let list_area = if app.show_detail_panel {
         let cols = Layout::default()
@@ -191,7 +153,7 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
                 Constraint::Percentage(100 - app.detail_panel_pct),
                 Constraint::Percentage(app.detail_panel_pct),
             ])
-            .split(rows[5]);
+            .split(rows[6]);
 
         app.layout.list_y = cols[0].y;
         app.layout.list_height = cols[0].height;
@@ -200,16 +162,16 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
         detail::draw_side_panel(f, app, cols[1]);
         cols[0]
     } else {
-        app.layout.list_y = rows[5].y;
-        app.layout.list_height = rows[5].height;
+        app.layout.list_y = rows[6].y;
+        app.layout.list_height = rows[6].height;
 
-        draw_log_list(f, app, rows[5]);
-        rows[5]
+        draw_log_list(f, app, rows[6]);
+        rows[6]
     };
 
     draw_jump_to_bottom(f, app, list_area);
 
-    draw_status_bar(f, app, rows[6]);
+    draw_status_bar(f, app, rows[7]);
 }
 
 // ══════════════════════════════════════
@@ -217,70 +179,74 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
 // ══════════════════════════════════════
 
 fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::app::InputField;
+    use crate::ui::input_field::{render_input_field, InputFieldProps};
+
     let bg = MANTLE;
-    let search_active = app.mode == AppMode::Search;
     let w = area.width as u16;
 
+    // Split width into 3 equal-ish slices for Search | Exclude | Tag, with 4-col gaps.
+    let gap: u16 = 4;
+    let inner = w.saturating_sub(gap * 2);
+    let per = inner / 3;
+    let rem = inner - per * 3;
+    let widths = [
+        per + (if rem > 0 { 1 } else { 0 }),
+        per + (if rem > 1 { 1 } else { 0 }),
+        per,
+    ];
+
     let mut spans: Vec<Span> = Vec::new();
+    let mut x: u16 = 0;
 
-    spans.push(Span::styled(" ", Style::default().bg(bg)));
+    let fields: [(InputField, &str, &str); 3] = [
+        (InputField::LogSearch, "Search", "a|b, regex: /pat/"),
+        (InputField::LogExclude, "Exclude", "a|b, regex: /pat/"),
+        (InputField::LogTag, "Tag", "+inc|-exc"),
+    ];
 
-    let si = if search_active {
-        Style::default().fg(MANTLE).bg(YELLOW)
-    } else {
-        Style::default().fg(OVERLAY0).bg(bg)
-    };
-    spans.push(Span::styled("/", si));
-    let sw: usize = 20;
-    let st = if search_active {
-        format!("{}_", app.search.input)
-    } else if app.filter.search_query.is_empty() {
-        "search...".into()
-    } else {
-        app.filter.search_query.clone()
-    };
-    let ss = if search_active {
-        Style::default().fg(TEXT).bg(SURFACE0)
-    } else if !app.filter.search_query.is_empty() {
-        Style::default().fg(YELLOW).bg(bg)
-    } else {
-        Style::default().fg(OVERLAY0).bg(bg)
-    };
-    app.layout.search_x = (1, 1 + 1 + sw as u16);
-    spans.push(Span::styled(safe_pad(&st, sw), ss));
+    for (i, (field, label, hint)) in fields.iter().enumerate() {
+        let active = matches!(app.mode, AppMode::InputActive(f) if f == *field);
+        let value = app.inputs.buffer(*field).to_string();
+        let cursor_byte = app.inputs.cursor(*field);
 
-    // Sparkline inline after search box
-    if !app.search.matches.is_empty() {
-        let fc = app.filtered_count();
-        let spark = search_sparkline(&app.search.matches, fc, 12);
-        spans.push(Span::styled(
-            format!(" {}", spark),
-            Style::default().fg(LAVENDER).bg(bg),
-        ));
-        let info = format!(
-            " {}/{} ",
-            app.search.match_idx + 1,
-            app.search.matches.len()
+        let out = render_input_field(
+            InputFieldProps {
+                label,
+                hint,
+                value: &value,
+                active,
+                cursor_byte,
+                total_width: widths[i],
+            },
+            x,
         );
-        spans.push(Span::styled(info, Style::default().fg(YELLOW).bg(bg)));
-        spans.push(Span::styled("<", Style::default().fg(BLUE).bg(bg)));
-        spans.push(Span::styled(">", Style::default().fg(BLUE).bg(bg)));
+
+        match field {
+            InputField::LogSearch => app.layout.log_search_x = out.hit_x,
+            InputField::LogExclude => app.layout.log_exclude_x = out.hit_x,
+            InputField::LogTag => app.layout.log_tag_x = out.hit_x,
+            _ => {}
+        }
+
+        spans.extend(out.spans);
+        x += out.used_width;
+
+        if i < 2 {
+            spans.push(Span::styled(" ".repeat(gap as usize), Style::default().bg(bg)));
+            x += gap;
+        }
     }
 
+    // Pad remaining
     let used: u16 = spans.iter().map(|s| s.content.width() as u16).sum();
-
-    // Right-align count: " {filtered}/{total} "
-    let count_text = format!(" {}/{} ", app.filtered_count(), app.store.len());
-    let cw = count_text.width() as u16;
-    let pad = w.saturating_sub(used + cw);
-    spans.push(Span::styled(
-        " ".repeat(pad as usize),
-        Style::default().bg(bg),
-    ));
-    spans.push(Span::styled(
-        count_text,
-        Style::default().fg(SUBTEXT0).bg(bg),
-    ));
+    let pad = w.saturating_sub(used);
+    if pad > 0 {
+        spans.push(Span::styled(
+            " ".repeat(pad as usize),
+            Style::default().bg(bg),
+        ));
+    }
 
     f.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
@@ -290,52 +256,16 @@ fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
-    let filter_active = app.mode == AppMode::TagFilter;
     let mut spans: Vec<Span> = Vec::new();
     let mut x: u16 = 0;
 
     spans.push(Span::styled(" ", Style::default().bg(bg)));
     x += 1;
 
-    // Tag filter: "#" prefix + placeholder/input/pills (no T pill, matches search style)
-    let filter_start_x = x;
-    let prefix_style = if filter_active {
-        Style::default().fg(MANTLE).bg(YELLOW)
-    } else {
-        Style::default().fg(OVERLAY0).bg(bg)
-    };
-    spans.push(Span::styled("#", prefix_style));
-    x += 1;
-
-    if filter_active {
-        let fw: usize = 20;
-        spans.push(Span::styled(
-            safe_pad(&format!("{}_", app.tag_filter.input), fw),
-            Style::default().fg(TEXT).bg(SURFACE0),
-        ));
-        x += fw as u16;
-    } else if !app.filter.tag_include.is_empty() || !app.filter.tag_exclude.is_empty() {
-        let pills = tag_pill_spans(&app.filter);
-        for p in &pills {
-            x += p.content.width() as u16;
-        }
-        spans.extend(pills);
-    } else {
-        let fw: usize = 20;
-        spans.push(Span::styled(
-            safe_pad("tag...", fw),
-            Style::default().fg(OVERLAY0).bg(bg),
-        ));
-        x += fw as u16;
-    }
-    app.layout.filter_x = (filter_start_x, x);
-
-    // Separator
-    spans.push(Span::styled(
-        "   │   ",
-        Style::default().fg(SURFACE1).bg(bg),
-    ));
-    x += 7;
+    // "Level: " label
+    let level_label = "Level: ";
+    spans.push(Span::styled(level_label, Style::default().fg(SUBTEXT0).bg(bg)));
+    x += level_label.width() as u16;
 
     app.layout.levels_x = x;
     for (label, level) in &[
@@ -368,16 +298,67 @@ fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
         x += 3;
     }
 
-    if !app.bookmarks.is_empty() {
-        let bm = format!("  ●{}", app.bookmarks.len());
-        x += bm.width() as u16;
-        spans.push(Span::styled(bm, Style::default().fg(YELLOW).bg(bg)));
+    // Spacer
+    spans.push(Span::styled("    ", Style::default().bg(bg)));
+    x += 4;
+
+    // "Filtered: N/M"
+    let filtered_label = "Filtered: ";
+    spans.push(Span::styled(
+        filtered_label,
+        Style::default().fg(SUBTEXT0).bg(bg),
+    ));
+    x += filtered_label.width() as u16;
+
+    let count_text = format!("{}/{}", app.filtered_count(), app.store.len());
+    let cw = count_text.width() as u16;
+    spans.push(Span::styled(
+        count_text,
+        Style::default().fg(TEXT).bg(bg).add_modifier(Modifier::BOLD),
+    ));
+    x += cw;
+
+    // "Match: N/M" — only when search is active and has results
+    if !app.search.matches.is_empty() {
+        spans.push(Span::styled("    ", Style::default().bg(bg)));
+        x += 4;
+        let match_label = "Match: ";
+        spans.push(Span::styled(
+            match_label,
+            Style::default().fg(SUBTEXT0).bg(bg),
+        ));
+        x += match_label.width() as u16;
+        let match_text = format!(
+            "{}/{}",
+            app.search.match_idx + 1,
+            app.search.matches.len()
+        );
+        let mw = match_text.width() as u16;
+        spans.push(Span::styled(
+            match_text,
+            Style::default().fg(YELLOW).bg(bg).add_modifier(Modifier::BOLD),
+        ));
+        x += mw;
     }
 
-    let rem = area.width.saturating_sub(x);
-    if rem > 0 {
+    // Bookmarks: ●N (only when any)
+    if !app.bookmarks.is_empty() {
+        spans.push(Span::styled("    ", Style::default().bg(bg)));
+        x += 4;
+        let bm_label = "Bookmarks: ";
+        spans.push(Span::styled(bm_label, Style::default().fg(SUBTEXT0).bg(bg)));
+        x += bm_label.width() as u16;
+        let bm = format!("●{}", app.bookmarks.len());
+        let bw = bm.width() as u16;
+        spans.push(Span::styled(bm, Style::default().fg(YELLOW).bg(bg)));
+        x += bw;
+    }
+
+    // Pad to fill row
+    let pad = area.width.saturating_sub(x);
+    if pad > 0 {
         spans.push(Span::styled(
-            " ".repeat(rem as usize),
+            " ".repeat(pad as usize),
             Style::default().bg(bg),
         ));
     }
@@ -1286,6 +1267,9 @@ fn draw_no_matching_logs(f: &mut Frame, app: &App, area: Rect) {
     let mut filter_rows: Vec<String> = Vec::new();
     if !app.filter.search_query.is_empty() {
         filter_rows.push(format!("    search: \"{}\"", app.filter.search_query));
+    }
+    if !app.filter.exclude_query.is_empty() {
+        filter_rows.push(format!("    exclude: \"{}\"", app.filter.exclude_query));
     }
     if app.filter.min_level != LogLevel::System {
         filter_rows.push(format!("    level:  {}+", app.filter.min_level.as_str()));

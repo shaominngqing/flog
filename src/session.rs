@@ -10,6 +10,8 @@ pub struct SessionData {
     pub min_level: u8,
     pub tag_filter_input: String, // 原始输入字符串，加载时走 parse_tag_filter
     pub search_query: String,
+    #[serde(default)]
+    pub exclude_query: String,
     pub bookmarks: Vec<usize>,
     pub active_tab: u8, // 0 = Logs, 1 = Network
 }
@@ -51,6 +53,10 @@ pub fn load_session(app: &mut App) {
         app.filter.set_search(&data.search_query);
     }
 
+    if !data.exclude_query.is_empty() {
+        app.filter.set_exclude(&data.exclude_query);
+    }
+
     app.bookmarks = data.bookmarks.into_iter().collect::<BTreeSet<_>>();
 
     app.active_tab = match data.active_tab {
@@ -83,6 +89,7 @@ pub fn save_session(app: &App) {
         },
         tag_filter_input,
         search_query: app.filter.search_query.clone(),
+        exclude_query: app.filter.exclude_query.clone(),
         bookmarks: app.bookmarks.iter().copied().collect(),
         active_tab: match app.active_tab {
             crate::app::ViewTab::Logs => 0,

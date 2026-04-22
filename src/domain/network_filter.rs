@@ -1,6 +1,8 @@
 //! Filtering for network entries by status, method, protocol, and search text.
 
+use crate::domain::filter::matches_multi;
 use crate::domain::network::{NetworkEntry, NetworkStatus, Protocol};
+use regex::Regex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusFilter {
@@ -136,6 +138,11 @@ pub struct NetworkFilter {
     pub method: MethodFilter,
     pub protocol: ProtocolFilter,
     pub search: String,
+    pub exclude: String,
+    search_regex: Option<Regex>,
+    search_plain: Vec<String>,
+    exclude_regex: Option<Regex>,
+    exclude_plain: Vec<String>,
 }
 
 impl NetworkFilter {
@@ -145,7 +152,46 @@ impl NetworkFilter {
             method: MethodFilter::All,
             protocol: ProtocolFilter::All,
             search: String::new(),
+            exclude: String::new(),
+            search_regex: None,
+            search_plain: Vec::new(),
+            exclude_regex: None,
+            exclude_plain: Vec::new(),
         }
+    }
+
+    fn compile_query(query: &str) -> (Option<Regex>, Vec<String>) {
+        if let Some(body) = query.strip_prefix('/') {
+            let (pattern, ci) = if let Some(p) = body.strip_suffix("/i") {
+                (p, true)
+            } else if let Some(p) = body.strip_suffix('/') {
+                (p, false)
+            } else {
+                (body, false)
+            };
+            let full = if ci { format!("(?i){}", pattern) } else { pattern.to_string() };
+            return (Regex::new(&full).ok(), Vec::new());
+        }
+        let parts: Vec<String> = query
+            .split('|')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        (None, parts)
+    }
+
+    pub fn set_search(&mut self, query: &str) {
+        self.search = query.to_string();
+        let (re, parts) = Self::compile_query(query);
+        self.search_regex = re;
+        self.search_plain = parts;
+    }
+
+    pub fn set_exclude(&mut self, query: &str) {
+        self.exclude = query.to_string();
+        let (re, parts) = Self::compile_query(query);
+        self.exclude_regex = re;
+        self.exclude_plain = parts;
     }
 
     pub fn matches(&self, entry: &NetworkEntry) -> bool {
@@ -159,10 +205,16 @@ impl NetworkFilter {
             return false;
         }
         if !self.search.is_empty() {
-            let search_lower = self.search.to_lowercase();
-            let url_match = entry.url.to_lowercase().contains(&search_lower);
-            let path_match = entry.path.to_lowercase().contains(&search_lower);
-            if !url_match && !path_match {
+            let url_hit = matches_multi(self.search_regex.as_ref(), &self.search_plain, &entry.url);
+            let path_hit = matches_multi(self.search_regex.as_ref(), &self.search_plain, &entry.path);
+            if !url_hit && !path_hit {
+                return false;
+            }
+        }
+        if !self.exclude.is_empty() {
+            let url_hit = matches_multi(self.exclude_regex.as_ref(), &self.exclude_plain, &entry.url);
+            let path_hit = matches_multi(self.exclude_regex.as_ref(), &self.exclude_plain, &entry.path);
+            if url_hit || path_hit {
                 return false;
             }
         }
@@ -175,6 +227,7 @@ impl NetworkFilter {
             || self.method != MethodFilter::All
             || self.protocol != ProtocolFilter::All
             || !self.search.is_empty()
+            || !self.exclude.is_empty()
     }
 
     pub fn reset(&mut self) {
@@ -182,5 +235,54 @@ impl NetworkFilter {
         self.method = MethodFilter::All;
         self.protocol = ProtocolFilter::All;
         self.search.clear();
+        self.exclude.clear();
+        self.search_regex = None;
+        self.search_plain.clear();
+        self.exclude_regex = None;
+        self.exclude_plain.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::network::NetworkEntry;
+
+    fn e(url: &str) -> NetworkEntry {
+        NetworkEntry::new_http(1, "GET".into(), url.into(), String::new())
+    }
+
+    #[test]
+    fn search_plain_or() {
+        let mut f = NetworkFilter::new();
+        f.set_search("users|orders");
+        assert!(f.matches(&e("https://x.com/api/users")));
+        assert!(f.matches(&e("https://x.com/api/orders")));
+        assert!(!f.matches(&e("https://x.com/api/posts")));
+    }
+
+    #[test]
+    fn search_regex() {
+        let mut f = NetworkFilter::new();
+        f.set_search("/^/api/(users|orders)$/");
+        assert!(f.matches(&e("https://x.com/api/users")));
+        assert!(!f.matches(&e("https://x.com/api/posts")));
+    }
+
+    #[test]
+    fn exclude_plain() {
+        let mut f = NetworkFilter::new();
+        f.set_exclude("heartbeat|telemetry");
+        assert!(f.matches(&e("https://x.com/api/users")));
+        assert!(!f.matches(&e("https://x.com/api/heartbeat")));
+        assert!(!f.matches(&e("https://x.com/api/telemetry")));
+    }
+
+    #[test]
+    fn reset_clears_exclude() {
+        let mut f = NetworkFilter::new();
+        f.set_exclude("noise");
+        f.reset();
+        assert!(f.matches(&e("https://x.com/noise")));
     }
 }

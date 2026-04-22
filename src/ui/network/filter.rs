@@ -11,76 +11,95 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
-use crate::ui::safe_pad;
 
-use super::super::{
-    BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, RED, SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
-};
+use super::super::{MANTLE, MAUVE, OVERLAY0, SUBTEXT0};
 
 /// Render a filter pill: selected = bright colored bg, unselected = outline only (MANTLE bg).
-fn pill<'a>(label: &str, selected: bool, color: ratatui::style::Color) -> Span<'a> {
+/// Neutral pill: selected = MAUVE bg / unselected = SUBTEXT0 fg on MANTLE.
+/// Used for protocol/method/status groups where color coding by value hurts
+/// the "group" gestalt more than it helps.
+fn pill_neutral<'a>(label: &str, selected: bool) -> Span<'a> {
     if selected {
         Span::styled(
             format!(" {} ", label),
             Style::default()
                 .fg(MANTLE)
-                .bg(color)
+                .bg(MAUVE)
                 .add_modifier(Modifier::BOLD),
         )
     } else {
         Span::styled(
             format!(" {} ", label),
-            Style::default().fg(color).bg(MANTLE),
+            Style::default().fg(SUBTEXT0).bg(MANTLE),
         )
     }
 }
 
-/// Row 1: "/" + search box + (right-aligned) count.
+/// Row 1: Search + Exclude input fields + (right-aligned) count.
 pub fn draw_network_op1(f: &mut Frame, app: &mut App, area: Rect, count: usize, total: usize) {
+    use crate::app::{AppMode, InputField};
+    use crate::ui::input_field::{render_input_field, InputFieldProps};
+
     let bg = MANTLE;
     let w = area.width as u16;
-    let is_searching = app.network.search_active;
 
-    let mut spans: Vec<Span> = Vec::new();
-    spans.push(Span::styled(" ", Style::default().bg(bg)));
-
-    let si = if is_searching {
-        Style::default().fg(MANTLE).bg(YELLOW)
-    } else {
-        Style::default().fg(OVERLAY0).bg(bg)
-    };
-    spans.push(Span::styled("/", si));
-
-    let sw: usize = 40;
-    let s = if is_searching {
-        format!("{}_", app.network.search_input)
-    } else if app.network.filter.search.is_empty() {
-        "filter url...".to_string()
-    } else {
-        app.network.filter.search.clone()
-    };
-    let ss = if is_searching {
-        Style::default().fg(TEXT).bg(SURFACE0)
-    } else if !app.network.filter.search.is_empty() {
-        Style::default().fg(YELLOW).bg(bg)
-    } else {
-        Style::default().fg(OVERLAY0).bg(bg)
-    };
-    app.layout.net_search_x = (1, 1 + 1 + sw as u16);
-    spans.push(Span::styled(safe_pad(&s, sw), ss));
-
-    let used: u16 = spans.iter().map(|x| x.content.width() as u16).sum();
+    // Reserve right side for count text
     let count_text = format!(" {}/{} ", count, total);
     let cw = count_text.width() as u16;
+
+    let avail = w.saturating_sub(cw + 1);
+    let gap: u16 = 4;
+    let inner = avail.saturating_sub(gap);
+    let per = inner / 2;
+    let widths = [per, inner - per];
+
+    let mut spans: Vec<Span> = Vec::new();
+    let mut x: u16 = 0;
+
+    let fields: [(InputField, &str, &str); 2] = [
+        (InputField::NetSearch, "Search", "a|b, regex: /pat/"),
+        (InputField::NetExclude, "Exclude", "a|b, regex: /pat/"),
+    ];
+
+    for (i, (field, label, hint)) in fields.iter().enumerate() {
+        let active = matches!(app.mode, AppMode::InputActive(f) if f == *field);
+        let value = app.inputs.buffer(*field).to_string();
+        let cursor_byte = app.inputs.cursor(*field);
+
+        let out = render_input_field(
+            InputFieldProps {
+                label,
+                hint,
+                value: &value,
+                active,
+                cursor_byte,
+                total_width: widths[i],
+            },
+            x,
+        );
+
+        match field {
+            InputField::NetSearch => app.layout.net_search_x = out.hit_x,
+            InputField::NetExclude => app.layout.net_exclude_x = out.hit_x,
+            _ => {}
+        }
+
+        spans.extend(out.spans);
+        x += out.used_width;
+
+        if i + 1 < fields.len() {
+            spans.push(Span::styled(" ".repeat(gap as usize), Style::default().bg(bg)));
+            x += gap;
+        }
+    }
+
+    // Pad then count (right-aligned)
+    let used: u16 = spans.iter().map(|s| s.content.width() as u16).sum();
     let pad = w.saturating_sub(used + cw);
-    spans.push(Span::styled(
-        " ".repeat(pad as usize),
-        Style::default().bg(bg),
-    ));
-    spans.push(Span::styled(
-        count_text,
-        Style::default().fg(SUBTEXT0).bg(bg),
-    ));
+    if pad > 0 {
+        spans.push(Span::styled(" ".repeat(pad as usize), Style::default().bg(bg)));
+    }
+    spans.push(Span::styled(count_text, Style::default().fg(SUBTEXT0).bg(bg)));
 
     f.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(bg)),
@@ -99,76 +118,85 @@ pub fn draw_network_op2(f: &mut Frame, app: &mut App, area: Rect) {
     spans.push(Span::styled(" ", Style::default().bg(bg)));
     x += 1;
 
-    // Protocol
+    let label_style = Style::default().fg(SUBTEXT0).bg(bg);
+    let group_gap = "    ";
+
+    // Protocol group
+    let proto_label = "Protocol: ";
+    spans.push(Span::styled(proto_label, label_style));
+    x += proto_label.width() as u16;
+
     let proto = app.network.filter.protocol;
-    let proto_pills: &[(&str, ProtocolFilter, ratatui::style::Color)] = &[
-        ("All", ProtocolFilter::All, GREEN),
-        ("HTTP", ProtocolFilter::Http, BLUE),
-        ("SSE", ProtocolFilter::Sse, GREEN),
-        ("WS", ProtocolFilter::Ws, PEACH),
+    let proto_pills: &[(&str, ProtocolFilter)] = &[
+        ("All", ProtocolFilter::All),
+        ("HTTP", ProtocolFilter::Http),
+        ("SSE", ProtocolFilter::Sse),
+        ("WS", ProtocolFilter::Ws),
     ];
-    for (label, val, color) in proto_pills {
+    for (label, val) in proto_pills {
         let selected = proto == *val;
-        let p = pill(label, selected, *color);
+        let p = pill_neutral(label, selected);
         let start = x;
         x += p.content.width() as u16;
         app.layout
             .net_filter_pills
             .push((format!("proto_{}", label), start, x));
         spans.push(p);
-        spans.push(Span::styled(" ", Style::default().bg(bg)));
-        x += 1;
     }
 
-    spans.push(Span::styled(" │ ", Style::default().fg(SURFACE1).bg(bg)));
-    x += 3;
+    spans.push(Span::styled(group_gap, Style::default().bg(bg)));
+    x += group_gap.len() as u16;
 
-    // Method
+    // Method group
+    let method_label = "Method: ";
+    spans.push(Span::styled(method_label, label_style));
+    x += method_label.width() as u16;
+
     let method = app.network.filter.method;
-    let method_pills: &[(&str, MethodFilter, ratatui::style::Color)] = &[
-        ("All", MethodFilter::All, GREEN),
-        ("GET", MethodFilter::Get, GREEN),
-        ("POST", MethodFilter::Post, BLUE),
-        ("PUT", MethodFilter::Put, PEACH),
-        ("DEL", MethodFilter::Delete, RED),
-        ("PATCH", MethodFilter::Patch, MAUVE),
+    let method_pills: &[(&str, MethodFilter)] = &[
+        ("All", MethodFilter::All),
+        ("GET", MethodFilter::Get),
+        ("POST", MethodFilter::Post),
+        ("PUT", MethodFilter::Put),
+        ("DEL", MethodFilter::Delete),
+        ("PATCH", MethodFilter::Patch),
     ];
-    for (label, val, color) in method_pills {
+    for (label, val) in method_pills {
         let selected = method == *val;
-        let p = pill(label, selected, *color);
+        let p = pill_neutral(label, selected);
         let start = x;
         x += p.content.width() as u16;
         app.layout
             .net_filter_pills
             .push((format!("method_{}", label), start, x));
         spans.push(p);
-        spans.push(Span::styled(" ", Style::default().bg(bg)));
-        x += 1;
     }
 
-    spans.push(Span::styled(" │ ", Style::default().fg(SURFACE1).bg(bg)));
-    x += 3;
+    spans.push(Span::styled(group_gap, Style::default().bg(bg)));
+    x += group_gap.len() as u16;
 
-    // Status
+    // Status group
+    let status_label = "Status: ";
+    spans.push(Span::styled(status_label, label_style));
+    x += status_label.width() as u16;
+
     let status = app.network.filter.status;
-    let status_pills: &[(&str, StatusFilter, ratatui::style::Color)] = &[
-        ("All", StatusFilter::All, GREEN),
-        ("OK", StatusFilter::Completed, GREEN),
-        ("Fail", StatusFilter::Failed, RED),
-        ("Active", StatusFilter::Active, YELLOW),
-        ("Pending", StatusFilter::Pending, OVERLAY0),
+    let status_pills: &[(&str, StatusFilter)] = &[
+        ("All", StatusFilter::All),
+        ("OK", StatusFilter::Completed),
+        ("Fail", StatusFilter::Failed),
+        ("Active", StatusFilter::Active),
+        ("Pending", StatusFilter::Pending),
     ];
-    for (label, val, color) in status_pills {
+    for (label, val) in status_pills {
         let selected = status == *val;
-        let p = pill(label, selected, *color);
+        let p = pill_neutral(label, selected);
         let start = x;
         x += p.content.width() as u16;
         app.layout
             .net_filter_pills
             .push((format!("status_{}", label), start, x));
         spans.push(p);
-        spans.push(Span::styled(" ", Style::default().bg(bg)));
-        x += 1;
     }
 
     let rem = area.width.saturating_sub(x);

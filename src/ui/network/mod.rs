@@ -125,12 +125,13 @@ fn protocol_pill(protocol: Protocol) -> Span<'static> {
 // ══════════════════════════════════════
 
 pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
-    // 7-row chrome: sep | op1 | op2 | sep | col_header | main | status
+    // 8-row chrome: sep | op1 | gap | op2 | sep | col_header | main | status
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // sep
-            Constraint::Length(1), // op1: search + count
+            Constraint::Length(1), // op1: inputs
+            Constraint::Length(1), // blank spacer
             Constraint::Length(1), // op2: pills
             Constraint::Length(1), // sep
             Constraint::Length(1), // column header
@@ -140,26 +141,32 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     app.layout.net_toolbar_y = rows[1].y;
-    app.layout.net_col_header_y = rows[4].y;
+    app.layout.input_row_y = rows[1].y;
+    app.layout.net_col_header_y = rows[5].y;
     app.layout.toolbar_y = rows[1].y;
-    app.layout.list_y = rows[5].y;
-    app.layout.list_height = rows[5].height;
-    app.layout.bottom_y = rows[6].y;
+    app.layout.list_y = rows[6].y;
+    app.layout.list_height = rows[6].height;
+    app.layout.bottom_y = rows[7].y;
 
     crate::ui::draw_separator_rule(f, rows[0]);
     let count = app.network.filtered_count(&app.network_store);
     let total = app.network_store.len();
     filter::draw_network_op1(f, app, rows[1], count, total);
-    filter::draw_network_op2(f, app, rows[2]);
-    crate::ui::draw_separator_rule(f, rows[3]);
-    filter::draw_network_column_header(f, rows[4]);
+    // rows[2] is a blank spacer — paint MANTLE bg to match toolbar.
+    f.render_widget(
+        Paragraph::new("").style(Style::default().bg(MANTLE)),
+        rows[2],
+    );
+    filter::draw_network_op2(f, app, rows[3]);
+    crate::ui::draw_separator_rule(f, rows[4]);
+    filter::draw_network_column_header(f, rows[5]);
 
     // Body: detail panel / mock rules panel / full table
     if app.network.show_mock_rules_panel {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(rows[5]);
+            .split(rows[6]);
 
         app.layout.net_detail_x = cols[1].x;
         draw_table_body(f, app, cols[0]);
@@ -168,17 +175,17 @@ pub fn draw_network(f: &mut Frame, app: &mut App, area: Rect) {
         let cols = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(rows[5]);
+            .split(rows[6]);
 
         app.layout.net_detail_x = cols[1].x;
         draw_table_body(f, app, cols[0]);
         detail::draw_network_detail(f, app, cols[1]);
     } else {
         app.layout.net_detail_x = app.layout.width;
-        draw_table_body(f, app, rows[5]);
+        draw_table_body(f, app, rows[6]);
     }
 
-    draw_network_status_bar(f, app, rows[6]);
+    draw_network_status_bar(f, app, rows[7]);
 }
 
 // ══════════════════════════════════════
