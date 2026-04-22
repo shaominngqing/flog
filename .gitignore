@@ -1,2 +1,20 @@
+# Rust
 /target
+
+# Git worktrees (local convention + Claude Code skill location)
 /.worktrees
+/.claude/worktrees
+
+# macOS
+.DS_Store
+
+# Claude Code / Superpowers workspace
+/.claude
+/.superpowers
+
+# Flutter / Dart generated (flog_dart package)
+flog_dart/.dart_tool/
+flog_dart/build/
+flog_dart/.flutter-plugins-dependencies
+flog_dart/.flutter-plugins
+flog_dart/.packages
