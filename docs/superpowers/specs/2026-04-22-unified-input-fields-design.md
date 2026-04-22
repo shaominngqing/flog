@@ -69,6 +69,8 @@ Row 2: All HTTP SSE WS  │  GET POST PUT DEL PATCH  │  OK Fail Active Pending
 
 Search 和 Exclude 的 `|` 拆分和 regex 切换完全对称。
 
+**只在 hint 里写最简示例**（`(a|b)` / `(+a|-b)`）—— 完整语法说明（regex `/pat/` / `/pat/i`、Tag `+`/`-` 前缀语义、失焦/激活规则、实时生效）写到 Help 页面 (`?`) 的 "Search & Filter" 小节，避免 hint 喧宾夺主。
+
 ### 输入框溢出
 
 - **Active 态**：滚动窗口，光标始终可见
