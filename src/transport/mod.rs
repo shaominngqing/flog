@@ -4,4 +4,4 @@ pub mod adb;
 pub mod device_monitor;
 pub mod usbmuxd;
 
-pub use device_monitor::{start_discovery, ConnectionMethod, Device, DeviceEvent, DeviceKind};
+pub use device_monitor::{start_discovery, ConnectionMethod, DeviceEvent};

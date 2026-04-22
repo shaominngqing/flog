@@ -1,13 +1,20 @@
 //! Event-driven device discovery.
 //!
-//! Three parallel sources, all feeding into one DeviceEvent channel:
-//! 1. `adb track-devices` — persistent connection, instant Android events
-//! 2. usbmuxd `Listen` — persistent connection, instant iOS USB events
-//! 3. localhost probe — 1s poll, covers macOS + iOS simulator
+//! Three parallel sources feed a single `DeviceEvent` channel:
+//!
+//! | Source     | Mechanism                       | Covers                         |
+//! |------------|---------------------------------|--------------------------------|
+//! | `adb`      | `adb track-devices` stream      | Android real devices + AVDs    |
+//! | `usbmuxd`  | `Listen` on unix socket (macOS) | iOS real devices over USB      |
+//! | `local`    | TCP probe + WS handshake        | macOS app & iOS simulator      |
+//!
+//! Each source is self-contained in its own inline module and shares a small
+//! helper (`DeviceTracker`) that encapsulates the "known set + emit Added /
+//! Removed + drain on disconnect" pattern.
 
-use std::process::Stdio;
-use tokio::process::Command;
 use tokio::sync::mpsc;
+
+// ── Public types ────────────────────────────────────────────────────────────
 
 /// A discovered device.
 #[derive(Debug, Clone, PartialEq)]
@@ -51,379 +58,589 @@ pub enum DeviceEvent {
 }
 
 /// Start all device discovery sources in parallel.
-/// Returns a channel that receives device events from all sources.
 pub fn start_discovery(port: u16) -> mpsc::UnboundedReceiver<DeviceEvent> {
     let (tx, rx) = mpsc::unbounded_channel();
 
-    // Source 1: adb track-devices (Android)
-    let tx1 = tx.clone();
-    tokio::spawn(async move {
-        track_adb_devices(tx1).await;
-    });
+    tokio::spawn(adb_source::track(tx.clone()));
 
-    // Source 2: usbmuxd Listen (iOS USB, macOS only)
     #[cfg(target_os = "macos")]
-    {
-        let tx2 = tx.clone();
-        tokio::spawn(async move {
-            track_usbmuxd_devices(tx2).await;
-        });
-    }
+    tokio::spawn(usbmuxd_source::track(tx.clone()));
 
-    // Source 3: localhost probe (macOS / iOS simulator)
-    let tx3 = tx.clone();
-    tokio::spawn(async move {
-        probe_localhost(tx3, port).await;
-    });
+    tokio::spawn(local_source::probe(tx, port));
 
     rx
 }
 
-// ── Source 1: adb track-devices ──
+// ── Shared tracker ──────────────────────────────────────────────────────────
 
-async fn track_adb_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
+/// Tracks the set of device ids currently reported by one source, dedups
+/// Added events, and guarantees every Added has a matching Removed — including
+/// when the source's connection dies unexpectedly (via `drain`).
+struct DeviceTracker {
+    tx: mpsc::UnboundedSender<DeviceEvent>,
+    known: std::collections::HashSet<String>,
+}
+
+impl DeviceTracker {
+    fn new(tx: mpsc::UnboundedSender<DeviceEvent>) -> Self {
+        Self {
+            tx,
+            known: std::collections::HashSet::new(),
+        }
+    }
+
+    /// Emit Added if the device id hasn't been seen yet. Returns whether a new
+    /// event was emitted — callers can skip expensive name queries otherwise.
+    fn add(&mut self, device: Device) -> bool {
+        if self.known.insert(device.id.clone()) {
+            let _ = self.tx.send(DeviceEvent::Added(device));
+            true
+        } else {
+            false
+        }
+    }
+
+    fn contains(&self, id: &str) -> bool {
+        self.known.contains(id)
+    }
+
+    fn remove(&mut self, id: &str) {
+        if self.known.remove(id) {
+            let _ = self.tx.send(DeviceEvent::Removed(id.to_string()));
+        }
+    }
+
+    /// Returns ids that are in `known` but not in `current`. Useful after
+    /// receiving a full state snapshot from the source.
+    fn removed_since(&self, current: &std::collections::HashSet<String>) -> Vec<String> {
+        self.known
+            .iter()
+            .filter(|id| !current.contains(*id))
+            .cloned()
+            .collect()
+    }
+
+    /// Emit Removed for every known device and clear the set. Called when the
+    /// underlying source disconnects so stale devices don't linger in the UI.
+    fn drain(&mut self) {
+        for id in self.known.drain() {
+            let _ = self.tx.send(DeviceEvent::Removed(id));
+        }
+    }
+}
+
+// ── Source 1: adb track-devices ─────────────────────────────────────────────
+
+mod adb_source {
+    use super::{Device, DeviceEvent, DeviceKind, DeviceTracker};
+    use std::process::Stdio;
+    use std::time::Duration;
     use tokio::io::AsyncReadExt;
+    use tokio::process::Command;
+    use tokio::sync::mpsc;
 
-    loop {
-        let child = Command::new("adb")
-            .arg("track-devices")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn();
+    /// Sleep between reconnect attempts when `adb track-devices` dies cleanly.
+    const RECONNECT_DELAY: Duration = Duration::from_secs(3);
+    /// Sleep when `adb` is not installed — infrequent polling is enough.
+    const ADB_MISSING_DELAY: Duration = Duration::from_secs(30);
 
-        let mut child = match child {
-            Ok(c) => c,
-            Err(_) => {
-                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-                continue;
-            }
-        };
-
-        let mut stdout = match child.stdout.take() {
-            Some(s) => s,
-            None => continue,
-        };
-
-        let mut known: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-        // adb track-devices protocol: each update is 4-char hex length + content
+    /// Follow `adb track-devices` forever, translating its stream into
+    /// DeviceEvents. Handles real devices and AVD emulators uniformly.
+    pub async fn track(tx: mpsc::UnboundedSender<DeviceEvent>) {
         loop {
-            // Read 4-byte hex length
-            let mut hex_buf = [0u8; 4];
-            if stdout.read_exact(&mut hex_buf).await.is_err() {
-                break;
-            }
-            let hex_str = match std::str::from_utf8(&hex_buf) {
-                Ok(s) => s,
-                Err(_) => break,
-            };
-            let content_len = match usize::from_str_radix(hex_str, 16) {
-                Ok(n) => n,
-                Err(_) => break,
-            };
-
-            // Read content
-            let mut content = vec![0u8; content_len];
-            if content_len > 0 {
-                if stdout.read_exact(&mut content).await.is_err() {
-                    break;
-                }
-            }
-
-            let text = match String::from_utf8(content) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            // Parse device list — each line is SERIAL\tSTATUS
-            let mut current: std::collections::HashSet<String> = std::collections::HashSet::new();
-            for line in text.lines() {
-                let line = line.trim();
-                if line.is_empty() {
+            let mut child = match Command::new("adb")
+                .arg("track-devices")
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+            {
+                Ok(c) => c,
+                Err(_) => {
+                    tokio::time::sleep(ADB_MISSING_DELAY).await;
                     continue;
                 }
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 2 && parts[1] == "device" {
-                    current.insert(parts[0].to_string());
-                }
-            }
+            };
 
-            // Diff: find added and removed
+            let Some(stdout) = child.stdout.take() else {
+                let _ = child.kill().await;
+                tokio::time::sleep(RECONNECT_DELAY).await;
+                continue;
+            };
+
+            let mut tracker = DeviceTracker::new(tx.clone());
+            read_stream(stdout, &mut tracker).await;
+
+            // Stream ended — the adb server crashed or restarted. Drop every
+            // device we had attributed to this source before reconnecting, so
+            // we don't leave phantom entries.
+            tracker.drain();
+            let _ = child.kill().await;
+            tokio::time::sleep(RECONNECT_DELAY).await;
+        }
+    }
+
+    /// Read the adb track-devices protocol: each message is a 4-char ASCII hex
+    /// length followed by that many bytes of `serial\tstatus` lines.
+    async fn read_stream<R: tokio::io::AsyncRead + Unpin>(
+        mut stdout: R,
+        tracker: &mut DeviceTracker,
+    ) {
+        loop {
+            let Some(text) = read_frame(&mut stdout).await else {
+                return;
+            };
+
+            // Snapshot of the serials currently in `device` state.
+            let current: std::collections::HashSet<String> = text
+                .lines()
+                .filter_map(|line| {
+                    let mut parts = line.trim().split('\t');
+                    let serial = parts.next()?;
+                    let status = parts.next()?;
+                    // We only care about fully-online devices. Transient states
+                    // like `offline` / `unauthorized` naturally translate into
+                    // "not present" and a Removed event if we'd seen it.
+                    (status == "device" && !serial.is_empty()).then(|| serial.to_string())
+                })
+                .collect();
+
             for serial in &current {
-                if known.insert(serial.clone()) {
-                    let name = adb_device_name(serial).await;
-                    let _ = tx.send(DeviceEvent::Added(Device {
+                if !tracker.contains(serial) {
+                    let name = device_name(serial).await;
+                    tracker.add(Device {
                         id: serial.clone(),
                         name,
                         kind: DeviceKind::Android,
-                    }));
+                    });
                 }
             }
-            let removed: Vec<String> = known
-                .iter()
-                .filter(|s| !current.contains(*s))
-                .cloned()
-                .collect();
-            for serial in removed {
-                known.remove(&serial);
-                let _ = tx.send(DeviceEvent::Removed(serial));
+            for serial in tracker.removed_since(&current) {
+                tracker.remove(&serial);
             }
         }
-
-        // Process exited — cleanup
-        for id in known.drain() {
-            let _ = tx.send(DeviceEvent::Removed(id));
-        }
-        let _ = child.kill().await;
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
-}
 
-/// Query Android device model via adb shell getprop.
-async fn adb_device_name(serial: &str) -> String {
-    let model = adb_getprop(serial, "ro.product.model").await;
-    let brand = adb_getprop(serial, "ro.product.brand").await;
-    match (brand, model) {
-        (Some(b), Some(m)) => {
-            // Capitalize brand first letter
-            let brand_cap = capitalize_first(&b);
-            // Avoid duplication like "Samsung Samsung Galaxy S24"
-            if m.to_lowercase().starts_with(&b.to_lowercase()) {
-                m
-            } else {
-                format!("{} {}", brand_cap, m)
+    /// Read one length-prefixed frame. Returns None on any read error or
+    /// malformed header, which signals the caller to tear down the connection.
+    async fn read_frame<R: tokio::io::AsyncRead + Unpin>(stdout: &mut R) -> Option<String> {
+        let mut hex = [0u8; 4];
+        stdout.read_exact(&mut hex).await.ok()?;
+        let len = usize::from_str_radix(std::str::from_utf8(&hex).ok()?, 16).ok()?;
+        let mut buf = vec![0u8; len];
+        if len > 0 {
+            stdout.read_exact(&mut buf).await.ok()?;
+        }
+        String::from_utf8(buf).ok()
+    }
+
+    /// Build a display name for an Android device or emulator.
+    ///
+    /// Emulators get a distinct label so the user can tell them apart from
+    /// real devices. For real devices we use brand + model, deduping when the
+    /// model already starts with the brand name (e.g. "Samsung Galaxy S24").
+    async fn device_name(serial: &str) -> String {
+        let is_emulator = serial.starts_with("emulator-")
+            || getprop(serial, "ro.kernel.qemu").await.as_deref() == Some("1");
+
+        if is_emulator {
+            let avd = getprop(serial, "ro.boot.qemu.avd_name")
+                .await
+                .or(getprop(serial, "ro.kernel.qemu.avd_name").await);
+            let api = getprop(serial, "ro.build.version.sdk").await;
+            return match (avd, api) {
+                (Some(a), Some(api)) => format!("{} (API {}, Emulator)", a.replace('_', " "), api),
+                (Some(a), None) => format!("{} (Emulator)", a.replace('_', " ")),
+                (None, Some(api)) => format!("Android Emulator (API {})", api),
+                (None, None) => "Android Emulator".to_string(),
+            };
+        }
+
+        let brand = getprop(serial, "ro.product.brand").await;
+        let model = getprop(serial, "ro.product.model").await;
+        match (brand, model) {
+            (Some(b), Some(m)) => {
+                if m.to_lowercase().starts_with(&b.to_lowercase()) {
+                    m
+                } else {
+                    format!("{} {}", capitalize_first(&b), m)
+                }
             }
+            (None, Some(m)) => m,
+            (Some(b), None) => capitalize_first(&b),
+            (None, None) => serial.to_string(),
         }
-        (None, Some(m)) => m,
-        (Some(b), None) => capitalize_first(&b),
-        (None, None) => serial.to_string(),
     }
-}
 
-async fn adb_getprop(serial: &str, prop: &str) -> Option<String> {
-    let output = Command::new("adb")
-        .args(["-s", serial, "shell", "getprop", prop])
-        .output()
-        .await
-        .ok()?;
-    if output.status.success() {
-        let val = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if val.is_empty() {
-            None
-        } else {
-            Some(val)
+    async fn getprop(serial: &str, prop: &str) -> Option<String> {
+        let out = Command::new("adb")
+            .args(["-s", serial, "shell", "getprop", prop])
+            .output()
+            .await
+            .ok()?;
+        if !out.status.success() {
+            return None;
         }
-    } else {
-        None
+        let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (!val.is_empty()).then_some(val)
+    }
+
+    fn capitalize_first(s: &str) -> String {
+        let mut chars = s.chars();
+        match chars.next() {
+            None => String::new(),
+            Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+        }
     }
 }
 
-fn capitalize_first(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
-    }
-}
-
-// ── Source 2: usbmuxd Listen (macOS only) ──
+// ── Source 2: usbmuxd Listen (macOS only) ───────────────────────────────────
 
 #[cfg(target_os = "macos")]
-async fn track_usbmuxd_devices(tx: mpsc::UnboundedSender<DeviceEvent>) {
+mod usbmuxd_source {
+    use super::{Device, DeviceEvent, DeviceKind, DeviceTracker};
+    use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
+    use tokio::sync::mpsc;
 
-    const USBMUXD_SOCKET: &str = "/var/run/usbmuxd";
+    const SOCKET_PATH: &str = "/var/run/usbmuxd";
     const HEADER_SIZE: usize = 16;
+    const RECONNECT_DELAY: Duration = Duration::from_secs(3);
+    const SOCKET_MISSING_DELAY: Duration = Duration::from_secs(10);
 
-    loop {
-        let stream = match UnixStream::connect(USBMUXD_SOCKET).await {
-            Ok(s) => s,
-            Err(_) => {
-                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-                continue;
-            }
-        };
+    /// Follow usbmuxd's `Listen` protocol forever.
+    ///
+    /// Every time the connection drops (usbmuxd restart, socket unavailable,
+    /// transient read error) we drain the tracker so the UI doesn't keep
+    /// showing iOS devices that we can no longer see.
+    pub async fn track(tx: mpsc::UnboundedSender<DeviceEvent>) {
+        loop {
+            let stream = match UnixStream::connect(SOCKET_PATH).await {
+                Ok(s) => s,
+                Err(_) => {
+                    tokio::time::sleep(SOCKET_MISSING_DELAY).await;
+                    continue;
+                }
+            };
 
+            let mut tracker = DeviceTracker::new(tx.clone());
+            run_session(stream, &mut tracker).await;
+            tracker.drain();
+            tokio::time::sleep(RECONNECT_DELAY).await;
+        }
+    }
+
+    /// One full session: send Listen, then loop on inbound Attached/Detached.
+    /// Returns when the connection fails — caller handles cleanup.
+    async fn run_session(stream: UnixStream, tracker: &mut DeviceTracker) {
         let (mut read_half, mut write_half) = stream.into_split();
 
-        // Track usbmuxd DeviceID → serial, and known serials for dedup
-        let mut device_id_map: std::collections::HashMap<u32, String> =
-            std::collections::HashMap::new();
-        let mut known_serials: std::collections::HashSet<String> = std::collections::HashSet::new();
+        if send_listen(&mut write_half).await.is_err() {
+            return;
+        }
 
-        // Send Listen request
-        let request = plist::Value::Dictionary({
-            let mut d = plist::Dictionary::new();
-            d.insert("MessageType".into(), "Listen".into());
-            d.insert("ClientVersionString".into(), "flog".into());
-            d.insert("ProgName".into(), "flog".into());
-            d
-        });
-        let mut body = Vec::new();
-        if request.to_writer_xml(&mut body).is_err() {
-            continue;
-        }
-        let length = (HEADER_SIZE + body.len()) as u32;
-        let mut header = Vec::with_capacity(HEADER_SIZE);
-        header.extend_from_slice(&length.to_le_bytes());
-        header.extend_from_slice(&1u32.to_le_bytes());
-        header.extend_from_slice(&8u32.to_le_bytes());
-        header.extend_from_slice(&1u32.to_le_bytes());
-        if write_half.write_all(&header).await.is_err()
-            || write_half.write_all(&body).await.is_err()
-        {
-            continue;
-        }
+        // Multiple Attached events can share a serial (different interfaces:
+        // USB, network). We only emit one Added per serial and only emit
+        // Removed when the *last* DeviceID for that serial detaches.
+        let mut device_id_to_serial: std::collections::HashMap<u32, String> =
+            std::collections::HashMap::new();
 
         loop {
-            let mut hdr = [0u8; HEADER_SIZE];
-            if read_half.read_exact(&mut hdr).await.is_err() {
-                break;
-            }
-            let length = u32::from_le_bytes([hdr[0], hdr[1], hdr[2], hdr[3]]) as usize;
-            let body_len = length.saturating_sub(HEADER_SIZE);
-            let mut body = vec![0u8; body_len];
-            if read_half.read_exact(&mut body).await.is_err() {
-                break;
-            }
-
-            let value = match plist::Value::from_reader(std::io::Cursor::new(body)) {
-                Ok(v) => v,
-                Err(_) => continue,
+            let Some(msg) = read_message(&mut read_half).await else {
+                return;
             };
+            dispatch(msg, tracker, &mut device_id_to_serial).await;
+        }
+    }
 
-            let dict = match value.as_dictionary() {
-                Some(d) => d,
-                None => continue,
-            };
+    async fn send_listen(w: &mut tokio::net::unix::OwnedWriteHalf) -> std::io::Result<()> {
+        let body = {
+            let dict = plist::Value::Dictionary({
+                let mut d = plist::Dictionary::new();
+                d.insert("MessageType".into(), "Listen".into());
+                d.insert("ClientVersionString".into(), "flog".into());
+                d.insert("ProgName".into(), "flog".into());
+                d
+            });
+            let mut buf = Vec::new();
+            dict.to_writer_xml(&mut buf)
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            buf
+        };
 
-            let msg_type = dict
-                .get("MessageType")
-                .and_then(|v| v.as_string())
-                .unwrap_or("");
-            match msg_type {
-                "Attached" => {
-                    if let Some(props) = dict.get("Properties").and_then(|v| v.as_dictionary()) {
-                        let device_id = props
-                            .get("DeviceID")
-                            .and_then(|v| v.as_unsigned_integer())
-                            .unwrap_or(0) as u32;
-                        let serial = props
-                            .get("SerialNumber")
-                            .and_then(|v| v.as_string())
-                            .unwrap_or("")
-                            .to_string();
-                        let device_name = props
-                            .get("DeviceName")
-                            .and_then(|v| v.as_string())
-                            .unwrap_or("")
-                            .to_string();
-                        if !serial.is_empty() {
-                            // Track DeviceID → serial mapping for Detached events
-                            device_id_map.insert(device_id, serial.clone());
+        let total_len = (HEADER_SIZE + body.len()) as u32;
+        let mut header = Vec::with_capacity(HEADER_SIZE);
+        header.extend_from_slice(&total_len.to_le_bytes());
+        header.extend_from_slice(&1u32.to_le_bytes()); // version
+        header.extend_from_slice(&8u32.to_le_bytes()); // message type: plist
+        header.extend_from_slice(&1u32.to_le_bytes()); // tag
 
-                            // Only emit Added once per serial (same device may have multiple connections)
-                            if known_serials.insert(serial.clone()) {
-                                let name = if !device_name.is_empty() {
-                                    device_name
-                                } else {
-                                    // Query lockdownd for real device name + model
-                                    super::usbmuxd::query_device_name(device_id)
-                                        .await
-                                        .unwrap_or_else(|| "iPhone".to_string())
-                                };
-                                let _ = tx.send(DeviceEvent::Added(Device {
-                                    id: serial,
-                                    name,
-                                    kind: DeviceKind::IosUsb { device_id },
-                                }));
-                            }
+        w.write_all(&header).await?;
+        w.write_all(&body).await?;
+        Ok(())
+    }
+
+    async fn read_message(r: &mut tokio::net::unix::OwnedReadHalf) -> Option<plist::Dictionary> {
+        let mut hdr = [0u8; HEADER_SIZE];
+        r.read_exact(&mut hdr).await.ok()?;
+        let length = u32::from_le_bytes([hdr[0], hdr[1], hdr[2], hdr[3]]) as usize;
+        let body_len = length.saturating_sub(HEADER_SIZE);
+        let mut body = vec![0u8; body_len];
+        if body_len > 0 {
+            r.read_exact(&mut body).await.ok()?;
+        }
+        plist::Value::from_reader(std::io::Cursor::new(body))
+            .ok()?
+            .into_dictionary()
+    }
+
+    async fn dispatch(
+        msg: plist::Dictionary,
+        tracker: &mut DeviceTracker,
+        device_id_to_serial: &mut std::collections::HashMap<u32, String>,
+    ) {
+        let msg_type = msg.get("MessageType").and_then(|v| v.as_string());
+        match msg_type {
+            Some("Attached") => handle_attached(msg, tracker, device_id_to_serial).await,
+            Some("Detached") => handle_detached(msg, tracker, device_id_to_serial),
+            _ => {}
+        }
+    }
+
+    async fn handle_attached(
+        msg: plist::Dictionary,
+        tracker: &mut DeviceTracker,
+        device_id_to_serial: &mut std::collections::HashMap<u32, String>,
+    ) {
+        let Some(props) = msg.get("Properties").and_then(|v| v.as_dictionary()) else {
+            return;
+        };
+        let device_id = props
+            .get("DeviceID")
+            .and_then(|v| v.as_unsigned_integer())
+            .unwrap_or(0) as u32;
+        let serial = props
+            .get("SerialNumber")
+            .and_then(|v| v.as_string())
+            .unwrap_or("")
+            .to_string();
+        if serial.is_empty() {
+            return;
+        }
+
+        device_id_to_serial.insert(device_id, serial.clone());
+
+        if tracker.contains(&serial) {
+            // Same phone, new interface (USB vs wifi pairing) — just remember
+            // the mapping; don't emit a duplicate Added.
+            return;
+        }
+
+        let name = props
+            .get("DeviceName")
+            .and_then(|v| v.as_string())
+            .map(str::to_string)
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "iPhone".to_string());
+        // DeviceName is usually populated by usbmuxd; if not, lockdownd query
+        // as a fallback.
+        let name = if name == "iPhone" {
+            crate::transport::usbmuxd::query_device_name(device_id)
+                .await
+                .unwrap_or(name)
+        } else {
+            name
+        };
+
+        tracker.add(Device {
+            id: serial,
+            name,
+            kind: DeviceKind::IosUsb { device_id },
+        });
+    }
+
+    fn handle_detached(
+        msg: plist::Dictionary,
+        tracker: &mut DeviceTracker,
+        device_id_to_serial: &mut std::collections::HashMap<u32, String>,
+    ) {
+        let device_id = msg
+            .get("DeviceID")
+            .and_then(|v| v.as_unsigned_integer())
+            .unwrap_or(0) as u32;
+        let Some(serial) = device_id_to_serial.remove(&device_id) else {
+            return;
+        };
+        // Only remove the device when *every* interface for this serial has
+        // detached — otherwise the phone still has a live tunnel.
+        let still_attached = device_id_to_serial.values().any(|s| s == &serial);
+        if !still_attached {
+            tracker.remove(&serial);
+        }
+    }
+}
+
+// ── Source 3: localhost probe ───────────────────────────────────────────────
+
+mod local_source {
+    use super::{Device, DeviceEvent, DeviceKind};
+    use std::time::Duration;
+    use tokio::process::Command;
+    use tokio::sync::mpsc;
+
+    /// flog_dart binds `base_port..base_port+9` — we scan the same range.
+    const PORT_SCAN_RANGE: u16 = 10;
+    const POLL_INTERVAL: Duration = Duration::from_secs(1);
+    const TCP_TIMEOUT: Duration = Duration::from_millis(200);
+    const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(3);
+
+    /// Probe `base_port..base_port+9` on loopback to detect a macOS app or
+    /// iOS simulator running flog_dart.
+    ///
+    /// A listening port alone isn't proof of flog — any process can bind it.
+    /// On a transition from "no ports open" to "some open", we do a one-shot
+    /// WS handshake on the first open port and only emit Added if the peer
+    /// sends a valid `hello` frame. Ports that fail handshake are remembered
+    /// as "not flog" until they close (then we'll retry).
+    ///
+    /// Identity (os, app name) comes from the hello frame, never from guessing.
+    pub async fn probe(tx: mpsc::UnboundedSender<DeviceEvent>, base_port: u16) {
+        use futures_util::future::join_all;
+
+        let ports: Vec<u16> = (0..PORT_SCAN_RANGE).map(|o| base_port + o).collect();
+        let mut verified = false;
+        let mut non_flog: std::collections::HashSet<u16> = std::collections::HashSet::new();
+
+        loop {
+            // Parallel TCP scan — total latency stays bounded by TCP_TIMEOUT
+            // regardless of how many ports we check.
+            let open_ports: Vec<u16> = join_all(ports.iter().map(|&p| tcp_open(p)))
+                .await
+                .into_iter()
+                .flatten()
+                .collect();
+
+            // A port that closed and reopens deserves a fresh handshake
+            // attempt — drop it from the "not flog" memo.
+            non_flog.retain(|p| open_ports.contains(p));
+
+            if verified {
+                if open_ports.is_empty() {
+                    let _ = tx.send(DeviceEvent::Removed("localhost".to_string()));
+                    verified = false;
+                    non_flog.clear();
+                }
+            } else {
+                for &p in &open_ports {
+                    if non_flog.contains(&p) {
+                        continue;
+                    }
+                    match handshake(p).await {
+                        Some(hello) => {
+                            let _ = tx.send(DeviceEvent::Added(Device {
+                                id: "localhost".to_string(),
+                                name: device_name(&hello).await,
+                                kind: DeviceKind::Local,
+                            }));
+                            verified = true;
+                            break;
+                        }
+                        None => {
+                            non_flog.insert(p);
                         }
                     }
                 }
-                "Detached" => {
-                    let device_id = dict
-                        .get("DeviceID")
-                        .and_then(|v| v.as_unsigned_integer())
-                        .unwrap_or(0) as u32;
-                    // Look up serial by DeviceID, remove only when all connections for this serial are gone
-                    if let Some(serial) = device_id_map.remove(&device_id) {
-                        if !device_id_map.values().any(|s| s == &serial) {
-                            known_serials.remove(&serial);
-                            let _ = tx.send(DeviceEvent::Removed(serial));
-                        }
-                    }
-                }
-                _ => {}
             }
+
+            tokio::time::sleep(POLL_INTERVAL).await;
         }
-
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
-}
 
-// ── Source 3: localhost probe ──
-
-/// Periodically try to connect to localhost:{port} to detect
-/// macOS apps and iOS simulator apps.
-async fn probe_localhost(tx: mpsc::UnboundedSender<DeviceEvent>, port: u16) {
-    let addr = format!("127.0.0.1:{}", port);
-    let mut was_reachable = false;
-
-    loop {
-        // Quick TCP probe — just check if something is listening
-        let reachable = matches!(
-            tokio::time::timeout(
-                std::time::Duration::from_millis(200),
-                tokio::net::TcpStream::connect(&addr),
-            )
-            .await,
-            Ok(Ok(_))
-        );
-
-        if reachable && !was_reachable {
-            let name = detect_local_device_name().await;
-            let _ = tx.send(DeviceEvent::Added(Device {
-                id: "localhost".to_string(),
-                name,
-                kind: DeviceKind::Local,
-            }));
-            was_reachable = true;
-        } else if !reachable && was_reachable {
-            let _ = tx.send(DeviceEvent::Removed("localhost".to_string()));
-            was_reachable = false;
+    async fn tcp_open(port: u16) -> Option<u16> {
+        let addr = format!("127.0.0.1:{}", port);
+        match tokio::time::timeout(TCP_TIMEOUT, tokio::net::TcpStream::connect(&addr)).await {
+            Ok(Ok(_)) => Some(port),
+            _ => None,
         }
-
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
-}
 
-/// Detect the name of the local device (booted simulator or macOS).
-async fn detect_local_device_name() -> String {
-    // Try to find a booted iOS simulator
-    if let Some(name) = booted_simulator_name().await {
-        return name;
+    struct Hello {
+        os: String,
+        app: String,
     }
-    "macOS".to_string()
-}
 
-/// Query `xcrun simctl list devices booted` for the booted simulator name.
-async fn booted_simulator_name() -> Option<String> {
-    let output = Command::new("xcrun")
-        .args(["simctl", "list", "devices", "booted", "--json"])
-        .output()
-        .await
-        .ok()?;
-    if !output.status.success() {
-        return None;
+    /// Confirm that the peer on `port` is a flog_dart server by reading its
+    /// `hello` frame. Closes the connection immediately — main.rs owns the
+    /// real long-lived session (which would otherwise receive a full replay
+    /// on every probe).
+    async fn handshake(port: u16) -> Option<Hello> {
+        use futures_util::StreamExt;
+        use tokio_tungstenite::tungstenite::Message;
+
+        let url = format!("ws://127.0.0.1:{}", port);
+        let (ws, _) = tokio::time::timeout(HANDSHAKE_TIMEOUT, tokio_tungstenite::connect_async(&url))
+            .await
+            .ok()?
+            .ok()?;
+        let (_sink, mut read) = ws.split();
+
+        let first = tokio::time::timeout(HANDSHAKE_TIMEOUT, read.next())
+            .await
+            .ok()??
+            .ok()?;
+        let text = match first {
+            Message::Text(t) => t,
+            _ => return None,
+        };
+        let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+        if v.get("type").and_then(|t| t.as_str()) != Some("hello") {
+            return None;
+        }
+        Some(Hello {
+            os: v
+                .get("os")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
+            app: v
+                .get("app")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string(),
+        })
+        // ws drops here — the kernel closes the connection.
     }
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    let devices = json.get("devices")?.as_object()?;
-    // Find first booted device across all runtimes
-    for (_runtime, device_list) in devices {
-        if let Some(arr) = device_list.as_array() {
+
+    async fn device_name(hello: &Hello) -> String {
+        // The tag in the UI already says "Simulator" — here we return the
+        // concrete simulator model when simctl knows about a booted one,
+        // otherwise a short fallback.
+        match hello.os.to_lowercase().as_str() {
+            "ios" => booted_simulator_name()
+                .await
+                .unwrap_or_else(|| "Simulator".to_string()),
+            _ if !hello.app.is_empty() => hello.app.clone(),
+            _ => "Simulator".to_string(),
+        }
+    }
+
+    /// Ask `simctl` for the name of the currently-booted simulator, if any.
+    async fn booted_simulator_name() -> Option<String> {
+        let out = Command::new("xcrun")
+            .args(["simctl", "list", "devices", "booted", "--json"])
+            .output()
+            .await
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+        let runtimes = json.get("devices")?.as_object()?;
+        for devices in runtimes.values() {
+            let Some(arr) = devices.as_array() else {
+                continue;
+            };
             for dev in arr {
                 if dev.get("state").and_then(|s| s.as_str()) == Some("Booted") {
                     if let Some(name) = dev.get("name").and_then(|n| n.as_str()) {
@@ -432,6 +649,6 @@ async fn booted_simulator_name() -> Option<String> {
                 }
             }
         }
+        None
     }
-    None
 }

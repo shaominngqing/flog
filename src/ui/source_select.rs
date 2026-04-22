@@ -171,7 +171,7 @@ pub fn draw_device_picker(f: &mut Frame, app: &mut App, area: Rect) {
         let (platform_tag, conn_label) = match &dev_kind {
             DeviceKind::Android => ("Android", "ADB"),
             DeviceKind::IosUsb { .. } => ("iOS", "USB"),
-            DeviceKind::Local => ("Sim", "localhost"),
+            DeviceKind::Local => ("Simulator", "localhost"),
         };
 
         // Short id for display (device_id is typically the UDID / hostname key).
