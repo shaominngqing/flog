@@ -12,19 +12,18 @@ const LEVEL_BUTTON_WIDTH: u16 = 3;
 const DOUBLE_CLICK_MS: u128 = 400;
 
 pub fn handle_key(app: &mut App, key: KeyEvent) {
-    match app.mode {
+    match app.mode.clone() {
         AppMode::Normal => handle_normal_key(app, key),
-        AppMode::Search => handle_search_key(app, key),
-        AppMode::TagFilter => handle_filter_key(app, key),
+        AppMode::InputActive(field) => handle_input_key(app, field, key),
         AppMode::Help | AppMode::Stats => handle_overlay_key(app, key),
         AppMode::MockRuleEdit => handle_mock_edit_key(app, key),
     }
 }
 
 pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
-    match app.mode {
+    match app.mode.clone() {
         AppMode::Normal => handle_normal_mouse(app, mouse),
-        AppMode::Search | AppMode::TagFilter => handle_input_mouse(app, mouse),
+        AppMode::InputActive(_) => handle_input_mouse(app, mouse),
         AppMode::Help | AppMode::Stats => handle_overlay_mouse(app, mouse),
         AppMode::MockRuleEdit => handle_mock_edit_mouse(app, mouse),
     }
@@ -711,27 +710,12 @@ fn handle_bottom_click(app: &mut App, x: u16) {
 
 fn handle_input_mouse(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
-        MouseEventKind::Down(MouseButton::Left) => {
-            let y = mouse.row;
-            if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
-                match app.mode {
-                    AppMode::Search => app.apply_search(),
-                    AppMode::TagFilter => app.apply_tag_filter(),
-                    _ => {}
-                }
-            } else if y == app.layout.toolbar_y || y == app.layout.toolbar_op2_y {
-                match app.mode {
-                    AppMode::Search => app.cancel_search(),
-                    AppMode::TagFilter => app.cancel_tag_filter(),
-                    _ => {}
-                }
-            }
+        MouseEventKind::Down(MouseButton::Left)
+        | MouseEventKind::Down(MouseButton::Right) => {
+            // Any click while in InputActive → exit (buffer already applied on each keystroke).
+            // Task 6 improves this to click-through: clicking another input field switches focus.
+            app.exit_input_field();
         }
-        MouseEventKind::Down(MouseButton::Right) => match app.mode {
-            AppMode::Search => app.cancel_search(),
-            AppMode::TagFilter => app.cancel_tag_filter(),
-            _ => {}
-        },
         MouseEventKind::ScrollUp => app.move_up(SCROLL_LINES),
         MouseEventKind::ScrollDown => app.move_down(SCROLL_LINES),
         _ => {}
@@ -1349,26 +1333,23 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_search_key(app: &mut App, key: KeyEvent) {
+fn handle_input_key(app: &mut App, field: crate::app::InputField, key: KeyEvent) {
     match key.code {
-        KeyCode::Enter => app.apply_search(),
-        KeyCode::Esc => app.cancel_search(),
+        KeyCode::Enter | KeyCode::Esc => app.exit_input_field(),
         KeyCode::Backspace => {
-            app.search.input.pop();
+            let buf = app.inputs.buffer_mut(field);
+            if buf.pop().is_some() {
+                let len = buf.len();
+                let c = app.inputs.cursor_mut(field);
+                *c = (*c).min(len);
+            }
+            app.apply_input_field(field);
         }
-        KeyCode::Char(c) => app.search.input.push(c),
-        _ => {}
-    }
-}
-
-fn handle_filter_key(app: &mut App, key: KeyEvent) {
-    match key.code {
-        KeyCode::Enter => app.apply_tag_filter(),
-        KeyCode::Esc => app.cancel_tag_filter(),
-        KeyCode::Backspace => {
-            app.tag_filter.input.pop();
+        KeyCode::Char(c) => {
+            app.inputs.buffer_mut(field).push(c);
+            *app.inputs.cursor_mut(field) = app.inputs.buffer(field).len();
+            app.apply_input_field(field);
         }
-        KeyCode::Char(c) => app.tag_filter.input.push(c),
         _ => {}
     }
 }

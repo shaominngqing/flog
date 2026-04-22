@@ -9,11 +9,19 @@ use std::collections::HashMap;
 
 // ── Mode ──
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputField {
+    LogSearch,
+    LogExclude,
+    LogTag,
+    NetSearch,
+    NetExclude,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppMode {
     Normal,
-    Search,
-    TagFilter,
+    InputActive(InputField),
     Help,
     Stats,
     MockRuleEdit,
@@ -39,6 +47,63 @@ pub struct SearchState {
 #[derive(Default)]
 pub struct TagFilterInput {
     pub input: String,
+}
+
+/// Buffers + cursor for all 5 input fields.
+#[derive(Default)]
+pub struct InputBuffers {
+    pub log_search: String,
+    pub log_exclude: String,
+    pub log_tag: String,
+    pub net_search: String,
+    pub net_exclude: String,
+    pub log_search_cursor: usize,
+    pub log_exclude_cursor: usize,
+    pub log_tag_cursor: usize,
+    pub net_search_cursor: usize,
+    pub net_exclude_cursor: usize,
+}
+
+impl InputBuffers {
+    pub fn buffer_mut(&mut self, field: InputField) -> &mut String {
+        match field {
+            InputField::LogSearch => &mut self.log_search,
+            InputField::LogExclude => &mut self.log_exclude,
+            InputField::LogTag => &mut self.log_tag,
+            InputField::NetSearch => &mut self.net_search,
+            InputField::NetExclude => &mut self.net_exclude,
+        }
+    }
+
+    pub fn buffer(&self, field: InputField) -> &str {
+        match field {
+            InputField::LogSearch => &self.log_search,
+            InputField::LogExclude => &self.log_exclude,
+            InputField::LogTag => &self.log_tag,
+            InputField::NetSearch => &self.net_search,
+            InputField::NetExclude => &self.net_exclude,
+        }
+    }
+
+    pub fn cursor_mut(&mut self, field: InputField) -> &mut usize {
+        match field {
+            InputField::LogSearch => &mut self.log_search_cursor,
+            InputField::LogExclude => &mut self.log_exclude_cursor,
+            InputField::LogTag => &mut self.log_tag_cursor,
+            InputField::NetSearch => &mut self.net_search_cursor,
+            InputField::NetExclude => &mut self.net_exclude_cursor,
+        }
+    }
+
+    pub fn cursor(&self, field: InputField) -> usize {
+        match field {
+            InputField::LogSearch => self.log_search_cursor,
+            InputField::LogExclude => self.log_exclude_cursor,
+            InputField::LogTag => self.log_tag_cursor,
+            InputField::NetSearch => self.net_search_cursor,
+            InputField::NetExclude => self.net_exclude_cursor,
+        }
+    }
 }
 
 /// Snapshot of statistics data (computed once on Stats entry).
@@ -287,6 +352,13 @@ pub struct LayoutCache {
     pub device_picker_item_ids: Vec<String>,
     /// Total line count in device picker content (for scroll clamping).
     pub device_picker_total_lines: usize,
+    /// Y position of the row that holds all input fields (logs op1 / network op1).
+    pub input_row_y: u16,
+    /// Click hit regions per input field.
+    pub log_search_x: (u16, u16),
+    pub log_exclude_x: (u16, u16),
+    pub log_tag_x: (u16, u16),
+    pub net_exclude_x: (u16, u16),
     /// Jump-to-bottom floating overlay rect: (x, y, w, h). None when hidden.
     pub jump_to_bottom_rect: Option<(u16, u16, u16, u16)>,
 }
@@ -330,6 +402,7 @@ pub struct App {
     // Sub-states
     pub search: SearchState,
     pub tag_filter: TagFilterInput,
+    pub inputs: InputBuffers,
     pub detail: DetailState,
     pub bookmarks: BTreeSet<usize>,
 
@@ -392,6 +465,7 @@ impl App {
             detail_panel_pct: 35,
             search: SearchState::default(),
             tag_filter: TagFilterInput::default(),
+            inputs: InputBuffers::default(),
             detail: DetailState::default(),
             bookmarks: BTreeSet::new(),
             connected_apps: Vec::new(),
@@ -704,25 +778,112 @@ impl App {
         self.invalidate_filter();
     }
 
-    // ── Search ──
+    // ── Unified input-field control ──
+
+    pub fn enter_input_field(&mut self, field: InputField) {
+        // Seed buffer from current filter state if buffer is empty.
+        match field {
+            InputField::LogSearch => {
+                if self.inputs.log_search.is_empty() {
+                    self.inputs.log_search = self.filter.search_query.clone();
+                    self.inputs.log_search_cursor = self.inputs.log_search.len();
+                }
+            }
+            InputField::LogExclude => {
+                if self.inputs.log_exclude.is_empty() {
+                    self.inputs.log_exclude = self.filter.exclude_query.clone();
+                    self.inputs.log_exclude_cursor = self.inputs.log_exclude.len();
+                }
+            }
+            InputField::LogTag => {
+                if self.inputs.log_tag.is_empty() {
+                    let tags: Vec<String> = self
+                        .filter
+                        .tag_include
+                        .iter()
+                        .cloned()
+                        .chain(self.filter.tag_exclude.iter().map(|t| format!("-{}", t)))
+                        .collect();
+                    self.inputs.log_tag = tags.join("|");
+                    self.inputs.log_tag_cursor = self.inputs.log_tag.len();
+                }
+            }
+            InputField::NetSearch => {
+                if self.inputs.net_search.is_empty() {
+                    self.inputs.net_search = self.network.filter.search.clone();
+                    self.inputs.net_search_cursor = self.inputs.net_search.len();
+                }
+            }
+            InputField::NetExclude => {
+                if self.inputs.net_exclude.is_empty() {
+                    self.inputs.net_exclude = self.network.filter.exclude.clone();
+                    self.inputs.net_exclude_cursor = self.inputs.net_exclude.len();
+                }
+            }
+        }
+        self.mode = AppMode::InputActive(field);
+        self.layout.last_click = None;
+    }
+
+    pub fn exit_input_field(&mut self) {
+        self.mode = AppMode::Normal;
+        self.layout.last_click = None;
+    }
+
+    /// Push the active buffer into the filter and re-run filter.
+    pub fn apply_input_field(&mut self, field: InputField) {
+        match field {
+            InputField::LogSearch => {
+                self.filter.set_search(&self.inputs.log_search);
+                self.invalidate_filter();
+            }
+            InputField::LogExclude => {
+                self.filter.set_exclude(&self.inputs.log_exclude);
+                self.invalidate_filter();
+            }
+            InputField::LogTag => {
+                // Translate '|' separators to ',' to reuse parse_tag_filter.
+                let as_csv = self.inputs.log_tag.replace('|', ",");
+                self.filter.parse_tag_filter(&as_csv);
+                self.invalidate_filter();
+            }
+            InputField::NetSearch => {
+                self.network.filter.set_search(&self.inputs.net_search);
+                self.network.invalidate_filter();
+            }
+            InputField::NetExclude => {
+                self.network.filter.set_exclude(&self.inputs.net_exclude);
+                self.network.invalidate_filter();
+            }
+        }
+    }
+
+    // ── Legacy shims (will be removed in later cleanup) ──
 
     pub fn enter_search(&mut self) {
-        self.mode = AppMode::Search;
-        self.search.input = self.filter.search_query.clone();
-        self.layout.last_click = None;
+        self.enter_input_field(InputField::LogSearch);
     }
 
     pub fn apply_search(&mut self) {
-        self.filter.set_search(&self.search.input);
-        self.mode = AppMode::Normal;
-        self.invalidate_filter();
-        self.search.match_idx = 0;
-        self.layout.last_click = None;
+        self.apply_input_field(InputField::LogSearch);
+        self.exit_input_field();
     }
 
     pub fn cancel_search(&mut self) {
-        self.mode = AppMode::Normal;
-        self.layout.last_click = None;
+        self.exit_input_field();
+    }
+
+    pub fn enter_tag_filter(&mut self) {
+        self.enter_input_field(InputField::LogTag);
+    }
+
+    pub fn apply_tag_filter(&mut self) {
+        self.apply_input_field(InputField::LogTag);
+        self.exit_input_field();
+    }
+
+    pub fn cancel_tag_filter(&mut self) {
+        self.exit_input_field();
     }
 
     pub fn next_match(&mut self) {
@@ -751,33 +912,6 @@ impl App {
         self.selected = self.search.matches[self.search.match_idx];
         self.auto_scroll = false;
         // Renderer will ensure selected is visible.
-    }
-
-    // ── Tag Filter ──
-
-    pub fn enter_tag_filter(&mut self) {
-        self.mode = AppMode::TagFilter;
-        let tags: Vec<String> = self
-            .filter
-            .tag_include
-            .iter()
-            .cloned()
-            .chain(self.filter.tag_exclude.iter().map(|t| format!("-{}", t)))
-            .collect();
-        self.tag_filter.input = tags.join(",");
-        self.layout.last_click = None;
-    }
-
-    pub fn apply_tag_filter(&mut self) {
-        self.filter.parse_tag_filter(&self.tag_filter.input);
-        self.mode = AppMode::Normal;
-        self.invalidate_filter();
-        self.layout.last_click = None;
-    }
-
-    pub fn cancel_tag_filter(&mut self) {
-        self.mode = AppMode::Normal;
-        self.layout.last_click = None;
     }
 
     pub fn clear_all_filters(&mut self) {

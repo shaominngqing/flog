@@ -216,7 +216,7 @@ pub fn draw_logs(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
-    let search_active = app.mode == AppMode::Search;
+    let search_active = matches!(app.mode, AppMode::InputActive(crate::app::InputField::LogSearch));
     let w = area.width as u16;
 
     let mut spans: Vec<Span> = Vec::new();
@@ -275,7 +275,7 @@ fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_toolbar_op2(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
-    let filter_active = app.mode == AppMode::TagFilter;
+    let filter_active = matches!(app.mode, AppMode::InputActive(crate::app::InputField::LogTag));
     let mut spans: Vec<Span> = Vec::new();
     let mut x: u16 = 0;
 
