@@ -204,22 +204,88 @@ pub fn draw_help(f: &mut Frame) {
     lines.push(blank());
 
     lines.push(subheading("\u{1f50d} Search & Filter"));
+
+    // Row 1 description
     lines.push(Line::from(vec![
         Span::raw("    "),
-        dim("Search:  "),
+        dim("Row 1 hosts three input fields: "),
+        Span::styled("Search", Style::default().fg(YELLOW)),
+        dim(" / "),
+        Span::styled("Exclude", Style::default().fg(YELLOW)),
+        dim(" / "),
+        Span::styled("Tag", Style::default().fg(YELLOW)),
+        dim("."),
+    ]));
+    lines.push(blank());
+
+    // Activation
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        dim("Click a field or press "),
         key("/"),
-        dim(" type query "),
-        key("Enter"),
-        dim("    /regex/i for case-insensitive regex"),
+        dim(" (Search) / "),
+        key("\\"),
+        dim(" (Exclude) / "),
+        key("t"),
+        dim(" (Tag) to activate."),
     ]));
     lines.push(Line::from(vec![
         Span::raw("    "),
-        dim("Tag:     "),
-        key("t"),
-        dim(" type "),
-        Span::styled("tag1,tag2,-excluded", Style::default().fg(GREEN)),
-        dim("    comma-separated, - to exclude"),
+        dim("Typing filters the list "),
+        Span::styled("live", Style::default().fg(GREEN)),
+        dim(" — no Enter needed. Click outside or press "),
+        key("Esc"),
+        dim(" to blur."),
     ]));
+    lines.push(blank());
+
+    // Syntax — Search / Exclude
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled("Search / Exclude syntax", Style::default().fg(SAPPHIRE)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("      "),
+        Span::styled("a|b|c", Style::default().fg(GREEN)),
+        dim("            OR match — any of the terms (plain substring)"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("      "),
+        Span::styled("/pattern/", Style::default().fg(GREEN)),
+        dim("        regex mode — pipe is passed through to the engine"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("      "),
+        Span::styled("/pattern/i", Style::default().fg(GREEN)),
+        dim("       regex, case-insensitive"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("      "),
+        dim("Exclude drops any row that matches (inverse of Search)."),
+    ]));
+    lines.push(blank());
+
+    // Syntax — Tag
+    lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled("Tag syntax", Style::default().fg(SAPPHIRE)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("      "),
+        Span::styled("+network|-flog_net", Style::default().fg(GREEN)),
+        dim("   include network, exclude flog_net (pipe-separated)"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::raw("      "),
+        dim("Tag match is exact (case-insensitive); use regex via "),
+        Span::styled("*", Style::default().fg(YELLOW)),
+        dim(" or "),
+        Span::styled(".", Style::default().fg(YELLOW)),
+        dim(" in the pattern."),
+    ]));
+    lines.push(blank());
+
+    // Level
     lines.push(Line::from(vec![
         Span::raw("    "),
         dim("Level:   click "),
@@ -228,26 +294,17 @@ pub fn draw_help(f: &mut Frame) {
         Span::styled(" D ", Style::default().fg(TEXT).bg(SURFACE0)),
         Span::styled(
             " I ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(BLUE)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(MANTLE).bg(BLUE).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             " W ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(YELLOW)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(MANTLE).bg(YELLOW).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             " E ",
-            Style::default()
-                .fg(MANTLE)
-                .bg(RED)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(MANTLE).bg(RED).add_modifier(Modifier::BOLD),
         ),
-        dim("  to set minimum level"),
+        dim("  (row 2) to set minimum level"),
     ]));
     lines.push(blank());
 
