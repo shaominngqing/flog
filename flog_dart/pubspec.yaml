@@ -13,6 +13,8 @@ dependencies:
 
 dev_dependencies:
   lints: ^4.0.0
+  flutter_test:
+    sdk: flutter
 
 environment:
   sdk: ^3.0.0

@@ -10,6 +10,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'flog_net.dart' show flogEnabled;
 
 /// Singleton ring buffer for all outbound flog messages.
@@ -27,6 +29,15 @@ class FlogStore {
 
   /// Number of messages currently in the buffer.
   int get length => _buffer.length;
+
+  /// Snapshot of all stored messages for tests.
+  ///
+  /// Returns an immutable list view of the internal buffer so tests can
+  /// assert on emitted message shape without spinning up a WebSocket.
+  /// Characterization-test-only; do not call from production code.
+  @visibleForTesting
+  List<Map<String, dynamic>> get snapshotForTesting =>
+      List.unmodifiable(_buffer);
 
   /// Record a message into the ring buffer.
   ///
