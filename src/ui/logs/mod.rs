@@ -24,6 +24,21 @@ use super::{
     SUBTEXT0, SURFACE0, SURFACE1, TEXT, YELLOW,
 };
 
+/// Phase 2.5A — extracted from UI-010.
+/// Phase 2.5A — extracted from UI-010.
+/// Pure: clamp the viewport start index to `[0, total_filtered]`.
+///
+/// Note: this is simpler than it looks. Logs use a row-walking render
+/// model with variable-height rows (separators are 3 rows, entries can
+/// wrap up to MAX_WRAP_LINES), so there is NO fixed-window `(start,end)`
+/// slice — the renderer walks entries until `rows_used >= height`.
+/// This function only encapsulates the start clamp. Phase 3 (UI-006 /
+/// UI-010) decides whether to move logs to fixed-height rows, at which
+/// point this can return a full (start, end) tuple.
+pub(crate) fn compute_visible_entry_start(total_filtered: usize, offset: usize) -> usize {
+    offset.min(total_filtered)
+}
+
 // Logs-specific colors
 const ERROR_ROW_BG: Color = Color::Rgb(50, 30, 35); // subtle dark red
 const WARNING_ROW_BG: Color = Color::Rgb(50, 45, 30); // subtle dark yellow
@@ -665,7 +680,8 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
     //  PHASE 2: Render entries from scroll_offset until viewport is full
     // ════════════════════════════════════════════════════════════════
 
-    let start = app.scroll_offset;
+    let start = compute_visible_entry_start(filtered_count, app.scroll_offset);
+    let _ = height; // kept in scope; row-walker below uses it directly
     let selected = app.selected;
     let indices: Vec<usize> = fi_vec[start..filtered_count].to_vec();
 
@@ -1363,4 +1379,30 @@ fn highlight_with_filter(
         spans.push(Span::styled(text.to_string(), base));
     }
     spans
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_start_within_bounds() {
+        assert_eq!(compute_visible_entry_start(100, 10), 10);
+    }
+
+    #[test]
+    fn visible_start_equals_offset_when_offset_lt_total() {
+        assert_eq!(compute_visible_entry_start(15, 10), 10);
+    }
+
+    #[test]
+    fn visible_start_clamps_to_total_when_offset_too_large() {
+        assert_eq!(compute_visible_entry_start(5, 100), 5);
+    }
+
+    #[test]
+    fn visible_start_zero_total() {
+        assert_eq!(compute_visible_entry_start(0, 0), 0);
+        assert_eq!(compute_visible_entry_start(0, 50), 0);
+    }
 }
