@@ -508,6 +508,114 @@ proposed_action: |
   never exit; if it does, the app becomes unable to detect new devices."
 ```
 
+```yaml
+id: TRANS-100
+label: D
+location: src/transport/adb.rs:13-34
+title: setup_forward mixes pure port allocation with adb shell-out
+evidence: |
+  setup_forward() computes a local port via PORT_COUNTER / PORT_BASE /
+  PORT_RANGE, then shells out to `adb -s <serial> forward tcp:X tcp:Y`.
+  Because the entire function is async + process-exec, the pure port
+  allocation arithmetic cannot be unit-tested without running `adb`.
+proposed_action: |
+  Phase 2.5B Task 11 extracted `next_local_port(offset)` and
+  `allocate_local_port()` as pure helpers. Phase 3 opportunity: go
+  further and return a `Reservation { local_port, remove: impl FnOnce }`
+  value so callers can mock the shell-out via an injected `AdbClient`
+  trait. Keeps the real path ergonomic while enabling fault injection
+  in higher-level transport tests.
+```
+
+```yaml
+id: TRANS-101
+label: D
+location: src/transport/usbmuxd.rs:14-33
+title: connect_device plist encoding is coupled to UnixStream I/O
+evidence: |
+  connect_device() both builds the Connect plist dict and writes it
+  onto a UnixStream. Tests of the wire format previously had to
+  duplicate the dict construction. Phase 2.5B Task 11 extracted
+  build_connect_request(), connect_port_field(), encode_plist_frame(),
+  and decode_plist_header() so frame layout is directly testable.
+proposed_action: |
+  Phase 3: similarly factor lockdown_get_value() into a pure
+  `encode_get_value_request(key)` + `parse_get_value_response(bytes)`
+  pair so the big-endian 4-byte lockdownd framing can be tested
+  without a live device. Currently the lockdownd path is UNTESTABLE: PHYS.
+```
+
+```yaml
+id: TRANS-102
+label: D
+location: src/transport/device_monitor.rs:385-423 (pre-refactor)
+title: device_name couples getprop shell-out with display-name formatting
+evidence: |
+  device_name(serial) called getprop four times and interleaved the
+  output formatting (emulator label, brand+model dedup) with I/O, so
+  the formatting rules could only be tested by faking /usr/bin/adb.
+  Phase 2.5B Task 11 extracted `emulator_name()` and
+  `real_device_name()` as pure helpers; the async wrapper now only
+  handles the getprop shell-out.
+proposed_action: |
+  No further action required for correctness. Pattern: treat the
+  extracted helpers as the canonical spec for display-name rules;
+  any future product changes (e.g., new emulator flavor, regional
+  SKU) should modify the pure helper + its tests, not the async
+  wrapper.
+```
+
+```yaml
+id: TRANS-103
+label: D
+location: src/transport/device_monitor.rs:793-805 (pre-refactor)
+title: read_message hardcoded to tokio::net::unix::OwnedReadHalf
+evidence: |
+  read_message() took a concrete &mut OwnedReadHalf, making it
+  impossible to drive in-memory without a real usbmuxd socket. Phase
+  2.5B Task 11 extracted `read_message_any<R: AsyncRead>()` and had
+  the UnixStream wrapper delegate to it, enabling Cursor-backed
+  unit tests of truncated/non-dict/valid-dict frames.
+proposed_action: |
+  Phase 3: consider applying the same generic-over-AsyncRead pattern
+  to connector.rs (the WS reader task, TRANS-006) so reader task
+  failure modes become unit-testable without a running server.
+```
+
+```yaml
+id: TRANS-104
+label: D
+location: src/transport/device_monitor.rs:766-791 (pre-refactor)
+title: send_listen mixes plist XML serialization with UnixStream writes
+evidence: |
+  send_listen() constructed the Listen request dict, serialized it to
+  XML plist, composed the 16-byte header, and then wrote both in one
+  async function. The wire-format assertions required parsing bytes
+  back out of the socket. Phase 2.5B Task 11 extracted
+  `encode_listen_frame()` so the header fields (length/version/type/tag)
+  and body dict can be verified independently.
+proposed_action: |
+  No further action — the encode path is now fully covered by unit
+  tests and the UnixStream write path is correctly annotated
+  UNTESTABLE: PHYS.
+```
+
+```yaml
+id: TRANS-105
+label: D
+location: src/transport/device_monitor.rs:631-656 (pre-refactor)
+title: booted_simulator_name couples xcrun exec with JSON traversal
+evidence: |
+  booted_simulator_name() shelled out to `xcrun simctl list devices
+  booted --json` and parsed the nested `devices → runtime → [devs]`
+  structure inline. Phase 2.5B Task 11 extracted `parse_simctl_booted`
+  as a pure helper, making the JSON traversal testable with fixture
+  bytes (valid booted device, no booted, malformed JSON, non-array
+  runtime entry).
+proposed_action: |
+  No further action. The shell-out path is correctly UNTESTABLE: PHYS.
+```
+
 ## Summary
 
 | label | count |
@@ -515,5 +623,5 @@ proposed_action: |
 | A | 6 |
 | B | 1 |
 | C | 0 |
-| D | 6 |
+| D | 12 |
 | E | 2 |
