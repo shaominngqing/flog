@@ -259,4 +259,141 @@ mod tests {
         assert_eq!(entry.tag, "flutter");
         assert_eq!(entry.message, "some plain message");
     }
+
+    #[test]
+    fn parser_name_is_generic() {
+        let p = GenericParser;
+        assert_eq!(p.name(), "Generic");
+    }
+
+    #[test]
+    fn parse_exception_header() {
+        let p = GenericParser;
+        let line = "════════╡ EXCEPTION CAUGHT BY WIDGETS LIBRARY ╞════════════";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+        assert_eq!(entry.tag, "Flutter");
+        assert!(entry.message.contains("EXCEPTION"));
+    }
+
+    #[test]
+    fn parse_exception_decoration_line() {
+        let p = GenericParser;
+        let line = "═══════════════════════════════════════════════════════════";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+        assert_eq!(entry.tag, "Flutter");
+    }
+
+    #[test]
+    fn parse_handler_line() {
+        let p = GenericParser;
+        let entry = p.try_parse("Handler: onTap").unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+        assert_eq!(entry.tag, "Flutter");
+    }
+
+    #[test]
+    fn parse_recognizer_line() {
+        let p = GenericParser;
+        let entry = p.try_parse("Recognizer: TapGestureRecognizer").unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+    }
+
+    #[test]
+    fn parse_the_following_line() {
+        let p = GenericParser;
+        let entry = p.try_parse("The following assertion was thrown").unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+    }
+
+    #[test]
+    fn parse_when_the_exception_line() {
+        let p = GenericParser;
+        let entry = p
+            .try_parse("When the exception was thrown, this was the stack:")
+            .unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+    }
+
+    #[test]
+    fn parse_failed_assertion_line() {
+        let p = GenericParser;
+        let entry = p
+            .try_parse("Failed assertion: line 42: 'foo != null'")
+            .unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+    }
+
+    #[test]
+    fn parse_stacktrace_frame() {
+        let p = GenericParser;
+        let entry = p
+            .try_parse("#0      MyWidget.build (package:my_app/widget.dart:10:5)")
+            .unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+        assert_eq!(entry.tag, "Flutter");
+    }
+
+    #[test]
+    fn parse_verbose_logcat() {
+        let p = GenericParser;
+        let entry = p.try_parse("V/MyTag  (1234): verbose message").unwrap();
+        assert_eq!(entry.level, LogLevel::Verbose);
+        assert_eq!(entry.tag, "MyTag");
+    }
+
+    #[test]
+    fn parse_debug_logcat() {
+        let p = GenericParser;
+        let entry = p.try_parse("D/MyTag  (1234): debug message").unwrap();
+        assert_eq!(entry.level, LogLevel::Debug);
+        assert_eq!(entry.tag, "MyTag");
+    }
+
+    #[test]
+    fn parse_fatal_logcat() {
+        let p = GenericParser;
+        let entry = p.try_parse("F/MyTag  (1234): fatal crash").unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+        assert_eq!(entry.tag, "MyTag");
+    }
+
+    #[test]
+    fn ansi_escape_is_stripped_from_exception() {
+        // ANSI color codes should be stripped before EXCEPTION detection
+        let p = GenericParser;
+        let line = "\x1b[31m════════╡ EXCEPTION CAUGHT ╞════════\x1b[0m";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+        // The stripped message should not contain raw ANSI codes
+        assert!(!entry.message.contains("\x1b["));
+    }
+
+    #[test]
+    fn ansi_escape_stripped_in_flutter_content() {
+        let p = GenericParser;
+        let line = "I/flutter (1234): \x1b[32mhello\x1b[0m";
+        let entry = p.try_parse(line).unwrap();
+        assert!(!entry.message.contains("\x1b["));
+        assert!(entry.message.contains("hello"));
+    }
+
+    #[test]
+    fn unmatched_line_returns_none() {
+        let p = GenericParser;
+        assert!(p.try_parse("totally random text with no pattern").is_none());
+        assert!(p.try_parse("").is_none());
+    }
+
+    #[test]
+    fn bracket_level_unknown_falls_back_to_plain_flutter() {
+        // `[NOTALEVEL] ...` — bracket regex matches but LogLevel::from_str returns None;
+        // falls through to plain flutter content path.
+        let p = GenericParser;
+        let line = "I/flutter (1234): [NOTALEVEL] hi";
+        let entry = p.try_parse(line).unwrap();
+        assert_eq!(entry.level, LogLevel::System);
+        assert_eq!(entry.tag, "flutter");
+    }
 }
