@@ -119,9 +119,19 @@ fn level_pill(level: LogLevel, row_bg: Color) -> Span<'static> {
     Span::styled(text, style)
 }
 
-fn repeat_bar(count: usize, max_w: usize) -> String {
+/// Phase 2.5A — extracted from UI-030.
+/// Pure: given a repeat count and max rendered width, return how many
+/// '█' characters should be drawn in the bar. Saturates at count 50
+/// (magic constant preserved from the original; Phase 3 UI-030 will
+/// name it, likely as REPEAT_BAR_MAX_COUNT).
+pub(crate) fn repeat_bar_normalized(count: usize, max_w: usize) -> usize {
     let len = (count.min(50) * max_w) / 50;
-    format!("x{} {}", count, "█".repeat(len.min(max_w)))
+    len.min(max_w)
+}
+
+fn repeat_bar(count: usize, max_w: usize) -> String {
+    let len = repeat_bar_normalized(count, max_w);
+    format!("x{} {}", count, "█".repeat(len))
 }
 
 // ══════════════════════════════════════
@@ -1453,5 +1463,32 @@ mod tests {
         // therefore for wrap_text to produce > 1 line. At full_width=80
         // wrap_width=38, and 5000 xs cap at MAX_WRAP_LINES = 3.
         assert_eq!(entry_row_count(&e, 80), MAX_WRAP_LINES);
+    }
+
+    #[test]
+    fn repeat_bar_normalized_zero_count() {
+        assert_eq!(repeat_bar_normalized(0, 20), 0);
+    }
+
+    #[test]
+    fn repeat_bar_normalized_saturates_at_50() {
+        // at count=50 the bar fills max_w
+        assert_eq!(repeat_bar_normalized(50, 20), 20);
+        // beyond 50, still saturated
+        assert_eq!(repeat_bar_normalized(100, 20), 20);
+        assert_eq!(repeat_bar_normalized(1_000_000, 20), 20);
+    }
+
+    #[test]
+    fn repeat_bar_normalized_proportional() {
+        // at count=25 (half of 50), bar is half of max_w
+        assert_eq!(repeat_bar_normalized(25, 20), 10);
+        // at count=10 (1/5), bar is 1/5 of max_w
+        assert_eq!(repeat_bar_normalized(10, 20), 4);
+    }
+
+    #[test]
+    fn repeat_bar_normalized_zero_width() {
+        assert_eq!(repeat_bar_normalized(42, 0), 0);
     }
 }
