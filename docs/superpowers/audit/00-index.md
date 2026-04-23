@@ -10,12 +10,13 @@ gate entry to Phase 2.
 |---|---|---|---|---|---|---|
 | 01-transport | 6 | 1 | 0 | 6 | 2 | 15 |
 | 02-domain    | 5 | 2 | 0 | 14 | 4 | 25 |
-| 03-ui        | 13 | 0 | 0 | 26 | 1 | 40 |
+| 03-ui        | 13 | 0 | 0 | 27 | 1 | 41 |
 | 04-flog-dart | 3 | 9 | 0 | 18 | 2 | 32 |
-| **Total**    | **27** | **12** | **0** | **64** | **9** | **112** |
+| **Total**    | **27** | **12** | **0** | **65** | **9** | **113** |
 
 **DOM-025 added during Phase 2 Task 2** — see "Addenda" section at the
 end of this file.
+**UI-041 added during Phase 2.5A Task 6** — see "Addenda" section.
 
 C = 0 as required: all C-class entries resolved with user in Task 3 and
 reclassified into A/B/D/E.
@@ -59,7 +60,7 @@ the tests first (making them the expected behavior) or treat them as stale.
 
 ## Phase 3 redesign scope — D-class by module
 
-64 architecture findings grouped by target module to feed Phase 3 step
+65 architecture findings grouped by target module to feed Phase 3 step
 planning directly.
 
 ### Parser layer (src/parser/)
@@ -127,7 +128,7 @@ planning directly.
 - `UI-040` — Multi-app connection state (active_app_id, connected_apps, discovered_devices) lacks invariant documentation  (`src/app.rs:395-411`)
 
 ### Event dispatch (event.rs)
-8 findings.
+9 findings.
 
 - `UI-001` — Magic constants for scroll and input should be named constants  (`src/event.rs:1-30`)
 - `UI-007` — State machine routing lacks clear guard conditions — keys can silently fail  (`src/event.rs:14-30`)
@@ -137,6 +138,7 @@ planning directly.
 - `UI-020` — Input field character editing lacks escape handling  (`src/event.rs lines 1528-1547`)
 - `UI-024` — Scroll amount hardcoded differently across contexts  (`src/event.rs line 10 (SCROLL_LINES) vs src/app.rs (scroll methods)`)
 - `UI-036` — Module documentation (//!) missing or minimal across UI layer  (`src/event.rs:1, src/app.rs:1, src/ui/*/mod.rs`)
+- `UI-041` — Click-region detection cannot be pure-function-tested in current form  (`src/event.rs:36-728`)  *(discovered during Phase 2.5A Task 6)*
 
 ### UI Logs view (src/ui/logs/)
 3 findings.
@@ -243,3 +245,19 @@ Full detail in `02-domain.md`. Short version:
 - Phase 2 kept the fields with `#[allow(dead_code)]` markers. Phase 3
   Domain step must decide: prune protocol fields, or wire them into the
   render layer.
+
+### UI-041 — discovered Phase 2.5A Task 6
+
+Full detail in `03-ui.md`. Short version:
+
+- `src/event.rs::handle_normal_mouse` (lines 36-728) cannot be cleanly
+  extracted into a `detect_click_region(x, y, layout) -> Option<ClickKind>`
+  pure function under Phase 2.5A Guardrails.
+- Blockers: mutations interleaved with region detection, 5+ nesting
+  levels, no existing ClickKind enum to reuse.
+- Resolution path deferred to Phase 3 UI Event step: define `ClickRegion`
+  enum, extract pure detection fn, externalize double-click tracking,
+  split `apply_click_effect` from detection.
+- Phase 2.5B consequence: mouse-routing characterization tests fall back
+  to `ratatui::backend::TestBackend` snapshot tests until Phase 3 does
+  the refactor.
