@@ -1010,18 +1010,12 @@ fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
-/// Calculate how many terminal rows a single entry occupies.
-/// Must match the rendering logic exactly.
-fn entry_row_count_from_store(
-    store: &crate::domain::LogStore,
-    store_idx: usize,
-    full_width: usize,
-) -> usize {
-    let entry = match store.get(store_idx) {
-        Some(e) => e,
-        None => return 1,
-    };
-
+/// Phase 2.5A — extracted from UI-010.
+/// Pure: calculate how many terminal rows a single entry occupies given
+/// the full terminal width. Mirrors the inline rendering logic in
+/// `entry_row_count_from_store` exactly (copied verbatim; only the
+/// store lookup lives in the caller).
+pub(crate) fn entry_row_count(entry: &crate::domain::entry::LogEntry, full_width: usize) -> usize {
     if entry.tag == "────" {
         return 3;
     }
@@ -1052,6 +1046,20 @@ fn entry_row_count_from_store(
         }
     }
     wrapped.len() + extra_rows + stack_rows
+}
+
+/// Calculate how many terminal rows a single entry occupies.
+/// Must match the rendering logic exactly.
+fn entry_row_count_from_store(
+    store: &crate::domain::LogStore,
+    store_idx: usize,
+    full_width: usize,
+) -> usize {
+    let entry = match store.get(store_idx) {
+        Some(e) => e,
+        None => return 1,
+    };
+    entry_row_count(entry, full_width)
 }
 
 fn draw_jump_to_bottom(f: &mut Frame, app: &mut App, area: Rect) {
@@ -1404,5 +1412,46 @@ mod tests {
     fn visible_start_zero_total() {
         assert_eq!(compute_visible_entry_start(0, 0), 0);
         assert_eq!(compute_visible_entry_start(0, 50), 0);
+    }
+
+    /// Build a minimal LogEntry for entry_row_count tests. LogEntry has
+    /// no Default impl (by design — Phase 3 decision), so every field
+    /// is listed explicitly.
+    fn make_test_entry(ts: &str, tag: &str, msg: &str) -> crate::domain::entry::LogEntry {
+        crate::domain::entry::LogEntry {
+            timestamp: ts.to_string(),
+            level: crate::domain::entry::LogLevel::Info,
+            tag: tag.to_string(),
+            message: msg.to_string(),
+            extra_lines: Vec::new(),
+            repeat_count: 1,
+            source: crate::domain::entry::InputSource::DirectSocket,
+            error: None,
+            stacktrace: None,
+        }
+    }
+
+    #[test]
+    fn entry_row_count_separator_is_three() {
+        let sep = make_test_entry("", "────", "");
+        assert_eq!(entry_row_count(&sep, 80), 3);
+    }
+
+    #[test]
+    fn entry_row_count_short_message_one_row() {
+        let e = make_test_entry("t", "TAG", "short msg");
+        // 1 row for message; no extra_lines; no stack
+        assert_eq!(entry_row_count(&e, 80), 1);
+    }
+
+    #[test]
+    fn entry_row_count_caps_at_max_wrap_lines() {
+        let very_long = "x".repeat(5000);
+        let e = make_test_entry("t", "TAG", &very_long);
+        // Header width is 1+2+LEVEL_WIDTH+1+TIME_WIDTH+1+TAG_WIDTH+1 = 41;
+        // full_width must exceed header_width+1 for wrap_width > 0 and
+        // therefore for wrap_text to produce > 1 line. At full_width=80
+        // wrap_width=38, and 5000 xs cap at MAX_WRAP_LINES = 3.
+        assert_eq!(entry_row_count(&e, 80), MAX_WRAP_LINES);
     }
 }
