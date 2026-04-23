@@ -23,6 +23,21 @@ use super::{
     RED, SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1, TEAL, TEXT, YELLOW,
 };
 
+/// Phase 2.5A — extracted from UI-029.
+/// Pure: network-tab viewport slicing. Network entries are all 1-row
+/// so this is a real fixed-window `(start, end)`. Kept separate from
+/// `ui/logs::compute_visible_entry_start` because logs uses variable-
+/// height rows (see UI-006 for the unification question).
+pub(crate) fn compute_visible_network_range(
+    total_filtered: usize,
+    offset: usize,
+    height: usize,
+) -> (usize, usize) {
+    let start = offset.min(total_filtered);
+    let end = start.saturating_add(height).min(total_filtered);
+    (start, end)
+}
+
 // Column widths
 const PROTO_W: usize = 6;
 const METHOD_W: usize = 8;
@@ -234,9 +249,10 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Build lines
     let mut lines: Vec<Line> = Vec::new();
-    let start = app.network.scroll_offset;
+    let (start, end) =
+        compute_visible_network_range(filtered_indices.len(), app.network.scroll_offset, height);
 
-    for (vi, &store_idx) in filtered_indices.iter().skip(start).take(height).enumerate() {
+    for (vi, &store_idx) in filtered_indices[start..end].iter().enumerate() {
         let fi = start + vi;
         let is_selected = fi == app.network.selected;
 
@@ -696,5 +712,26 @@ mod tests {
         assert_eq!(duration_color(1000), YELLOW);
         assert_eq!(duration_color(1001), RED);
         assert_eq!(duration_color(5000), RED);
+    }
+
+    #[test]
+    fn network_visible_range_basic_window() {
+        assert_eq!(compute_visible_network_range(100, 10, 20), (10, 30));
+    }
+
+    #[test]
+    fn network_visible_range_clamps_end() {
+        assert_eq!(compute_visible_network_range(15, 10, 20), (10, 15));
+    }
+
+    #[test]
+    fn network_visible_range_clamps_start() {
+        assert_eq!(compute_visible_network_range(5, 100, 20), (5, 5));
+    }
+
+    #[test]
+    fn network_visible_range_empty() {
+        assert_eq!(compute_visible_network_range(0, 0, 10), (0, 0));
+        assert_eq!(compute_visible_network_range(0, 50, 10), (0, 0));
     }
 }
