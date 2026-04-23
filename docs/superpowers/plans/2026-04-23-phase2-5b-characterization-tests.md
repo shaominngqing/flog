@@ -19,7 +19,12 @@
 
 Everything in this plan is a mechanical consequence of that rule. If a test doesn't serve that rule, remove it. If a behavior has no test enforcing the rule, it's a gap.
 
-Corollary: coverage numbers are **diagnostic output**, not gates. If line coverage is 78% but I can point to an A entry with no characterization test, we're not done. If line coverage is 62% but every A/B/D is locked, we are done.
+Corollary: coverage numbers ARE gates under the revised Rule 2 (user
+directive 2026-04-23 "不做妥协"). Both conditions must hold at exit:
+1. Every A/B/D audit entry has at least one locking test (Rule 1 + 9)
+2. Every module meets its Rule 2 coverage gate
+
+Missing either = task failure; continue writing until both hold.
 
 ---
 
@@ -37,31 +42,46 @@ Every subagent prompt in this phase inherits these. Violations cause task rollba
 
 Total tests added: at least 27 + 12 + 65 = **104 new test cases**, likely more (one entry often wants 2-3 tests covering different branches).
 
-### Rule 2: Coverage gates — stricter than Phase 2.5 spec originally said
+### Rule 2: Coverage gates — second revision, stricter
 
-Based on user directive "尽可能高，不能妥协":
+Based on user directive (2026-04-23): "测试可以尽可能的多，尽可能的全，
+特别的核心的部分，要多一些用例, 不用担心时间长短和工作量… 第一原则是
+要保证质量，一切以目的为目标，不做妥协"
 
-| Scope | Branch coverage | Line coverage | Notes |
+Core modules (critical to Phase 3 safety, highest test density):
+
+| Core module | Branch | Line | Minimum test cases per pub fn |
 |---|---|---|---|
-| `src/domain/` | ≥ 90% | ≥ 90% | Pure logic, no excuse |
-| `src/parser/` | ≥ 90% | ≥ 90% | Pure logic, no excuse |
-| Phase 2.5A extracted fns | — | ≥ 95% | They were extracted precisely to be testable |
-| `src/event.rs` (pure handlers split off from 2.5A) | — | ≥ 95% | |
-| `src/event.rs` (remaining mouse router) | — | ≥ 75% line via TestBackend | UNTESTABLE lines get `// UNTESTABLE: <reason>` comments |
-| `src/app.rs` | — | ≥ 75% | State transitions are purer than they look — many are TestBackend-testable via setting state and verifying store mutations |
-| `src/ui/logs/mod.rs` | — | ≥ 75% | |
-| `src/ui/network/mod.rs` | — | ≥ 75% | |
-| `src/ui/network/detail.rs` | — | ≥ 75% | Largest UI file, complex folding |
-| `src/ui/source_select.rs` | — | ≥ 70% | |
-| `src/ui/help.rs` | — | ≥ 70% | Static render, easy |
-| `src/ui/network/mock_rules.rs` | — | ≥ 70% | |
-| Other ui/* (filter, stats, logs/detail/, etc.) | — | ≥ 70% | |
-| `src/transport/` | — | ≥ 70% | Needs fake-server integration tests |
-| `src/input/` | — | ≥ 85% | Protocol = pure serde, handshake = small |
-| `src/main.rs` | — | ≥ 50% | Mostly bootstrap; some paths unreachable without full terminal |
-| **Project overall line coverage** | — | **≥ 80%** | This is the bar. Starting from 32.27%. |
+| `src/event.rs` | ≥ 90% | ≥ 95% | ≥ 5 cases per public handler |
+| `src/app.rs` | ≥ 90% | ≥ 90% | ≥ 5 cases per state-transition method |
+| `src/domain/filter.rs` | ≥ 95% | ≥ 95% | ≥ 5 cases per match/filter method |
+| `src/domain/network_filter.rs` | ≥ 95% | ≥ 95% | ≥ 5 cases per match method |
+| `src/domain/network_store.rs` | ≥ 95% | ≥ 95% | ≥ 5 cases per message-handling method |
+| `src/parser/network.rs` | ≥ 95% | ≥ 95% | ≥ 3 cases per parse path |
+| `src/input/connector.rs` | ≥ 90% | ≥ 90% | integration tests cover every ConnectorEvent branch |
+| `src/ui/logs/mod.rs` scroll/walk model | ≥ 90% | ≥ 85% | ≥ 5 cases per scroll fn, including auto_scroll on/off |
+| `flog_dart/lib/src/flog_dio.dart` | ≥ 85% | ≥ 85% | ≥ 4 cases per public API |
+| `flog_dart/lib/src/flog_mock_interceptor.dart` | ≥ 90% | ≥ 90% | ≥ 4 cases per match path |
 
-Every module BELOW its target at Task N's end: the Task N subagent writes UNTESTABLE annotations or fails the task. No phantom "pass" on insufficient coverage.
+Non-core modules (safety net but not hot path):
+
+| Module | Branch | Line |
+|---|---|---|
+| Rest of `src/domain/` | ≥ 90% | ≥ 90% |
+| Rest of `src/parser/` | ≥ 90% | ≥ 90% |
+| `src/input/protocol.rs` | ≥ 90% | ≥ 95% (pure serde — every variant roundtrips) |
+| `src/ui/network/mod.rs` | ≥ 85% | ≥ 85% |
+| `src/ui/network/detail.rs` | ≥ 80% | ≥ 80% (complex but testable via TestBackend) |
+| `src/ui/source_select.rs` | ≥ 80% | ≥ 80% |
+| `src/ui/help.rs` | ≥ 85% | ≥ 90% (static, easy) |
+| `src/ui/network/mock_rules.rs` | ≥ 80% | ≥ 80% |
+| Other `src/ui/*` | ≥ 80% | ≥ 80% |
+| `src/transport/` | ≥ 80% | ≥ 80% |
+| `src/main.rs` | — | ≥ 60% (bootstrap lifts untestable without real terminal — UNTESTABLE annotated) |
+| Other `flog_dart/lib/` | ≥ 80% | ≥ 80% |
+| **Project overall** | — | **≥ 90% line** | Raised from earlier 80%. |
+
+Every module BELOW its target at its task's end is a task failure. No phantom pass.
 
 ### Rule 3: UI tests assert observable features, not pixels
 
@@ -92,12 +112,81 @@ Every module BELOW its target at Task N's end: the Task N subagent writes UNTEST
   - Multiple sequential apps on same device (discovery + switch)
   - ADB forward simulated via a second fake accepting on a second port
 
-### Rule 5: flog_dart gets per-B-bug red tests only
+### Rule 5: flog_dart gets full A/D/B coverage — revised
 
-Not the A/D zoo. Reason: flog_dart test infra is less mature (no CI, pubspec setup is heavier), and Phase 3 DART step will rewrite large chunks of flog_dart anyway. Put safety net only where it matters: bugs we KNOW we have.
+Revised 2026-04-23 per "尽可能全" directive. Original restriction was
+"only B-class bugs"; removed.
 
-- DART-001 + DART-002: already covered by `flog_dart/test/flog_sse_parser_test.dart` (red, stays red)
-- DART-003 through DART-009 (7 more B entries): each gets a test. Where a test infra doesn't exist yet (e.g. no DI for VM service extension), create the minimum scaffolding.
+- DART-001 + DART-002: already covered by `flog_dart/test/flog_sse_parser_test.dart`
+- DART-003 through DART-009 (7 more B): each gets a red test (Task 13)
+- DART-010 through DART-027 (18 D + 3 A): each gets a green
+  characterization test locking current behavior (Task 13 extended)
+- Test infra: set up `test: ^1.x` + (if needed) `mockito` in
+  `flog_dart/pubspec.yaml` dev_dependencies. One commit for pubspec,
+  subsequent commits for tests.
+- flog_dart test coverage target: core modules 85%+, others 80%+ per
+  Rule 2.
+
+### Rule 9: Multiple test cases per audit entry
+
+"One test per A/D entry" is the MINIMUM. For every A/D entry where the
+proposed_action block mentions multiple branches / edge cases / examples,
+write a test case per branch:
+
+    #[test] fn dom_001_status_all_matches_every_status() {}
+    #[test] fn dom_001_status_2xx_matches_200_299() {}
+    #[test] fn dom_001_status_4xx_rejects_5xx() {}
+
+Audit entries flagging a list of "examples" (e.g. "behavior X when input
+is A, B, or C") each require a test for A, B, AND C. If the evidence
+block of an audit entry has 5 scenarios, write 5 tests.
+
+### Rule 10: Core-module test density
+
+For every pub or pub(crate) function in a core module (Rule 2's
+"core" table), write at least 5 test cases covering:
+- Happy path
+- Empty input
+- Boundary (min/max values, single-element, zero-length)
+- Invalid input / error path (where applicable)
+- Interaction with adjacent state (where the function is coupled)
+
+Parser main-dispatch functions: 5 cases isn't enough. Feed at least 10
+distinct inputs covering every match arm + fallback.
+
+UI render functions in core modules: 5 cases spanning:
+- Empty state
+- Normal state
+- Extreme state (many items, very long values)
+- Filtered-to-zero state
+- Focus / selected-item variations
+
+### Rule 11: UNTESTABLE restricted to 3 categories
+
+Every `// UNTESTABLE: <reason>` annotation must name one of:
+1. **PHYS** — Physically impossible without real hardware (real terminal
+   backend, real OS shell-out, real network hardware). Format:
+   `// UNTESTABLE: PHYS <specific reason>`
+2. **D-ref** — Points to existing audit D entry that Phase 3 will delete
+   this code. Format: `// UNTESTABLE: D-ref <AUDIT-ID> — <reason>`
+3. **D-new** — A new D entry must be added to audit in the same commit.
+   Format: `// UNTESTABLE: D-new <AUDIT-ID> — <reason>`
+
+Any UNTESTABLE not in one of these three forms is a task failure.
+"Too hard to test" or "low value" are NOT permitted reasons.
+
+### Rule 12: Parallel subagent execution via worktrees
+
+Phase 2.5B uses worktree-isolated parallel subagents (user directive
+2026-04-23). Tasks 2, 3, 4, 5, 6, 7, 8, 11, 13 dispatch in parallel in
+worktrees; main Claude merges.
+
+Merge conflict prevention:
+- Each subagent writes ONLY to its scope's files (strict)
+- Shared `tests/support/*` is finalized in Task 1 before second wave starts
+- `docs/superpowers/audit/` cross-mod: any new D entry written during
+  parallel tasks picks an id from a reserved range per scope (DOM-100+,
+  UI-100+, TRANS-100+, DART-100+) to avoid id collisions
 
 ### Rule 6: Every test must survive Phase 3
 
