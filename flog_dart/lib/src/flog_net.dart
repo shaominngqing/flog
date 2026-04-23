@@ -3,11 +3,20 @@ library;
 
 import 'flog_server.dart';
 
-/// Master kill-switch.  `dart.vm.product` is true in release builds,
-/// so flogEnabled becomes false and AOT tree-shaking removes all flog code.
+/// Master kill-switch (compile-time constant for AOT tree-shaking).
+///
+/// Resolution order:
+/// 1. Explicit `--dart-define=FLOG_ENABLED=true|false` wins.
+/// 2. Otherwise infer from `--dart-define=APP_FLAVOR=...`:
+///    - `release` -> disabled (tree-shaken away)
+///    - `alpha` / anything else -> enabled
+/// 3. Fallback: enabled in non-product builds, disabled in product builds.
+const _appFlavor = String.fromEnvironment('APP_FLAVOR');
+const _isProduct = bool.fromEnvironment('dart.vm.product');
+// 注意：必须用 == '' 判空，String.isEmpty/isNotEmpty 不是 const 表达式。
 const flogEnabled = bool.fromEnvironment(
   'FLOG_ENABLED',
-  defaultValue: !bool.fromEnvironment('dart.vm.product'),
+  defaultValue: _appFlavor == '' ? !_isProduct : _appFlavor != 'release',
 );
 
 int _nextId = 1;
