@@ -1354,7 +1354,11 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
                                 crate::domain::sse_merge::extract_field_paths(&chunks_data);
                             let count = candidates.len();
                             if count > 0 {
-                                let new_idx = (app.network.sse_merged_field_idx + 1).min(count - 1);
+                                let new_idx = handle_sse_field_navigation(
+                                    app.network.sse_merged_field_idx,
+                                    count,
+                                    SseNavDir::Down,
+                                );
                                 app.network.sse_merged_field_idx = new_idx;
                                 let rule_key = entry
                                     .path
@@ -1379,8 +1383,12 @@ fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('k') | KeyCode::Up
                 if app.network.sse_merged_mode && app.network.show_detail =>
             {
-                app.network.sse_merged_field_idx =
-                    app.network.sse_merged_field_idx.saturating_sub(1);
+                let new_idx = handle_sse_field_navigation(
+                    app.network.sse_merged_field_idx,
+                    usize::MAX,
+                    SseNavDir::Up,
+                );
+                app.network.sse_merged_field_idx = new_idx;
                 let sel = app.network.selected;
                 let indices = app.network.filtered_indices(&app.network_store).to_vec();
                 if let Some(&idx) = indices.get(sel) {
@@ -1673,5 +1681,51 @@ fn handle_mock_edit_mouse(app: &mut App, mouse: MouseEvent) {
             }
         }
         _ => {}
+    }
+}
+
+/// Phase 2.5A — extracted from UI-008.
+/// Direction for SSE merged field navigation.
+enum SseNavDir {
+    Up,
+    Down,
+}
+
+/// Pure: given current field index and total count, return the new index
+/// after one navigation step. Saturates at 0 and count-1. If count is 0,
+/// returns current_idx unchanged (caller is responsible for not calling
+/// when no fields exist).
+fn handle_sse_field_navigation(current_idx: usize, count: usize, dir: SseNavDir) -> usize {
+    if count == 0 {
+        return current_idx;
+    }
+    match dir {
+        SseNavDir::Up => current_idx.saturating_sub(1),
+        SseNavDir::Down => (current_idx + 1).min(count - 1),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sse_nav_down_increments_up_to_bound() {
+        assert_eq!(handle_sse_field_navigation(0, 3, SseNavDir::Down), 1);
+        assert_eq!(handle_sse_field_navigation(1, 3, SseNavDir::Down), 2);
+        assert_eq!(handle_sse_field_navigation(2, 3, SseNavDir::Down), 2); // saturate
+    }
+
+    #[test]
+    fn sse_nav_up_saturates_at_zero() {
+        assert_eq!(handle_sse_field_navigation(2, 3, SseNavDir::Up), 1);
+        assert_eq!(handle_sse_field_navigation(1, 3, SseNavDir::Up), 0);
+        assert_eq!(handle_sse_field_navigation(0, 3, SseNavDir::Up), 0); // saturate
+    }
+
+    #[test]
+    fn sse_nav_empty_is_noop() {
+        assert_eq!(handle_sse_field_navigation(0, 0, SseNavDir::Up), 0);
+        assert_eq!(handle_sse_field_navigation(5, 0, SseNavDir::Down), 5);
     }
 }
