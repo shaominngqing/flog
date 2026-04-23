@@ -60,6 +60,18 @@ impl ConnectorHandle {
             let _ = self.tx.send(json);
         }
     }
+
+    /// Construct a dangling handle for characterization tests.
+    ///
+    /// The returned handle is paired with an `UnboundedReceiver` the caller
+    /// owns — sends on the handle either land in that receiver or no-op once
+    /// the receiver is dropped. This exists so state-machine tests can build
+    /// `ConnectedApp` values without spinning up a real WebSocket.
+    #[doc(hidden)]
+    pub fn for_testing() -> (Self, mpsc::UnboundedReceiver<String>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Self { tx }, rx)
+    }
 }
 
 /// Connect to a flog_dart server at the given WebSocket URL.
