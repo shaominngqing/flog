@@ -227,4 +227,235 @@ mod tests {
         entry.source = EntrySource::Mocked;
         assert_eq!(entry.source, EntrySource::Mocked);
     }
+
+    // ==================================================================
+    // Phase 2.5B Task 2 — characterization tests
+    // ==================================================================
+
+    // ---- DOM-020: extract_path naive string search -------------------
+
+    #[test]
+    fn dom_020_extract_path_strips_scheme_and_host_a_http() {
+        assert_eq!(extract_path("http://example.com/api/users"), "/api/users");
+    }
+
+    #[test]
+    fn dom_020_extract_path_strips_scheme_and_host_b_https_with_port() {
+        assert_eq!(
+            extract_path("https://example.com:8080/api/users?id=1"),
+            "/api/users?id=1"
+        );
+    }
+
+    #[test]
+    fn dom_020_extract_path_root_only() {
+        assert_eq!(extract_path("https://example.com/"), "/");
+    }
+
+    #[test]
+    fn dom_020_extract_path_no_path_returns_original() {
+        // No slash after host — current behavior returns entire URL
+        assert_eq!(extract_path("https://example.com"), "https://example.com");
+    }
+
+    #[test]
+    fn dom_020_extract_path_no_scheme_returns_original() {
+        assert_eq!(extract_path("/api/users"), "/api/users");
+        assert_eq!(extract_path("example.com/path"), "example.com/path");
+    }
+
+    #[test]
+    fn dom_020_extract_path_ipv6_edge_case_fails() {
+        // Documented limitation: "http://[::1]:8080/path" — the "::" in
+        // IPv6 interacts with extract_path's naive "://" anchor. Current
+        // behavior: scheme "http" + after_scheme "[::1]:8080/path" →
+        // first '/' is at index 10 → returns "/path".
+        assert_eq!(extract_path("http://[::1]:8080/path"), "/path");
+    }
+
+    #[test]
+    fn dom_020_extract_path_empty_string() {
+        assert_eq!(extract_path(""), "");
+    }
+
+    #[test]
+    fn dom_020_extract_path_query_params() {
+        assert_eq!(
+            extract_path("https://x.com/search?q=hello&page=2"),
+            "/search?q=hello&page=2"
+        );
+    }
+
+    // ---- DOM-024: factory boilerplate ---------------------------------
+
+    #[test]
+    fn dom_024_new_http_defaults() {
+        let e = NetworkEntry::new_http(1, "GET".into(), "https://x.com/api".into(), "t".into());
+        assert_eq!(e.id, 1);
+        assert_eq!(e.protocol, Protocol::Http);
+        assert_eq!(e.method, "GET");
+        assert_eq!(e.url, "https://x.com/api");
+        assert_eq!(e.path, "/api");
+        assert_eq!(e.status, NetworkStatus::Pending);
+        assert_eq!(e.timestamp, "t");
+        assert!(e.http_status.is_none());
+        assert!(e.duration.is_none());
+        assert!(e.request_size.is_none());
+        assert!(e.response_size.is_none());
+        assert!(e.request_headers.is_none());
+        assert!(e.response_headers.is_none());
+        assert!(e.request_body.is_none());
+        assert!(e.response_body.is_none());
+        assert!(e.error.is_none());
+        assert!(e.sse_chunks.is_empty());
+        assert_eq!(e.sse_total_size, 0);
+        assert!(e.ws_messages.is_empty());
+        assert!(e.ws_close_code.is_none());
+        assert!(e.ws_close_reason.is_none());
+        assert_eq!(e.source, EntrySource::App);
+    }
+
+    #[test]
+    fn dom_024_new_sse_defaults() {
+        let e = NetworkEntry::new_sse(1, "GET".into(), "https://x.com/stream".into(), "t".into());
+        assert_eq!(e.protocol, Protocol::Sse);
+        assert_eq!(e.status, NetworkStatus::Active); // SSE starts active
+        assert_eq!(e.method, "GET");
+        assert_eq!(e.path, "/stream");
+    }
+
+    #[test]
+    fn dom_024_new_ws_defaults() {
+        let e = NetworkEntry::new_ws(1, "wss://x.com/ws".into(), "t".into());
+        assert_eq!(e.protocol, Protocol::Ws);
+        assert_eq!(e.status, NetworkStatus::Active);
+        assert_eq!(e.method, "");
+        assert_eq!(e.path, "/ws");
+    }
+
+    // ---- DOM-025: write-only SseChunk fields round-trip --------------
+    // Locks the payload shape. The Dart client sends seq/size/ts fields;
+    // our deserializer accepts them. Phase 3 may prune these, but it
+    // must be intentional — the test makes that decision visible.
+
+    #[test]
+    fn dom_025_sse_chunk_fields_are_constructable_and_readable() {
+        let chunk = SseChunk {
+            seq: 42,
+            data: "payload".to_string(),
+            size: 7,
+        };
+        assert_eq!(chunk.seq, 42);
+        assert_eq!(chunk.data, "payload");
+        assert_eq!(chunk.size, 7);
+    }
+
+    #[test]
+    fn dom_025_ws_message_fields_are_constructable_and_readable() {
+        let m = WsMessage {
+            direction: WsDirection::Send,
+            data: "hi".to_string(),
+            size: 2,
+            timestamp: "12:00:00.000".to_string(),
+        };
+        assert_eq!(m.direction, WsDirection::Send);
+        assert_eq!(m.data, "hi");
+        assert_eq!(m.size, 2);
+        assert_eq!(m.timestamp, "12:00:00.000");
+    }
+
+    #[test]
+    fn dom_025_flog_net_message_accepts_all_fields_from_protocol() {
+        // Lock the current wire format: the Deserialize impl must accept
+        // every field the Dart side may send, including the write-only
+        // seq/size/ts triad for chunks.
+        let j = r#"{
+            "id": 1,
+            "t": "chunk",
+            "p": "sse",
+            "method": null,
+            "url": null,
+            "status": null,
+            "duration": null,
+            "headers": null,
+            "body": null,
+            "size": 128,
+            "data": "payload",
+            "seq": 5,
+            "chunks": null,
+            "code": null,
+            "reason": null,
+            "error": null,
+            "mocked": null,
+            "ts": 1700000000000
+        }"#;
+        let parsed: FlogNetMessage = serde_json::from_str(j).expect("deserialize");
+        assert_eq!(parsed.id, 1);
+        assert_eq!(parsed.t, "chunk");
+        assert_eq!(parsed.p.as_deref(), Some("sse"));
+        assert_eq!(parsed.seq, Some(5));
+        assert_eq!(parsed.size, Some(128));
+        assert_eq!(parsed.ts, Some(1_700_000_000_000));
+        assert_eq!(parsed.data.as_deref(), Some("payload"));
+    }
+
+    #[test]
+    fn dom_025_flog_net_message_accepts_minimal_payload() {
+        // Missing optional fields → None
+        let j = r#"{"id": 1, "t": "req"}"#;
+        let parsed: FlogNetMessage = serde_json::from_str(j).expect("deserialize");
+        assert_eq!(parsed.id, 1);
+        assert_eq!(parsed.t, "req");
+        assert!(parsed.method.is_none());
+        assert!(parsed.url.is_none());
+        assert!(parsed.seq.is_none());
+        assert!(parsed.size.is_none());
+        assert!(parsed.ts.is_none());
+    }
+
+    // ---- display_size per protocol -----------------------------------
+
+    #[test]
+    fn display_size_http_uses_response_size() {
+        let mut e = NetworkEntry::new_http(1, "GET".into(), "/x".into(), String::new());
+        e.response_size = Some(500);
+        assert_eq!(e.display_size(), 500);
+    }
+
+    #[test]
+    fn display_size_http_none_is_zero() {
+        let e = NetworkEntry::new_http(1, "GET".into(), "/x".into(), String::new());
+        assert_eq!(e.display_size(), 0);
+    }
+
+    #[test]
+    fn display_size_sse_uses_total() {
+        let mut e = NetworkEntry::new_sse(1, "GET".into(), "/x".into(), String::new());
+        e.sse_total_size = 999;
+        assert_eq!(e.display_size(), 999);
+    }
+
+    #[test]
+    fn display_size_ws_sums_messages() {
+        let mut e = NetworkEntry::new_ws(1, "wss://x".into(), String::new());
+        e.ws_messages.push(WsMessage {
+            direction: WsDirection::Send,
+            data: "a".into(),
+            size: 10,
+            timestamp: String::new(),
+        });
+        e.ws_messages.push(WsMessage {
+            direction: WsDirection::Recv,
+            data: "b".into(),
+            size: 25,
+            timestamp: String::new(),
+        });
+        assert_eq!(e.display_size(), 35);
+    }
+
+    #[test]
+    fn display_size_ws_empty_is_zero() {
+        let e = NetworkEntry::new_ws(1, "wss://x".into(), String::new());
+        assert_eq!(e.display_size(), 0);
+    }
 }

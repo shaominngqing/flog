@@ -206,6 +206,30 @@ mod tests {
     use super::*;
     use crate::domain::network::EntrySource;
 
+    // Helper: construct a default FlogNetMessage with id and type set.
+    fn msg(id: u64, t: &str) -> FlogNetMessage {
+        FlogNetMessage {
+            id,
+            t: t.to_string(),
+            p: None,
+            method: None,
+            url: None,
+            status: None,
+            duration: None,
+            headers: None,
+            body: None,
+            size: None,
+            data: None,
+            seq: None,
+            chunks: None,
+            code: None,
+            reason: None,
+            error: None,
+            mocked: None,
+            ts: None,
+        }
+    }
+
     #[test]
     fn test_push_entry() {
         let mut store = NetworkStore::new();
@@ -217,5 +241,587 @@ mod tests {
         assert_eq!(store.len(), 1);
         assert_eq!(store.get(0).unwrap().source, EntrySource::Replay);
         assert_eq!(store.get(0).unwrap().id, 999);
+    }
+
+    // ==================================================================
+    // Phase 2.5B Task 2 — characterization tests
+    // ==================================================================
+
+    // ---- Basic store invariants --------------------------------------
+
+    #[test]
+    fn new_store_is_empty() {
+        let store = NetworkStore::new();
+        assert!(store.is_empty());
+        assert_eq!(store.len(), 0);
+        assert!(store.get(0).is_none());
+    }
+
+    #[test]
+    fn default_store_is_empty() {
+        let store = NetworkStore::default();
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn clear_empties_store() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.method = Some("GET".into());
+        m.url = Some("https://x.com".into());
+        store.process_message(m);
+        assert_eq!(store.len(), 1);
+        store.clear();
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn iter_yields_entries_in_order() {
+        let mut store = NetworkStore::new();
+        for id in 1..=3 {
+            let mut m = msg(id, "req");
+            m.method = Some("GET".into());
+            m.url = Some(format!("https://x.com/{}", id));
+            store.process_message(m);
+        }
+        let ids: Vec<u64> = store.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![1, 2, 3]);
+    }
+
+    // ---- DOM-002: state machine for FlogNetMessage --------------------
+    // Current behavior: no transition validation. Each test locks a
+    // specific "bad transition" outcome so Phase 3 changes are visible.
+
+    #[test]
+    fn dom_002_res_without_req_drops_silently_a() {
+        // res with no matching req: current behavior is to do nothing.
+        let mut store = NetworkStore::new();
+        let mut m = msg(42, "res");
+        m.status = Some(200);
+        store.process_message(m);
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dom_002_err_without_req_drops_silently_b() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(42, "err");
+        m.error = Some("boom".into());
+        store.process_message(m);
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dom_002_chunk_without_req_drops_silently_c() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(42, "chunk");
+        m.data = Some("hi".into());
+        store.process_message(m);
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dom_002_done_without_req_drops_silently_d() {
+        let mut store = NetworkStore::new();
+        store.process_message(msg(42, "done"));
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dom_002_close_without_open_drops_silently_e() {
+        let mut store = NetworkStore::new();
+        store.process_message(msg(42, "close"));
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dom_002_ws_send_without_open_drops_silently_f() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(42, "send");
+        m.data = Some("hi".into());
+        store.process_message(m);
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dom_002_ws_recv_without_open_drops_silently_g() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(42, "recv");
+        m.data = Some("hi".into());
+        store.process_message(m);
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn dom_002_second_req_with_same_id_creates_new_entry() {
+        // Current behavior: handle_req always pushes a new entry.
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.method = Some("GET".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "req");
+        m2.method = Some("POST".into());
+        m2.url = Some("https://y.com".into());
+        store.process_message(m2);
+
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn dom_002_chunk_on_http_protocol_still_appends_to_sse_chunks() {
+        // Current behavior: find_by_id_mut locates the HTTP entry, chunk
+        // is appended to its sse_chunks field. This is arguably buggy per
+        // audit but is locked as current behavior.
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.method = Some("GET".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "chunk");
+        m2.data = Some("stream-like".into());
+        store.process_message(m2);
+
+        let entry = store.get(0).unwrap();
+        assert_eq!(entry.protocol, Protocol::Http);
+        assert_eq!(entry.sse_chunks.len(), 1);
+    }
+
+    #[test]
+    fn dom_002_unknown_message_type_ignored() {
+        let mut store = NetworkStore::new();
+        store.process_message(msg(1, "unknown_type"));
+        assert!(store.is_empty());
+    }
+
+    // ---- DOM-006: FlogNetMessage loose typing -------------------------
+    // Lock current handling of optional fields at the handle_* boundary.
+
+    #[test]
+    fn dom_006_req_missing_method_defaults_to_empty() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.url = Some("https://x.com".into());
+        store.process_message(m);
+        assert_eq!(store.get(0).unwrap().method, "");
+    }
+
+    #[test]
+    fn dom_006_req_missing_url_defaults_to_empty() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.method = Some("GET".into());
+        store.process_message(m);
+        assert_eq!(store.get(0).unwrap().url, "");
+    }
+
+    #[test]
+    fn dom_006_req_unknown_protocol_defaults_to_http() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.p = Some("magic".into());
+        m.url = Some("https://x.com".into());
+        store.process_message(m);
+        assert_eq!(store.get(0).unwrap().protocol, Protocol::Http);
+    }
+
+    #[test]
+    fn dom_006_req_no_protocol_defaults_to_http() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.url = Some("https://x.com".into());
+        store.process_message(m);
+        assert_eq!(store.get(0).unwrap().protocol, Protocol::Http);
+    }
+
+    #[test]
+    fn dom_006_req_sse_protocol() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.p = Some("sse".into());
+        m.url = Some("https://x.com/stream".into());
+        m.method = Some("GET".into());
+        store.process_message(m);
+        assert_eq!(store.get(0).unwrap().protocol, Protocol::Sse);
+    }
+
+    #[test]
+    fn dom_006_req_ws_protocol() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.p = Some("ws".into());
+        m.url = Some("wss://x.com".into());
+        store.process_message(m);
+        assert_eq!(store.get(0).unwrap().protocol, Protocol::Ws);
+    }
+
+    // ---- Full happy-path flows ---------------------------------------
+
+    #[test]
+    fn handle_req_stores_headers_body_and_timestamp() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.method = Some("POST".into());
+        m.url = Some("https://x.com/api".into());
+        m.headers = Some(serde_json::json!({"Content-Type": "application/json"}));
+        m.body = Some("{\"a\":1}".into());
+        m.ts = Some(1_700_000_000_000);
+        store.process_message(m);
+
+        let e = store.get(0).unwrap();
+        assert!(e.request_headers.as_ref().unwrap().contains("Content-Type"));
+        assert_eq!(e.request_body.as_ref().unwrap(), "{\"a\":1}");
+        assert_eq!(e.request_size, Some(7));
+        // timestamp formatted HH:MM:SS.mmm
+        assert_eq!(e.timestamp.len(), 12);
+        assert_eq!(&e.timestamp[2..3], ":");
+    }
+
+    #[test]
+    fn handle_req_size_field_overrides_body_len() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "req");
+        m.method = Some("POST".into());
+        m.url = Some("https://x.com".into());
+        m.body = Some("abc".into());
+        m.size = Some(999);
+        store.process_message(m);
+        // size after body is applied last → 999
+        assert_eq!(store.get(0).unwrap().request_size, Some(999));
+    }
+
+    #[test]
+    fn handle_res_updates_matched_entry() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.method = Some("GET".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "res");
+        m2.status = Some(200);
+        m2.duration = Some(50);
+        m2.headers = Some(serde_json::json!({"X-Test": "1"}));
+        m2.body = Some("ok".into());
+        store.process_message(m2);
+
+        let e = store.get(0).unwrap();
+        assert_eq!(e.status, NetworkStatus::Completed);
+        assert_eq!(e.http_status, Some(200));
+        assert_eq!(e.duration, Some(50));
+        assert!(e.response_headers.as_ref().unwrap().contains("X-Test"));
+        assert_eq!(e.response_body.as_ref().unwrap(), "ok");
+        assert_eq!(e.response_size, Some(2));
+    }
+
+    #[test]
+    fn handle_res_size_field_overrides_body_len() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.method = Some("GET".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "res");
+        m2.status = Some(200);
+        m2.body = Some("ok".into());
+        m2.size = Some(10_000);
+        store.process_message(m2);
+        assert_eq!(store.get(0).unwrap().response_size, Some(10_000));
+    }
+
+    #[test]
+    fn handle_res_mocked_flag_sets_source() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.method = Some("GET".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "res");
+        m2.status = Some(200);
+        m2.mocked = Some(true);
+        store.process_message(m2);
+        assert_eq!(store.get(0).unwrap().source, EntrySource::Mocked);
+    }
+
+    #[test]
+    fn handle_res_mocked_false_keeps_app_source() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.method = Some("GET".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "res");
+        m2.status = Some(200);
+        m2.mocked = Some(false);
+        store.process_message(m2);
+        assert_eq!(store.get(0).unwrap().source, EntrySource::App);
+    }
+
+    #[test]
+    fn handle_err_sets_failed_status() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.method = Some("GET".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "err");
+        m2.error = Some("timeout".into());
+        m2.duration = Some(30_000);
+        store.process_message(m2);
+
+        let e = store.get(0).unwrap();
+        assert_eq!(e.status, NetworkStatus::Failed);
+        assert_eq!(e.error.as_ref().unwrap(), "timeout");
+        assert_eq!(e.duration, Some(30_000));
+    }
+
+    #[test]
+    fn handle_chunk_appends_to_sse_chunks() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.p = Some("sse".into());
+        m1.method = Some("GET".into());
+        m1.url = Some("https://x.com/stream".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "chunk");
+        m2.data = Some("hello".into());
+        m2.seq = Some(0);
+        m2.size = Some(5);
+        store.process_message(m2);
+
+        let mut m3 = msg(1, "chunk");
+        m3.data = Some(" world".into());
+        m3.seq = Some(1);
+        store.process_message(m3);
+
+        let e = store.get(0).unwrap();
+        assert_eq!(e.sse_chunks.len(), 2);
+        assert_eq!(e.sse_chunks[0].data, "hello");
+        assert_eq!(e.sse_chunks[0].seq, 0);
+        assert_eq!(e.sse_chunks[0].size, 5);
+        assert_eq!(e.sse_chunks[1].data, " world");
+        assert_eq!(e.sse_chunks[1].seq, 1);
+        // size defaulted to data.len() when msg.size absent
+        assert_eq!(e.sse_chunks[1].size, 6);
+        // total size sums
+        assert_eq!(e.sse_total_size, 11);
+    }
+
+    #[test]
+    fn handle_chunk_defaults_seq_from_chunks_len() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.p = Some("sse".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "chunk");
+        m2.data = Some("a".into());
+        // seq not set → defaults to current chunks.len() (0)
+        store.process_message(m2);
+        assert_eq!(store.get(0).unwrap().sse_chunks[0].seq, 0);
+
+        let mut m3 = msg(1, "chunk");
+        m3.data = Some("b".into());
+        store.process_message(m3);
+        assert_eq!(store.get(0).unwrap().sse_chunks[1].seq, 1);
+    }
+
+    #[test]
+    fn handle_chunk_defaults_data_to_empty_string() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.p = Some("sse".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let m2 = msg(1, "chunk");
+        store.process_message(m2);
+        let e = store.get(0).unwrap();
+        assert_eq!(e.sse_chunks[0].data, "");
+    }
+
+    #[test]
+    fn handle_done_completes_entry() {
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.p = Some("sse".into());
+        m1.url = Some("https://x.com".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "done");
+        m2.duration = Some(500);
+        store.process_message(m2);
+        let e = store.get(0).unwrap();
+        assert_eq!(e.status, NetworkStatus::Completed);
+        assert_eq!(e.duration, Some(500));
+    }
+
+    #[test]
+    fn handle_open_creates_ws_entry() {
+        let mut store = NetworkStore::new();
+        let mut m = msg(1, "open");
+        m.url = Some("wss://x.com/ws".into());
+        m.ts = Some(1_700_000_000_000);
+        store.process_message(m);
+        let e = store.get(0).unwrap();
+        assert_eq!(e.protocol, Protocol::Ws);
+        assert_eq!(e.url, "wss://x.com/ws");
+        assert_eq!(e.timestamp.len(), 12);
+    }
+
+    #[test]
+    fn handle_open_missing_url_defaults_to_empty() {
+        let mut store = NetworkStore::new();
+        let m = msg(1, "open");
+        store.process_message(m);
+        assert_eq!(store.get(0).unwrap().url, "");
+    }
+
+    #[test]
+    fn handle_send_and_recv_append_ws_messages() {
+        let mut store = NetworkStore::new();
+        let mut m0 = msg(1, "open");
+        m0.url = Some("wss://x.com".into());
+        store.process_message(m0);
+
+        let mut m1 = msg(1, "send");
+        m1.data = Some("ping".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "recv");
+        m2.data = Some("pong".into());
+        store.process_message(m2);
+
+        let e = store.get(0).unwrap();
+        assert_eq!(e.ws_messages.len(), 2);
+        assert_eq!(e.ws_messages[0].direction, WsDirection::Send);
+        assert_eq!(e.ws_messages[0].data, "ping");
+        assert_eq!(e.ws_messages[0].size, 4);
+        assert_eq!(e.ws_messages[1].direction, WsDirection::Recv);
+        assert_eq!(e.ws_messages[1].data, "pong");
+    }
+
+    #[test]
+    fn handle_ws_msg_size_override() {
+        let mut store = NetworkStore::new();
+        let mut m0 = msg(1, "open");
+        m0.url = Some("wss://x.com".into());
+        store.process_message(m0);
+
+        let mut m1 = msg(1, "send");
+        m1.data = Some("abc".into());
+        m1.size = Some(100);
+        store.process_message(m1);
+
+        assert_eq!(store.get(0).unwrap().ws_messages[0].size, 100);
+    }
+
+    #[test]
+    fn handle_close_sets_close_fields() {
+        let mut store = NetworkStore::new();
+        let mut m0 = msg(1, "open");
+        m0.url = Some("wss://x.com".into());
+        store.process_message(m0);
+
+        let mut m1 = msg(1, "close");
+        m1.code = Some(1000);
+        m1.reason = Some("Normal".into());
+        m1.duration = Some(5_000);
+        store.process_message(m1);
+
+        let e = store.get(0).unwrap();
+        assert_eq!(e.status, NetworkStatus::Completed);
+        assert_eq!(e.ws_close_code, Some(1000));
+        assert_eq!(e.ws_close_reason.as_ref().unwrap(), "Normal");
+        assert_eq!(e.duration, Some(5_000));
+    }
+
+    // ---- Capacity / ring buffer behavior ------------------------------
+
+    #[test]
+    fn push_entry_evicts_oldest_at_capacity() {
+        let mut store = NetworkStore::new();
+        for id in 0..MAX_ENTRIES as u64 {
+            let e = NetworkEntry::new_http(id, "GET".into(), format!("/{}", id), String::new());
+            store.push_entry(e);
+        }
+        assert_eq!(store.len(), MAX_ENTRIES);
+
+        let overflow =
+            NetworkEntry::new_http(9_999_999, "GET".into(), "/overflow".into(), String::new());
+        store.push_entry(overflow);
+        // len stays at cap; oldest (id=0) evicted
+        assert_eq!(store.len(), MAX_ENTRIES);
+        assert_eq!(store.get(0).unwrap().id, 1);
+        assert_eq!(store.get(MAX_ENTRIES - 1).unwrap().id, 9_999_999);
+    }
+
+    #[test]
+    fn handle_req_evicts_oldest_at_capacity() {
+        let mut store = NetworkStore::new();
+        for id in 0..MAX_ENTRIES as u64 {
+            let e = NetworkEntry::new_http(id, "GET".into(), format!("/{}", id), String::new());
+            store.push_entry(e);
+        }
+        let mut m = msg(9_999_999, "req");
+        m.method = Some("GET".into());
+        m.url = Some("/overflow".into());
+        store.process_message(m);
+        assert_eq!(store.len(), MAX_ENTRIES);
+        assert_eq!(store.get(0).unwrap().id, 1);
+    }
+
+    // ---- format_ts branches -----------------------------------------
+
+    #[test]
+    fn format_ts_zero_epoch() {
+        assert_eq!(format_ts(0), "00:00:00.000");
+    }
+
+    #[test]
+    fn format_ts_wraps_day_boundary() {
+        // 25 hours exactly → wraps to 01:00:00.000
+        let ms = 25 * 3600 * 1000;
+        assert_eq!(format_ts(ms), "01:00:00.000");
+    }
+
+    #[test]
+    fn format_ts_with_milliseconds() {
+        // 1 hour 2 min 3 sec 456 ms
+        let ms = (3600 + 2 * 60 + 3) * 1000 + 456;
+        assert_eq!(format_ts(ms), "01:02:03.456");
+    }
+
+    // ---- find_by_id_mut: most-recent-wins -----------------------------
+
+    #[test]
+    fn find_by_id_mut_returns_most_recent_when_duplicate() {
+        // Two reqs with id=1. Subsequent res should update the *second* one.
+        let mut store = NetworkStore::new();
+        let mut m1 = msg(1, "req");
+        m1.method = Some("GET".into());
+        m1.url = Some("https://a".into());
+        store.process_message(m1);
+
+        let mut m2 = msg(1, "req");
+        m2.method = Some("GET".into());
+        m2.url = Some("https://b".into());
+        store.process_message(m2);
+
+        let mut r = msg(1, "res");
+        r.status = Some(200);
+        store.process_message(r);
+
+        // First entry still Pending, second Completed
+        assert_eq!(store.get(0).unwrap().status, NetworkStatus::Pending);
+        assert_eq!(store.get(1).unwrap().status, NetworkStatus::Completed);
     }
 }
