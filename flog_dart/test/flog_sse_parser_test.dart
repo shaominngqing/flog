@@ -109,6 +109,27 @@ void main() {
       final results = await stream.toList();
       expect(results, ['first\n\nthird']);
     });
+
+    // DART-001 regression: external reviewer reported that the old
+    // _processDecoded `return` bug caused `data: {"v":1}\ndata: {"v":2}\n\n`
+    // to emit only `{"v":1}`. Per W3C EventSource §9.2, consecutive `data:`
+    // lines terminated by a single blank line form ONE event whose data is
+    // the field values joined by '\n'. Confirm that behaviour here.
+    test('DART-001 repro: two data lines in one chunk become single joined event', () async {
+      final raw = 'data: {"v":1}\ndata: {"v":2}\n\n';
+      final stream = FlogSseParser.wrap(_bytesFrom(raw), url: 'test');
+      final results = await stream.toList();
+      expect(results, ['{"v":1}\n{"v":2}']);
+    });
+
+    // Paired variant: two *separate* events (each terminated by blank line)
+    // in a single chunk — must emit two values, not one.
+    test('DART-001 repro: two full events in one chunk emit separately', () async {
+      final raw = 'data: {"v":1}\n\ndata: {"v":2}\n\n';
+      final stream = FlogSseParser.wrap(_bytesFrom(raw), url: 'test');
+      final results = await stream.toList();
+      expect(results, ['{"v":1}', '{"v":2}']);
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════
