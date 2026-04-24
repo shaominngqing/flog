@@ -39,6 +39,22 @@ static RAW_LOG_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(
 static STACK_FRAME_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"^#\d+\s").unwrap());
 
+// ── Per-connection reconnect backoff (TRANS-008) ────────────────────────
+//
+// The connector task retries a failed WS connect with exponential backoff:
+// each failure doubles the delay, capped at the maximum. A successful
+// connection resets the delay back to the initial value.
+//
+// Values: 2s → 4s → 8s → 16s → 30s (cap). 2s is short enough that a flaky
+// handshake recovers quickly; 30s is long enough that a dead device doesn't
+// burn log noise or CPU.
+/// Initial delay before the first retry after a failed connection.
+const RECONNECT_INITIAL_DELAY_SECS: u64 = 2;
+/// Cap on the exponential backoff so the delay never grows unbounded.
+const RECONNECT_MAX_DELAY_SECS: u64 = 30;
+/// Multiplier applied to the delay after each failure.
+const RECONNECT_BACKOFF_FACTOR: u64 = 2;
+
 /// Split a message body into (leading_text, Option<stacktrace>).
 ///
 /// The stacktrace begins at the first line matching `#\d+ ` and continues to the end.
@@ -232,7 +248,7 @@ async fn main() -> io::Result<()> {
                         let task_key_c = task_key.clone();
 
                         let task = tokio::spawn(async move {
-                            let mut retry_delay_secs: u64 = 2;
+                            let mut retry_delay_secs: u64 = RECONNECT_INITIAL_DELAY_SECS;
                             loop {
                                 // Track adb forward for cleanup
                                 let mut adb_forward_info: Option<(String, u16)> = None;
@@ -275,7 +291,8 @@ async fn main() -> io::Result<()> {
                                 };
 
                                 if let Ok((mut event_rx, handle)) = ws_result {
-                                    retry_delay_secs = 2; // Reset backoff on successful connection
+                                    // Reset backoff on successful connection.
+                                    retry_delay_secs = RECONNECT_INITIAL_DELAY_SECS;
                                     while let Some(evt) = event_rx.recv().await {
                                         let mut a = app_c.lock().await;
                                         match evt {
@@ -339,9 +356,11 @@ async fn main() -> io::Result<()> {
                                     adb_fwd.lock().await.remove(&task_key_c);
                                 }
 
-                                // Retry with exponential backoff (2s → 4s → 8s → 16s → 30s cap)
+                                // Retry with exponential backoff
+                                // (2s → 4s → 8s → 16s → 30s cap). TRANS-008.
                                 tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
-                                retry_delay_secs = (retry_delay_secs * 2).min(30);
+                                retry_delay_secs = (retry_delay_secs * RECONNECT_BACKOFF_FACTOR)
+                                    .min(RECONNECT_MAX_DELAY_SECS);
                             }
                         });
 
@@ -662,6 +681,26 @@ mod tests {
         );
         let e = app.store.iter().last().unwrap();
         assert_eq!(e.level, domain::LogLevel::Info);
+    }
+
+    #[test]
+    fn reconnect_backoff_constants_match_documented_values() {
+        // TRANS-008: lock the exponential backoff schedule so a casual
+        // edit to the retry cadence is caught by the test suite.
+        assert_eq!(RECONNECT_INITIAL_DELAY_SECS, 2);
+        assert_eq!(RECONNECT_MAX_DELAY_SECS, 30);
+        assert_eq!(RECONNECT_BACKOFF_FACTOR, 2);
+
+        // Simulate the 2 → 4 → 8 → 16 → 30 (cap) sequence.
+        let mut d = RECONNECT_INITIAL_DELAY_SECS;
+        let mut seq = vec![d];
+        for _ in 0..10 {
+            d = (d * RECONNECT_BACKOFF_FACTOR).min(RECONNECT_MAX_DELAY_SECS);
+            seq.push(d);
+        }
+        assert_eq!(&seq[..5], &[2, 4, 8, 16, 30]);
+        // Once capped, it stays capped.
+        assert!(seq.iter().all(|x| *x <= RECONNECT_MAX_DELAY_SECS));
     }
 
     #[test]

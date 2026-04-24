@@ -287,6 +287,17 @@ mod adb_source {
     use tokio::process::Command;
     use tokio::sync::mpsc;
 
+    // ── Reconnect / backoff timing (TRANS-008) ──────────────────────────
+    //
+    // The values below encode a simple cadence:
+    //   1. If the `adb` binary is missing, poll every 30s — the user is
+    //      likely installing or has PATH misconfigured, and a tighter loop
+    //      would just burn CPU while they fix it.
+    //   2. If `adb track-devices` starts cleanly but dies (adb server
+    //      restart, system sleep, etc.), wait 3s before retrying — long
+    //      enough not to hammer a crashed adb daemon, short enough that
+    //      the user sees devices come back quickly.
+
     /// Sleep between reconnect attempts when `adb track-devices` dies cleanly.
     const RECONNECT_DELAY: Duration = Duration::from_secs(3);
     /// Sleep when `adb` is not installed — infrequent polling is enough.
