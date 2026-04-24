@@ -44,11 +44,19 @@ class FlogHttpInterceptor extends Interceptor {
   /// [filter] returns `true` are logged.
   final FlogHttpFilter? filter;
 
-  /// Maps `requestOptions.hashCode` to the assigned flog_net request ID.
-  final Map<int, int> _idMap = {};
-
-  /// Maps `requestOptions.hashCode` to the request start timestamp.
-  final Map<int, DateTime> _startMap = {};
+  // DART-008: Previously we kept two hashCode-keyed maps
+  // (_idMap/_startMap) and only freed entries in onResponse/onError. If a
+  // downstream interceptor resolved or rejected a request before reaching
+  // this interceptor's response phase, the entries leaked and the maps
+  // grew unbounded. RequestOptions is also mutable (headers, redirects),
+  // so hashCode was a fragile key.
+  //
+  // New strategy: stamp the assigned id + start timestamp directly onto
+  // `options.extra` (using private keys). The state now lives on the
+  // request object itself, gets GC'd when the request is discarded, and
+  // is addressable without any side table.
+  static const String _kIdExtraKey = '_flog_id';
+  static const String _kStartExtraKey = '_flog_start_ms';
 
   /// Creates a [FlogHttpInterceptor].
   FlogHttpInterceptor({
@@ -73,9 +81,8 @@ class FlogHttpInterceptor extends Interceptor {
     }
 
     final id = nextNetId();
-    final key = options.hashCode;
-    _idMap[key] = id;
-    _startMap[key] = DateTime.now();
+    options.extra[_kIdExtraKey] = id;
+    options.extra[_kStartExtraKey] = DateTime.now().millisecondsSinceEpoch;
 
     final url = options.uri.toString();
 
@@ -144,17 +151,18 @@ class FlogHttpInterceptor extends Interceptor {
       return;
     }
 
-    final key = response.requestOptions.hashCode;
-    final id = _idMap.remove(key);
-    final start = _startMap.remove(key);
+    final id = response.requestOptions.extra.remove(_kIdExtraKey) as int?;
+    final startMs =
+        response.requestOptions.extra.remove(_kStartExtraKey) as int?;
 
     if (id == null) {
       handler.next(response);
       return;
     }
 
-    final duration =
-        start != null ? DateTime.now().difference(start).inMilliseconds : null;
+    final duration = startMs != null
+        ? DateTime.now().millisecondsSinceEpoch - startMs
+        : null;
 
     final data = <String, dynamic>{
       'id': id,
@@ -186,17 +194,18 @@ class FlogHttpInterceptor extends Interceptor {
       return;
     }
 
-    final key = err.requestOptions.hashCode;
-    final id = _idMap.remove(key);
-    final start = _startMap.remove(key);
+    final id = err.requestOptions.extra.remove(_kIdExtraKey) as int?;
+    final startMs =
+        err.requestOptions.extra.remove(_kStartExtraKey) as int?;
 
     if (id == null) {
       handler.next(err);
       return;
     }
 
-    final duration =
-        start != null ? DateTime.now().difference(start).inMilliseconds : null;
+    final duration = startMs != null
+        ? DateTime.now().millisecondsSinceEpoch - startMs
+        : null;
 
     final response = err.response;
 
