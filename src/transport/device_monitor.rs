@@ -1254,11 +1254,26 @@ mod local_source {
         }
     }
 
-    async fn tcp_open(port: u16) -> Option<u16> {
+    /// Returns true when a TCP connection to 127.0.0.1:{port} succeeds within
+    /// `TCP_TIMEOUT`. The timeout future yields `Result<std::io::Result<_>, _>`
+    /// — the outer `Result` carries "timed out" and the inner carries the
+    /// connect result. `is_ok_and(Result::is_ok)` accepts only the
+    /// "both finished cleanly and stream was built" branch.
+    ///
+    /// Audit ref: TRANS-007 (previously the inline `Ok(Ok(_))` pattern was
+    /// correct but fragile-looking).
+    async fn is_port_open(port: u16) -> bool {
         let addr = format!("127.0.0.1:{}", port);
-        match tokio::time::timeout(TCP_TIMEOUT, tokio::net::TcpStream::connect(&addr)).await {
-            Ok(Ok(_)) => Some(port),
-            _ => None,
+        tokio::time::timeout(TCP_TIMEOUT, tokio::net::TcpStream::connect(&addr))
+            .await
+            .is_ok_and(|r| r.is_ok())
+    }
+
+    async fn tcp_open(port: u16) -> Option<u16> {
+        if is_port_open(port).await {
+            Some(port)
+        } else {
+            None
         }
     }
 
@@ -1378,6 +1393,21 @@ mod local_source {
             // will still fail → None. Use it as "unreachable" sentinel.
             let result = tcp_open(1).await;
             assert_eq!(result, None);
+        }
+
+        // ── is_port_open (TRANS-007) ────────────────────────────────────
+
+        #[tokio::test]
+        async fn is_port_open_true_when_listener_bound() {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            assert!(is_port_open(port).await);
+        }
+
+        #[tokio::test]
+        async fn is_port_open_false_when_nothing_listens() {
+            // Port 1 is privileged and nobody normally listens on it.
+            assert!(!is_port_open(1).await);
         }
 
         // ── device_name (Hello-driven dispatch) ─────────────────────────
