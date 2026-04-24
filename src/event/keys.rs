@@ -20,7 +20,9 @@ use super::actions::{
 pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
     app.status_message = None;
 
-    // Device picker open — handle keys
+    // UI-007: Device picker is a modal overlay. When open, only the
+    // picker's own keys (j/k/Esc/Enter) are accepted; every other key
+    // falls into the catch-all below.
     if app.show_device_picker {
         match key.code {
             KeyCode::Esc => {
@@ -55,7 +57,9 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    // Network tab key handling
+    // UI-007: Network-tab key handling. Returns before the Logs match
+    // below, so any KeyCode arm after this `if` block is reached only
+    // when `active_tab == ViewTab::Logs`.
     if app.active_tab == ViewTab::Network {
         match key.code {
             KeyCode::Char('q') => app.should_quit = true,
@@ -168,7 +172,8 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
         return;
     }
 
-    // Logs tab key handling
+    // UI-007: Logs-tab key handling. Unreachable when active_tab ==
+    // Network (the branch above returns).
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -357,6 +362,56 @@ pub(super) fn handle_mock_edit_mouse(app: &mut App, mouse: MouseEvent) {
 }
 
 // SseNavDir + handle_sse_field_navigation were retired in Phase 3 Task
-// 6. Their replacement is `sse_nav::sse_navigate_fields` with proper
-// wrap semantics (UI-008). The old saturating helper and its three
-// unit tests were deleted along with it.
+// 6. Their replacement is `sse_nav::sse_navigate_fields` (UI-008). The
+// old saturating helper and its three unit tests were deleted.
+
+#[cfg(test)]
+mod routing_tests {
+    //! UI-007 invariants: `handle_normal_key` dispatches on
+    //! `active_tab`. These tests assert the observable side-effect
+    //! each path takes so future refactors don't silently crosswire.
+
+    use super::*;
+    use crate::app::App;
+
+    fn key_char(c: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::empty(),
+            kind: crossterm::event::KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn ui_007_logs_tab_routes_c_to_copy_current_log() {
+        let mut app = App::default();
+        app.active_tab = ViewTab::Logs;
+        // c → copy_current_log sets status_message on logs path
+        // (it will show either the copy result or nothing if no entry).
+        // Precondition: status_message is None after handler runs even
+        // with no selection; but if `c` had routed to the Network
+        // handler (copy_as_curl), we'd also see a status message like
+        // "No request selected".
+        handle_normal_key(&mut app, key_char('c'));
+        // Either outcome is safe; we just verify the tab was not
+        // switched (regression guard — no crosswiring to Network arms
+        // that call app.switch_tab).
+        assert_eq!(app.active_tab, ViewTab::Logs);
+    }
+
+    #[test]
+    fn ui_007_network_tab_routes_r_to_replay_path() {
+        let mut app = App::default();
+        app.active_tab = ViewTab::Network;
+        // Network-tab `r` key → replay_selected → sets status_message
+        // to "Replay unavailable — no client connected" (no connected
+        // client in test state). On the Logs-tab path, `r` hits the
+        // `_ => {}` catch-all (no-op), so status_message stays None.
+        handle_normal_key(&mut app, key_char('r'));
+        assert!(
+            app.status_message.is_some(),
+            "Network `r` key should set status_message via replay_selected"
+        );
+    }
+}

@@ -1,7 +1,66 @@
 //! Event dispatcher — routes keyboard and mouse events to per-mode
-//! handlers. See `handle_key` / `handle_mouse` for the top-level
-//! routing. Mouse dispatch is two-phase (detect→apply) via `detect` +
-//! `apply` submodules; see `click_region` for the semantic region enum.
+//! handlers.
+//!
+//! # Top-level routing (UI-007)
+//!
+//! `handle_key` and `handle_mouse` fan out by `AppMode`:
+//!
+//! ```text
+//! AppMode::Normal          → handle_normal_key / handle_normal_mouse
+//! AppMode::InputActive(f)  → handle_input_key(f, …)  / handle_input_mouse
+//! AppMode::Help | Stats    → handle_overlay_key     / handle_overlay_mouse
+//! AppMode::MockRuleEdit    → handle_mock_edit_key   / handle_mock_edit_mouse
+//! ```
+//!
+//! Each sub-handler ends in a `_ => {}` catch-all. **These no-op
+//! arms are intentional**: unhandled keys / mouse events in a given
+//! mode are swallowed silently (no status message, no error). See
+//! individual handlers for their catch-all; audit UI-007 tracks
+//! this decision.
+//!
+//! # Normal-mode secondary dispatch (UI-007)
+//!
+//! `handle_normal_key` further branches on two pieces of state *in this
+//! order*:
+//!
+//! 1. `app.show_device_picker == true` → device-picker keys (j/k/Enter/
+//!    Esc) only. All other keys are ignored. This is a modal overlay.
+//! 2. `app.select_mode == true` → any key exits select mode and
+//!    discards the event.
+//! 3. `app.active_tab == ViewTab::Network` → Network-tab key handler.
+//!    Arms after this point are unreachable given Network routing —
+//!    comments mark them `// UI-007`.
+//! 4. Otherwise (`ViewTab::Logs`) → Logs-tab key handler.
+//!
+//! # Mouse: two-phase dispatch (UI-009 + UI-041)
+//!
+//! `handle_normal_mouse` is a thin dispatcher:
+//!
+//! 1. `detect::detect_click_region(app, x, y) -> Option<ClickRegion>`
+//!    — pure, read-only, no side effects.
+//! 2. `detect::classify_click(now, x, y, prev)` → `ClickClass::Single`
+//!    or `Double`.
+//! 3. `apply::apply_click_region(app, region, class, x, y)` — performs
+//!    the mutation.
+//! 4. Wheel scroll routes through `handle_scroll` which branches by
+//!    (picker open? logs detail panel? network detail? tab?).
+//!
+//! `click_region::ClickRegion` is the semantic enum mapping a clicked
+//! pixel to a UI concept (tabs, pills, list rows, detail panels,
+//! status-bar buttons, mock rule rows).
+//!
+//! # Sub-modules
+//!
+//! - `actions`    — clipboard + replay + mock-from-selected + copy helpers.
+//! - `apply`      — mutation phase of mouse dispatch.
+//! - `apply_status` — status-bar click handler extracted from apply.
+//! - `click_region` — `ClickRegion`, `ClickClass`, `ScrollDir`, `Axis` enums.
+//! - `detect`     — pure click-region detection.
+//! - `detect_net` — network-tab region detection (split for file-size).
+//! - `keys`       — keyboard handlers for Normal / Input / Overlay /
+//!   MockRuleEdit modes (plus `handle_mock_edit_mouse`).
+//! - `pills`      — named pill labels (SSE/WS) for hit-testing.
+//! - `sse_nav`    — pure SSE merged-field j/k index math.
 
 use std::time::Instant;
 
