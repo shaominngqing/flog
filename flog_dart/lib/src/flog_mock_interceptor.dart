@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 
+import 'flog_net.dart' show flogEnabled;
+
 /// A single mock rule received from flog via VM Service extension.
 class FlogMockRule {
   /// Substring pattern matched against the request URL.
@@ -58,6 +60,14 @@ class FlogMockInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    // Guard: in AOT-release `flogEnabled` is a `const false`, so the whole
+    // rule loop is tree-shaken. Manual wiring onto a plain Dio also short-
+    // circuits here. Mirrors FlogHttpInterceptor.onRequest.
+    if (!flogEnabled) {
+      handler.next(options);
+      return;
+    }
+
     final url = options.uri.toString();
     final method = options.method;
 
