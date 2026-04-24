@@ -1710,6 +1710,23 @@ fn app_new_starts_with_default_layout_cache() {
 }
 
 // =====================================================================
+//  InputField::tab (UI-002)
+// =====================================================================
+
+#[test]
+fn input_field_tab_logs_variants_return_logs() {
+    assert_eq!(InputField::LogSearch.tab(), ViewTab::Logs);
+    assert_eq!(InputField::LogExclude.tab(), ViewTab::Logs);
+    assert_eq!(InputField::LogTag.tab(), ViewTab::Logs);
+}
+
+#[test]
+fn input_field_tab_net_variants_return_network() {
+    assert_eq!(InputField::NetSearch.tab(), ViewTab::Network);
+    assert_eq!(InputField::NetExclude.tab(), ViewTab::Network);
+}
+
+// =====================================================================
 //  MockEditState (UI-026 + UI-034)
 // =====================================================================
 

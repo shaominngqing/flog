@@ -9,6 +9,14 @@ use std::collections::HashMap;
 
 // ── Mode ──
 
+/// Input field identity for the unified-input-field model.
+///
+/// Mixes Logs-tab and Network-tab fields in one flat enum (audit UI-002).
+/// Rather than split into per-tab enums (which would ripple into every
+/// `AppMode::InputActive` match in `src/event.rs`), we expose a `tab()`
+/// method that yields the owning tab. Callers that need tab safety can
+/// assert `field.tab() == current_tab` before acting — see how the
+/// logs/network view modules already structure their dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputField {
     LogSearch,
@@ -16,6 +24,19 @@ pub enum InputField {
     LogTag,
     NetSearch,
     NetExclude,
+}
+
+impl InputField {
+    /// Returns the `ViewTab` that owns this input field.
+    ///
+    /// Use when an event handler needs to route based on the active
+    /// field's tab, e.g. `if field.tab() == app.active_tab { ... }`.
+    pub fn tab(&self) -> ViewTab {
+        match self {
+            InputField::LogSearch | InputField::LogExclude | InputField::LogTag => ViewTab::Logs,
+            InputField::NetSearch | InputField::NetExclude => ViewTab::Network,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -855,6 +876,10 @@ impl App {
     // ── Unified input-field control ──
 
     pub fn enter_input_field(&mut self, field: InputField) {
+        // UI-002: ensure the active tab matches the field's owning tab, so the
+        // caller doesn't need to remember to switch tabs before entering an
+        // input mode. `field.tab()` is the single source of truth.
+        self.active_tab = field.tab();
         // Seed buffer from current filter state if buffer is empty.
         match field {
             InputField::LogSearch => {
