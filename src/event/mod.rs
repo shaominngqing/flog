@@ -6,6 +6,10 @@ use crate::app::{App, AppMode, ViewTab};
 use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 use crate::domain::LogLevel;
 
+mod pills;
+
+use pills::{PILL_PADDING, SSE_EVENTS_PILL, SSE_MERGED_PILL, WS_CHAT_PILL, WS_LIST_PILL};
+
 const SCROLL_LINES: usize = 3;
 const LEVEL_BUTTON_WIDTH: u16 = 3;
 
@@ -277,9 +281,9 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                 let click_x =
                                     (x.saturating_sub(app.layout.net_detail_x + 1)) as usize;
                                 let events_start = header_w;
-                                let events_end = events_start + " Events ".len();
-                                let merged_start = events_end + 1;
-                                let merged_end = merged_start + " Merged ".len();
+                                let events_end = events_start + SSE_EVENTS_PILL.len();
+                                let merged_start = events_end + PILL_PADDING;
+                                let merged_end = merged_start + SSE_MERGED_PILL.len();
                                 if click_x >= events_start && click_x < events_end {
                                     app.network.sse_merged_mode = false;
                                     return;
@@ -375,9 +379,9 @@ fn handle_normal_mouse(app: &mut App, mouse: MouseEvent) {
                                 let click_x =
                                     (x.saturating_sub(app.layout.net_detail_x + 1)) as usize;
                                 let chat_start = header_w;
-                                let chat_end = chat_start + " Chat ".len();
-                                let raw_start = chat_end + 1;
-                                let raw_end = raw_start + " Raw ".len();
+                                let chat_end = chat_start + WS_CHAT_PILL.len();
+                                let raw_start = chat_end + PILL_PADDING;
+                                let raw_end = raw_start + WS_LIST_PILL.len();
                                 if click_x >= chat_start && click_x < chat_end {
                                     app.network.ws_chat_mode = true;
                                     return;
