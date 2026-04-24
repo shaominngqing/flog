@@ -170,10 +170,7 @@ pub(crate) fn apply_click_region(
 fn apply_status_bar(app: &mut App, x: u16, y: u16) {
     super::apply_status::handle(app, x, y);
 }
-
-// ─────────────────────────────────────────────────────────────────────
-//  Helpers
-// ─────────────────────────────────────────────────────────────────────
+// ── Helpers ──
 
 fn apply_logs_list_row(app: &mut App, row: u16, _class: ClickClass) {
     let y = app.layout.list_y + row;
@@ -367,10 +364,7 @@ fn apply_mock_rule_row(app: &mut App, row_idx: usize, class: ClickClass) {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-//  Tests
-// ─────────────────────────────────────────────────────────────────────
-
+// ── Tests ──
 #[cfg(test)]
 mod tests {
     use super::*;
