@@ -23,6 +23,13 @@ import 'flog_store.dart';
 /// When flog connects, sends a `hello` message, replays all buffered data
 /// from [FlogStore], then begins pushing live data.
 class FlogServer {
+  /// Number of consecutive ports the server will try when the base port is
+  /// already in use: `[basePort, basePort + portScanCount)`. Must stay in
+  /// sync with the Rust TUI's discovery scan (`src/transport/`), which
+  /// currently walks 9753..=9762 (= 10 ports). If you bump this, bump the
+  /// TUI side too. (DART-015.)
+  static const int portScanCount = 10;
+
   static final FlogServer instance = FlogServer._();
   FlogServer._();
 
@@ -163,20 +170,30 @@ class FlogServer {
   }
 
   Future<void> _startServer() async {
-    // Try binding to _port, then _port+1, ... up to _port+9.
-    // This allows multiple apps on the same device to coexist.
+    // Try binding to basePort + 0..portScanCount-1. This allows multiple
+    // flog-instrumented apps on the same device to coexist.
     final basePort = _port;
-    for (int offset = 0; offset < 10; offset++) {
+    Object? lastError;
+    for (int offset = 0; offset < portScanCount; offset++) {
       try {
         final tryPort = basePort + offset;
         _httpServer = await HttpServer.bind('0.0.0.0', tryPort);
         _port = tryPort;
         _httpServer!.listen(_handleRequest);
         return;
-      } catch (_) {
-        // Port in use — try next
+      } catch (e) {
+        lastError = e;
+        // Port in use — try next.
       }
     }
+    // DART-016: surface the failure instead of silently succeeding
+    // without binding. FlogStore still records, but no TUI can connect
+    // until the user frees a port.
+    debugPrint(
+      'flog_dart: FlogServer failed to bind any port in '
+      '[$basePort .. ${basePort + portScanCount - 1}]; '
+      'last error: $lastError',
+    );
   }
 
   void _handleRequest(HttpRequest request) {
@@ -272,11 +289,23 @@ class FlogServer {
       } catch (_) {}
     }
 
-    _dio!
-        .request(url,
-            data: data['body'],
-            options: Options(method: method, headers: headers))
-        .ignore();
+    // DART-017: previously `.ignore()` swallowed every replay error.
+    // Surface failures via debugPrint so the developer can see why a
+    // replay never shows up in the TUI. Interceptors on the registered
+    // Dio still emit their normal `req` / `res` / `err` frames, so the
+    // TUI also sees the result inline; this log is a last-resort
+    // diagnostic for the fire-and-forget case.
+    unawaited(() async {
+      try {
+        await _dio!.request(
+          url,
+          data: data['body'],
+          options: Options(method: method, headers: headers),
+        );
+      } catch (e) {
+        debugPrint('flog_dart: replay failed for $method $url: $e');
+      }
+    }());
   }
 
   void _removeClient(WebSocket ws) {
