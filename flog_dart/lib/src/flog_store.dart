@@ -22,8 +22,24 @@ class FlogStore {
   static final FlogStore instance = FlogStore._();
   FlogStore._();
 
-  /// Maximum number of messages to retain.
-  static const int capacity = 50000;
+  /// Maximum number of messages retained in the ring buffer.
+  ///
+  /// Chosen to cover a typical Flutter dev-session of several hours
+  /// without unbounded memory growth. At an average of ≈ 500 bytes per
+  /// message (log line or flog_net frame), 50000 messages ≈ 25 MB of
+  /// retained payload. The Rust TUI side uses a separate 100 000-entry
+  /// log cap (see `src/domain/store.rs`); the Dart side is smaller on
+  /// purpose because mobile devices are more memory-constrained than a
+  /// developer workstation.
+  ///
+  /// Not currently tunable. A Phase 5 API may expose a constructor
+  /// parameter if real apps need a larger window. (DART-020.)
+  static const int defaultCapacity = 50000;
+
+  /// Alias for [defaultCapacity] for back-compat with callers that still
+  /// import `FlogStore.capacity`. New code should reference
+  /// [defaultCapacity].
+  static const int capacity = defaultCapacity;
 
   final Queue<Map<String, dynamic>> _buffer = ListQueue<Map<String, dynamic>>();
 
