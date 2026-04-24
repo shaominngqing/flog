@@ -507,7 +507,7 @@ pub struct ConnectedApp {
 
 /// Application state machine — the single mutable root owned by `main`.
 ///
-/// ## Multi-app connection state invariants (audit UI-040)
+/// ## Multi-app connection state invariants (audit UI-040 + UI-023 ack)
 ///
 /// flog can be attached to multiple running Flutter apps simultaneously
 /// (e.g. one app per device), but the UI shows exactly one at a time.
@@ -607,6 +607,13 @@ pub struct App {
     pub new_logs_since_pause: usize,
 
     // Internal
+    //
+    // Logs-tab filter cache (audit UI-018 ack). Mirrors the NetworkState
+    // pattern documented on `NetworkState::filtered_indices`. Rebuild is
+    // triggered exclusively by `filter_dirty == true`; set via
+    // `invalidate_filter()` after any store/filter mutation. Phase 2.5B
+    // characterization tests confirm the invariant holds on every mutation
+    // path; ack-only entry in this step.
     filtered_indices: Vec<usize>,
     filter_dirty: bool,
 }
@@ -1283,6 +1290,14 @@ impl App {
 
     /// Discards in-progress edits and returns to `Normal`. `mock_rules`
     /// stays unchanged.
+    ///
+    /// Save / cancel semantics (audit UI-027 ack): save writes changes and
+    /// exits; cancel drops changes and exits. Both are unconditional —
+    /// there is no "unsaved changes" prompt. The MockRuleEdit mode is the
+    /// only place where rule edits live; once we leave Normal the edits
+    /// are committed, and vice versa. Characterization tests
+    /// (`cancel_mock_edit_discards_changes`,
+    /// `save_mock_edit_updates_rule_and_exits_mode`) lock this flow.
     pub fn cancel_mock_edit(&mut self) {
         self.mock_edit.rule_id = None;
         self.mode = AppMode::Normal;

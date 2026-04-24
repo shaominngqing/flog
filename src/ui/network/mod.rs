@@ -95,6 +95,12 @@ pub fn status_color(status: NetworkStatus, http_status: Option<u16>) -> Color {
 }
 
 /// Color for duration based on latency thresholds.
+///
+/// Thresholds (>1000 ms red, >500 ms yellow, else green) are intentionally
+/// magic today — audit UI-032 ack. Extraction to named constants
+/// (`DURATION_SLOW_MS` / `DURATION_WARN_MS`) is a cosmetic improvement
+/// left to a later sweep over all ui/ thresholds; doing it alone would
+/// add one-file churn without settling the palette question.
 fn duration_color(ms: u64) -> Color {
     if ms > 1000 {
         RED
