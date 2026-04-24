@@ -621,17 +621,12 @@ evidence: |
   WsMessage.size — the LAST of which IS live). The SseChunk.seq/size/
   timestamp and WsMessage.timestamp triad is truly write-only.
 proposed_action: |
-  Phase 3 (Domain step) decide:
-  Option 1: remove fields + remove the corresponding payload fields in
-    the WS protocol (FlogNetMessage chunk/message variants). This is a
-    protocol shape change — verify with flog_dart that it does not rely
-    on the fields either.
-  Option 2: wire the fields into rendering. WsMessage.timestamp could
-    show per-message timestamps in the WS chat view.
-  Option 3: rename `seq` to `_seq` (etc.) and keep as reserved — not
-    ideal, just documentation-as-code.
-  Recommended: Option 1 — write-only protocol fields are a symptom of a
-    protocol that evolved faster than consumers. Prune them.
+  Phase 3 Step 3.2 applied Option 1 (commit ce09cbd → field prune
+  commit): fields pruned from the storage structs (SseChunk.seq/size/
+  timestamp + WsMessage.timestamp). FlogNetMessage wire-level fields
+  kept with #[serde(default)] so Dart can still send them; values are
+  simply discarded at ingest. WsMessage.size is preserved — it is read
+  by the Network detail panel and stats percentiles.
 risk: low
 ```
 

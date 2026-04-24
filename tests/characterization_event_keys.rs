@@ -668,9 +668,7 @@ fn app_with_sse_entry() -> App {
     // Chunks exposing two candidate leaf paths: `a` and `b`.
     for i in 0..3 {
         entry.sse_chunks.push(SseChunk {
-            seq: i,
             data: format!(r#"{{"a":"hello-{}","b":"world-{}"}}"#, i, i),
-            size: 0,
         });
     }
     app.network_store.push_entry(entry);

@@ -36,20 +36,15 @@ pub enum EntrySource {
 
 #[derive(Debug, Clone)]
 pub struct SseChunk {
-    #[allow(dead_code)]
-    pub seq: u32,
     pub data: String,
-    #[allow(dead_code)]
-    pub size: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct WsMessage {
     pub direction: WsDirection,
     pub data: String,
+    /// Byte size of this message. Read by the Network detail panel + stats.
     pub size: u64,
-    #[allow(dead_code)]
-    pub timestamp: String,
 }
 
 #[derive(Debug, Clone)]
@@ -394,29 +389,29 @@ mod tests {
     // must be intentional — the test makes that decision visible.
 
     #[test]
-    fn dom_025_sse_chunk_fields_are_constructable_and_readable() {
+    fn dom_025_sse_chunk_has_only_data_after_prune() {
+        // Phase 3 DOM-025: seq/size/timestamp were write-only and are
+        // pruned from the storage struct. The wire format still accepts
+        // them (see dom_025_flog_net_message_accepts_all_fields_from_protocol)
+        // for compat, but the domain type only carries data.
         let chunk = SseChunk {
-            seq: 42,
             data: "payload".to_string(),
-            size: 7,
         };
-        assert_eq!(chunk.seq, 42);
         assert_eq!(chunk.data, "payload");
-        assert_eq!(chunk.size, 7);
     }
 
     #[test]
-    fn dom_025_ws_message_fields_are_constructable_and_readable() {
+    fn dom_025_ws_message_has_direction_data_size_after_prune() {
+        // Phase 3 DOM-025: WsMessage.timestamp was write-only; size is
+        // kept because detail + stats read it.
         let m = WsMessage {
             direction: WsDirection::Send,
             data: "hi".to_string(),
             size: 2,
-            timestamp: "12:00:00.000".to_string(),
         };
         assert_eq!(m.direction, WsDirection::Send);
         assert_eq!(m.data, "hi");
         assert_eq!(m.size, 2);
-        assert_eq!(m.timestamp, "12:00:00.000");
     }
 
     #[test]
@@ -497,13 +492,11 @@ mod tests {
             direction: WsDirection::Send,
             data: "a".into(),
             size: 10,
-            timestamp: String::new(),
         });
         e.ws_messages.push(WsMessage {
             direction: WsDirection::Recv,
             data: "b".into(),
             size: 25,
-            timestamp: String::new(),
         });
         assert_eq!(e.display_size(), 35);
     }

@@ -112,10 +112,10 @@ pub fn ws_entry(id: u64, url: &str) -> NetworkEntry {
     NetworkEntry::new_ws(id, url.to_string(), "12:00:00.000".to_string())
 }
 
-pub fn sse_chunk(seq: u32, data: &str) -> SseChunk {
+pub fn sse_chunk(_seq: u32, data: &str) -> SseChunk {
+    // Phase 3 DOM-025: seq/size are dropped from the storage type. The
+    // `_seq` parameter is kept to avoid churn at call sites.
     SseChunk {
-        seq,
-        size: data.len() as u64,
         data: data.to_string(),
     }
 }
@@ -125,7 +125,6 @@ pub fn ws_send(data: &str) -> WsMessage {
         direction: WsDirection::Send,
         size: data.len() as u64,
         data: data.to_string(),
-        timestamp: "12:00:00.000".to_string(),
     }
 }
 
@@ -134,7 +133,6 @@ pub fn ws_recv(data: &str) -> WsMessage {
         direction: WsDirection::Recv,
         size: data.len() as u64,
         data: data.to_string(),
-        timestamp: "12:00:00.000".to_string(),
     }
 }
 

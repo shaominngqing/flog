@@ -146,9 +146,10 @@ impl NetworkStore {
         if let Some(entry) = self.find_by_id_mut(msg.id) {
             let data = msg.data.unwrap_or_default();
             let size = msg.size.unwrap_or(data.len() as u64);
-            let seq = msg.seq.unwrap_or(entry.sse_chunks.len() as u32);
             entry.sse_total_size += size;
-            entry.sse_chunks.push(SseChunk { seq, data, size });
+            // DOM-025: seq/size/ts are accepted on the wire but dropped at
+            // ingest — no UI consumer reads them.
+            entry.sse_chunks.push(SseChunk { data });
         }
     }
 
@@ -175,11 +176,12 @@ impl NetworkStore {
             let data = msg.data.unwrap_or_default();
             let size = msg.size.unwrap_or(data.len() as u64);
 
+            // DOM-025: per-message timestamp is accepted on the wire but
+            // not stored — no UI consumer reads it.
             entry.ws_messages.push(WsMessage {
                 direction,
                 data,
                 size,
-                timestamp: String::new(),
             });
         }
     }
@@ -619,18 +621,16 @@ mod tests {
         let e = store.get(0).unwrap();
         assert_eq!(e.sse_chunks.len(), 2);
         assert_eq!(e.sse_chunks[0].data, "hello");
-        assert_eq!(e.sse_chunks[0].seq, 0);
-        assert_eq!(e.sse_chunks[0].size, 5);
         assert_eq!(e.sse_chunks[1].data, " world");
-        assert_eq!(e.sse_chunks[1].seq, 1);
-        // size defaulted to data.len() when msg.size absent
-        assert_eq!(e.sse_chunks[1].size, 6);
-        // total size sums
+        // DOM-025: sse_total_size is the live aggregate; per-chunk
+        // seq/size/timestamp are accepted on the wire but dropped.
         assert_eq!(e.sse_total_size, 11);
     }
 
     #[test]
-    fn handle_chunk_defaults_seq_from_chunks_len() {
+    fn handle_chunk_stores_data_in_order() {
+        // DOM-025: SseChunk.seq was dropped. Lock ordering via the data
+        // field: chunks push to the back in the order received.
         let mut store = NetworkStore::new();
         let mut m1 = msg(1, "req");
         m1.p = Some("sse".into());
@@ -639,14 +639,15 @@ mod tests {
 
         let mut m2 = msg(1, "chunk");
         m2.data = Some("a".into());
-        // seq not set → defaults to current chunks.len() (0)
         store.process_message(m2);
-        assert_eq!(store.get(0).unwrap().sse_chunks[0].seq, 0);
-
         let mut m3 = msg(1, "chunk");
         m3.data = Some("b".into());
         store.process_message(m3);
-        assert_eq!(store.get(0).unwrap().sse_chunks[1].seq, 1);
+
+        let chunks = &store.get(0).unwrap().sse_chunks;
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].data, "a");
+        assert_eq!(chunks[1].data, "b");
     }
 
     #[test]
