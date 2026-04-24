@@ -3,6 +3,7 @@
 pub mod entry;
 pub mod filter;
 pub mod filter_traits;
+pub mod json_tolerant;
 pub mod mock;
 pub mod network;
 pub mod network_filter;
