@@ -9,15 +9,41 @@ use std::sync::LazyLock;
 use super::LogLineParser;
 use crate::domain::{InputSource, LogEntry, LogLevel};
 
-static ERROR_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(error|exception|fatal|crash|panic|fail(ed|ure)?)\b").unwrap()
-});
+/// Keyword sets used by the fallback parser to infer a log level from
+/// free-form text. Extracted from inline regex — Phase 3 Step 3.1, see
+/// Audit DOM-017. Single source of truth for "what counts as an ERROR
+/// keyword", addable without regex-pattern surgery.
+///
+/// NOTE: the original regex used `fail(ed|ure)?` — captured "fail",
+/// "failed", "failure". We spell them out here so future readers don't
+/// need to mentally expand regex groups.
+pub(crate) const ERROR_KEYWORDS: &[&str] = &[
+    "error",
+    "exception",
+    "fatal",
+    "crash",
+    "panic",
+    "fail",
+    "failed",
+    "failure",
+];
 
-static WARNING_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b(warn(ing)?|deprecated|caution)\b").unwrap());
+/// Original regex used `warn(ing)?` — captured "warn", "warning".
+pub(crate) const WARNING_KEYWORDS: &[&str] = &["warn", "warning", "deprecated", "caution"];
 
-static DEBUG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b(debug|trace|verbose)\b").unwrap());
+pub(crate) const DEBUG_KEYWORDS: &[&str] = &["debug", "trace", "verbose"];
+
+/// Build a case-insensitive word-boundary regex from a keyword list.
+///
+/// Phase 3 Step 3.1 — see Audit DOM-017.
+fn build_keyword_regex(keywords: &[&str]) -> Regex {
+    let pattern = format!(r"(?i)\b({})\b", keywords.join("|"));
+    Regex::new(&pattern).expect("keyword regex compiles")
+}
+
+static ERROR_RE: LazyLock<Regex> = LazyLock::new(|| build_keyword_regex(ERROR_KEYWORDS));
+static WARNING_RE: LazyLock<Regex> = LazyLock::new(|| build_keyword_regex(WARNING_KEYWORDS));
+static DEBUG_RE: LazyLock<Regex> = LazyLock::new(|| build_keyword_regex(DEBUG_KEYWORDS));
 
 pub struct KeywordParser;
 
@@ -91,5 +117,61 @@ mod tests {
     fn ignores_empty() {
         let p = KeywordParser;
         assert!(p.try_parse("   ").is_none());
+    }
+
+    // ---- Phase 3 Step 3.1 DOM-017: keyword set extraction ----
+
+    #[test]
+    fn error_keywords_include_expected_set() {
+        // Lock current ERROR_KEYWORDS membership. Phase 3+ changes must
+        // update this test deliberately.
+        assert!(ERROR_KEYWORDS.contains(&"error"));
+        assert!(ERROR_KEYWORDS.contains(&"exception"));
+        assert!(ERROR_KEYWORDS.contains(&"fatal"));
+        assert!(ERROR_KEYWORDS.contains(&"crash"));
+        assert!(ERROR_KEYWORDS.contains(&"panic"));
+        assert!(ERROR_KEYWORDS.contains(&"fail"));
+        assert!(ERROR_KEYWORDS.contains(&"failed"));
+        assert!(ERROR_KEYWORDS.contains(&"failure"));
+    }
+
+    #[test]
+    fn warning_keywords_include_expected_set() {
+        assert!(WARNING_KEYWORDS.contains(&"warn"));
+        assert!(WARNING_KEYWORDS.contains(&"warning"));
+        assert!(WARNING_KEYWORDS.contains(&"deprecated"));
+        assert!(WARNING_KEYWORDS.contains(&"caution"));
+    }
+
+    #[test]
+    fn debug_keywords_include_expected_set() {
+        assert!(DEBUG_KEYWORDS.contains(&"debug"));
+        assert!(DEBUG_KEYWORDS.contains(&"trace"));
+        assert!(DEBUG_KEYWORDS.contains(&"verbose"));
+    }
+
+    #[test]
+    fn build_keyword_regex_is_case_insensitive() {
+        let re = build_keyword_regex(&["foo", "bar"]);
+        assert!(re.is_match("FOO"));
+        assert!(re.is_match("Foo"));
+        assert!(re.is_match("bar"));
+    }
+
+    #[test]
+    fn build_keyword_regex_respects_word_boundary() {
+        let re = build_keyword_regex(&["log"]);
+        assert!(re.is_match("please log this"));
+        // "prologue" contains "log" but not at a word boundary
+        assert!(!re.is_match("prologue"));
+        // "blog" similarly embeds "log"
+        assert!(!re.is_match("blog"));
+    }
+
+    #[test]
+    fn build_keyword_regex_handles_single_keyword() {
+        let re = build_keyword_regex(&["alone"]);
+        assert!(re.is_match("i am alone"));
+        assert!(!re.is_match("standalone"));
     }
 }
