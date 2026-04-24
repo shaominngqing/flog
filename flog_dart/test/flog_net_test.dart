@@ -1,7 +1,9 @@
 /// Characterization tests for `lib/src/flog_net.dart`.
 ///
 /// Audit entries locked by this file:
-///   - DART-009 (B): `emitNet` mutates caller-owned Map with 'type'/'ts' keys.
+///   - DART-009 (B, FIXED Phase 3 Step 3.4): `emitNet` now clones the caller
+///     map before stamping `type` / `ts`, so callers never see protocol
+///     keys leak back.
 ///   - DART-029 (E): `_nextId` is process-wide state, not resettable; tests
 ///     observe the counter is monotonic but cannot assert a starting value
 ///     without isolation.
@@ -15,29 +17,23 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flog_dart/src/flog_net.dart';
 import 'package:flog_dart/src/flog_server.dart';
+import 'package:flog_dart/src/flog_store.dart';
 
 void main() {
   // ═══════════════════════════════════════════════════════════════
-  // DART-009: emitNet mutates caller-owned Map
+  // DART-009 (FIXED): emitNet clones the caller map before decorating
   // ═══════════════════════════════════════════════════════════════
 
-  group('DART-009 emitNet decorates the caller-provided map in place', () {
-    test('emitNet adds `type` and `ts` keys to the passed map', () {
-      // Prevent the singleton server from actually trying to bind sockets
-      // by passing flogEnabled=true paths; send() records into FlogStore and
-      // broadcasts — since no clients are connected, the broadcast is a
-      // no-op. FlogStore.record is safe to call.
+  group('DART-009 emitNet does not mutate the caller-provided map', () {
+    test('emitNet does NOT add `type`/`ts` keys to the passed map', () {
       final map = <String, dynamic>{'id': 1, 't': 'req'};
       emitNet(map);
 
-      // The passed-in map is decorated in place — this is the current
-      // (buggy) behavior documented by DART-009.
-      expect(map.containsKey('type'), isTrue,
-          reason: 'emitNet should have written `type` into the caller map');
-      expect(map['type'], 'net');
-      expect(map.containsKey('ts'), isTrue,
-          reason: 'emitNet should have written `ts` into the caller map');
-      expect(map['ts'], isA<int>());
+      expect(map.containsKey('type'), isFalse,
+          reason: 'DART-009 fix: caller map stays clean; protocol keys go '
+              'on the internally-cloned copy only.');
+      expect(map.containsKey('ts'), isFalse);
+      expect(map, {'id': 1, 't': 'req'});
     });
 
     test('emitNet preserves existing keys on the caller map', () {
@@ -55,13 +51,19 @@ void main() {
       expect(map['custom'], 'preserved');
     });
 
-    test('emitNet ts is a millisecondsSinceEpoch int', () {
+    test('emitNet stamps ts on the stored (cloned) message', () {
+      // After the fix, the only way to observe the `ts` is via FlogStore.
       final before = DateTime.now().millisecondsSinceEpoch;
-      final map = <String, dynamic>{};
-      emitNet(map);
+      final lenBefore = FlogStore.instance.snapshotForTesting.length;
+      emitNet(<String, dynamic>{'tag': 'dart-009-ts-test'});
       final after = DateTime.now().millisecondsSinceEpoch;
 
-      final ts = map['ts'] as int;
+      final all = FlogStore.instance.snapshotForTesting;
+      expect(all.length, greaterThan(lenBefore));
+      final recorded = all.last;
+      expect(recorded['tag'], 'dart-009-ts-test');
+      expect(recorded['type'], 'net');
+      final ts = recorded['ts'] as int;
       expect(ts, greaterThanOrEqualTo(before));
       expect(ts, lessThanOrEqualTo(after));
     });

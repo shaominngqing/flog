@@ -25,9 +25,16 @@ int _nextId = 1;
 int nextNetId() => _nextId++;
 
 /// Emit a flog_net protocol message via Direct Socket.
+///
+/// Copies [data] before decorating with `type` / `ts`, so callers that
+/// inspect or reuse their payload after the call do not see protocol
+/// keys leak back in. (DART-009.)
 void emitNet(Map<String, dynamic> data) {
   if (!flogEnabled) return;
-  data['type'] = 'net';
-  data['ts'] = DateTime.now().millisecondsSinceEpoch;
-  FlogServer.instance.send(data);
+  final out = <String, dynamic>{
+    ...data,
+    'type': 'net',
+    'ts': DateTime.now().millisecondsSinceEpoch,
+  };
+  FlogServer.instance.send(out);
 }
