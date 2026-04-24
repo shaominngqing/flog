@@ -1,4 +1,10 @@
 //! Mock rule types and matching for the interceptor-based mock system.
+//!
+//! DOM-007 acknowledged (Phase 3 Step 3.2): mock rules live here rather
+//! than being merged with SSE/WS extensions because they are
+//! HTTP-specific and syncable over the wire (`ext.flog.syncMockRules`).
+//! Co-locating the three protocol extensions would couple orthogonal
+//! concerns. Keep as-is.
 
 use serde::Serialize;
 

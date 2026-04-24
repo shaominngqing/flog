@@ -1,3 +1,12 @@
+//! Combined log filter — level + tag (include/exclude) + search +
+//! exclude-search, with regex and plain-OR modes per query field.
+//!
+//! DOM-004 acknowledged (Phase 3 Step 3.2): the four dimensions are
+//! applied as a single pipeline in [`FilterState::matches`]. Splitting
+//! into four sub-structs would require 4x the plumbing with no gain in
+//! call-site ergonomics; the characterization tests below freeze the
+//! combined behaviour.
+
 use super::entry::{LogEntry, LogLevel};
 use super::filter_traits::MessageFilter;
 use regex::Regex;

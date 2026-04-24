@@ -143,6 +143,10 @@ impl NetworkEntry {
     }
 }
 
+// DOM-020 acknowledged — naive string search, behaviour correct on all
+// known inputs. Locked by characterization tests dom_020_extract_path_*.
+// Revisit only if URL parsing requirements change (e.g. pulling in the
+// `url` crate for RFC 3986 normalisation).
 fn extract_path(url: &str) -> String {
     if let Some(pos) = url.find("://") {
         let after_scheme = &url[pos + 3..];

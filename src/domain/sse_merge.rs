@@ -1,4 +1,10 @@
 //! SSE merge utilities: extract JSON field paths and concatenate values across chunks.
+//!
+//! DOM-007 acknowledged (Phase 3 Step 3.2): this is the SSE-specific
+//! protocol extension. Kept separate from `ws_chat` and `mock` because
+//! the three extensions address orthogonal concerns — merging chunks,
+//! grouping messages, intercepting requests. Treat as the reference
+//! layout for future protocol extensions.
 
 use crate::app::SsePathSegment;
 

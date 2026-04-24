@@ -1,4 +1,8 @@
 //! WS Chat View utilities: type extraction, binary detection, and message grouping.
+//!
+//! DOM-007 acknowledged (Phase 3 Step 3.2): this is the WS-specific
+//! protocol extension. Kept separate from `sse_merge` and `mock` — see
+//! `sse_merge` for the rationale.
 
 use crate::domain::network::WsDirection;
 
