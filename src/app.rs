@@ -265,10 +265,35 @@ impl NetworkState {
         }
     }
 
+    /// Marks the `filtered_indices` cache dirty so the next read rebuilds it.
+    ///
+    /// Call after any mutation that could change which store entries match
+    /// the active filter — new entry appended, filter parameters edited,
+    /// etc. Cheap; does not do any work itself.
     pub fn invalidate_filter(&mut self) {
         self.filter_dirty = true;
     }
 
+    /// Returns the sorted list of store indices that match the current
+    /// [`NetworkFilter`], rebuilding the internal cache lazily on demand.
+    ///
+    /// ## Cache invariant (audit UI-004)
+    ///
+    /// `filtered_indices` + `filter_dirty` form a write-through cache:
+    ///
+    /// - **Rebuild trigger**: `filter_dirty == true`. Set by
+    ///   [`Self::invalidate_filter`], which is called by every mutation
+    ///   path (`move_up`, `select_down`, `go_top/bottom`, toolbar filter
+    ///   edits, every new `NetworkEntry` delivered into `NetworkStore`).
+    /// - **Read**: this method reads `filter_dirty`; if clear, returns the
+    ///   cached slice unchanged. If dirty, walks the entire store to
+    ///   rebuild, then clears the flag.
+    /// - **Post-condition**: after returning, `filter_dirty == false` and
+    ///   `filtered_indices` is a monotonically-increasing subset of
+    ///   `0..store.len()`.
+    ///
+    /// Callers that merely observe (e.g. the renderer) MUST NOT mutate
+    /// `filter_dirty` directly; use `invalidate_filter()`.
     pub fn filtered_indices(&mut self, store: &crate::domain::NetworkStore) -> &[usize] {
         if self.filter_dirty {
             self.filtered_indices.clear();
@@ -284,6 +309,7 @@ impl NetworkState {
         &self.filtered_indices
     }
 
+    /// Convenience wrapper: length of [`Self::filtered_indices`].
     pub fn filtered_count(&mut self, store: &crate::domain::NetworkStore) -> usize {
         self.filtered_indices(store).len()
     }

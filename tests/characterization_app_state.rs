@@ -1499,6 +1499,28 @@ fn network_state_invalidate_forces_rebuild() {
 }
 
 #[test]
+fn network_state_cache_rebuilds_only_on_invalidation() {
+    // UI-004 — pushing a new entry WITHOUT invalidating must not change the
+    // already-cached indices. Locks the cache-invariant: a caller that skips
+    // invalidate_filter() sees stale data until the next invalidation.
+    let mut app = app_with_n_network(2);
+    // Prime the cache — 2 entries.
+    assert_eq!(app.network.filtered_count(&app.network_store), 2);
+    // Push a third entry but don't invalidate.
+    app.network_store.push_entry(NetworkEntry::new_http(
+        42,
+        "GET".into(),
+        "https://x/42".into(),
+        "t".into(),
+    ));
+    // Cached length stays at 2 because `filter_dirty` is false.
+    assert_eq!(app.network.filtered_count(&app.network_store), 2);
+    // Explicit invalidate → next read rebuilds to 3.
+    app.network.invalidate_filter();
+    assert_eq!(app.network.filtered_count(&app.network_store), 3);
+}
+
+#[test]
 fn network_move_up_disables_auto_scroll() {
     let mut ns = NetworkState::new();
     ns.selected = 2;
