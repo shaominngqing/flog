@@ -122,7 +122,7 @@ Both Logs and Network use the same pattern:
 - `FlogLogger` — Structured `[LEVEL][Tag] message` logging
 - `FlogDio` — Drop-in `Dio` replacement that auto-instruments HTTP for Network Inspector. Inserts `FlogMockInterceptor` + `FlogHttpInterceptor` automatically. Also provides `sse()` convenience method for SSE streams.
 - `FlogHttpInterceptor` — Dio interceptor for HTTP request/response logging (⚠ must be added BEFORE response-modifying interceptors)
-- `FlogMockInterceptor` — Dio interceptor that intercepts requests matching mock rules synced from the flog TUI via VM Service extension (`ext.flog.syncMockRules`). Resolves with canned responses without hitting the network.
+- `FlogMockInterceptor` — Dio interceptor that intercepts requests matching mock rules synced from the flog TUI over the WebSocket control channel (`{"type":"mock_sync","rules": ...}`). Resolves with canned responses without hitting the network.
 - `FlogSseParser` — SSE stream wrapper with chunk-level logging
 - `FlogWebSocket` — WebSocket wrapper with send/recv logging
 - Protocol: `[INFO][flog_net] {JSON}` via `print()` + `developer.log()` (for iOS real device via VM Service Logging stream)
@@ -133,7 +133,7 @@ Both Logs and Network use the same pattern:
 
 ### Mock System
 
-Mock rules are created in the flog TUI (Network tab → `M` to open mock rules panel). Rules define URL pattern, optional method filter, status code, response body, and optional delay. The TUI syncs rules to the running Dart app via VM Service extension `ext.flog.syncMockRules`. `FlogMockInterceptor` (inserted automatically by `FlogDio`) intercepts matching requests and resolves with the canned response. Mocked requests are still logged and appear in the Network Inspector tagged as "Mocked".
+Mock rules are created in the flog TUI (Network tab → `M` to open mock rules panel). Rules define URL pattern, optional method filter, status code, response body, and optional delay. The TUI syncs rules to the running Dart app over the WebSocket control channel (`{"type":"mock_sync","rules":"<json array>"}`). `FlogMockInterceptor` (inserted automatically by `FlogDio`) intercepts matching requests and resolves with the canned response. Mocked requests are still logged and appear in the Network Inspector tagged as "Mocked".
 
 ## CI/CD
 

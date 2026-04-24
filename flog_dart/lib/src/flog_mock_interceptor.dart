@@ -46,10 +46,21 @@ class FlogMockRule {
 
 /// Dio interceptor that intercepts requests matching mock rules from flog.
 ///
-/// Rules are synced from the flog TUI via VM Service extension
-/// (`ext.flog.syncMockRules`). When a request matches an enabled rule,
-/// the interceptor resolves with a canned response instead of hitting
-/// the network.
+/// Rules are synced from the flog TUI over the WebSocket control channel:
+/// the TUI sends a `{"type":"mock_sync","rules":"<json array>"}` frame and
+/// `FlogServer._onMessage` calls [updateRules]. There is no
+/// `ext.flog.syncMockRules` VM Service extension — earlier versions
+/// documented one, but the production channel has always been WebSocket.
+///
+/// When a request matches an enabled rule the interceptor resolves with a
+/// canned response instead of hitting the network. Match semantics, in
+/// order:
+///
+/// 1. URL match is **substring-based** (`url.contains(rule.urlPattern)`).
+///    No glob / regex / exact-match variants.
+/// 2. URL match is **case-sensitive**.
+/// 3. If a rule has a non-null `method`, it is compared case-insensitively.
+/// 4. **First matching rule wins**. Later rules for the same URL are dead.
 class FlogMockInterceptor extends Interceptor {
   static List<FlogMockRule> _rules = [];
 

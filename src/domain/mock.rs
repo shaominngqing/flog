@@ -2,7 +2,8 @@
 //!
 //! DOM-007 acknowledged (Phase 3 Step 3.2): mock rules live here rather
 //! than being merged with SSE/WS extensions because they are
-//! HTTP-specific and syncable over the wire (`ext.flog.syncMockRules`).
+//! HTTP-specific and syncable over the wire (`ClientMessage::MockSync`
+//! over the direct WebSocket channel, not a VM Service extension).
 //! Co-locating the three protocol extensions would couple orthogonal
 //! concerns. Keep as-is.
 
