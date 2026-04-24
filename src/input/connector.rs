@@ -25,11 +25,25 @@ pub enum ConnectorEvent {
 }
 
 impl ConnectorHandle {
-    pub fn send_mock_sync(&self, rules_json: String) {
-        let msg = ServerMessage::MockSync { rules: rules_json };
-        if let Ok(json) = serde_json::to_string(&msg) {
-            let _ = self.tx.send(json);
+    /// Serialize a `ServerMessage` and enqueue it for the writer task.
+    ///
+    /// Returns `true` when the message was serialized and successfully
+    /// queued, `false` when either serialization failed (should not happen
+    /// for well-formed variants) or the channel is closed (writer task
+    /// exited — typically because the connection dropped).
+    ///
+    /// Audit ref: TRANS-004. This is the single generic send path;
+    /// the `send_mock_sync` / `send_replay` / `send_subscribe` methods
+    /// remain as thin wrappers for call-site readability.
+    pub fn send(&self, msg: ServerMessage) -> bool {
+        match serde_json::to_string(&msg) {
+            Ok(json) => self.tx.send(json).is_ok(),
+            Err(_) => false,
         }
+    }
+
+    pub fn send_mock_sync(&self, rules_json: String) {
+        self.send(ServerMessage::MockSync { rules: rules_json });
     }
 
     pub fn send_replay(
@@ -39,15 +53,12 @@ impl ConnectorHandle {
         headers: Option<String>,
         body: Option<String>,
     ) {
-        let msg = ServerMessage::Replay {
+        self.send(ServerMessage::Replay {
             method,
             url,
             headers,
             body,
-        };
-        if let Ok(json) = serde_json::to_string(&msg) {
-            let _ = self.tx.send(json);
-        }
+        });
     }
 
     /// Request the Dart app to replay its entire message buffer.
@@ -55,10 +66,7 @@ impl ConnectorHandle {
     /// Used when the TUI switches to this app's session — clears local stores
     /// first, then this triggers a full data re-delivery from the Dart side.
     pub fn send_subscribe(&self) {
-        let msg = ServerMessage::Subscribe {};
-        if let Ok(json) = serde_json::to_string(&msg) {
-            let _ = self.tx.send(json);
-        }
+        self.send(ServerMessage::Subscribe {});
     }
 
     /// Construct a dangling handle for characterization tests.
@@ -176,4 +184,51 @@ where
     });
 
     Ok((event_rx, ConnectorHandle { tx: cmd_tx }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── TRANS-004: generic ConnectorHandle::send ─────────────────────────
+
+    #[test]
+    fn send_enqueues_serialized_server_message() {
+        let (handle, mut rx) = ConnectorHandle::for_testing();
+        assert!(handle.send(ServerMessage::Subscribe {}));
+        let json = rx.try_recv().expect("message delivered");
+        assert_eq!(json, r#"{"type":"subscribe"}"#);
+    }
+
+    #[test]
+    fn send_returns_false_when_receiver_dropped() {
+        // If the writer task (receiver) goes away, send should not panic
+        // and should report false so callers can detect lost connections.
+        let (handle, rx) = ConnectorHandle::for_testing();
+        drop(rx);
+        assert!(!handle.send(ServerMessage::Subscribe {}));
+    }
+
+    #[test]
+    fn send_mock_sync_wrapper_produces_mock_sync_json() {
+        let (handle, mut rx) = ConnectorHandle::for_testing();
+        handle.send_mock_sync("[]".to_string());
+        let json = rx.try_recv().expect("message delivered");
+        assert!(json.contains(r#""type":"mock_sync""#));
+        assert!(json.contains(r#""rules":"[]""#));
+    }
+
+    #[test]
+    fn send_replay_wrapper_produces_replay_json() {
+        let (handle, mut rx) = ConnectorHandle::for_testing();
+        handle.send_replay(
+            "GET".to_string(),
+            "https://example.com".to_string(),
+            None,
+            None,
+        );
+        let json = rx.try_recv().expect("message delivered");
+        assert!(json.contains(r#""type":"replay""#));
+        assert!(json.contains(r#""method":"GET""#));
+    }
 }
