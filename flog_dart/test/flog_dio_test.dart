@@ -10,15 +10,31 @@
 ///     defeat the ordering (current behavior — Phase 3 adds a guard).
 ///   - DART-021 (D): nextNetId/emitNet are exported as part of the public
 ///     API — import from `package:flog_dart/flog_dart.dart` compiles.
-///   - DART-026 (D): FlogDio.sse crashes on null response.data. Locked
-///     behavior: the `!` bang throws NullCheckError. Phase 3 returns an
-///     SseResponse with an empty stream.
+///   - DART-026 (D, FIXED Phase 3 Step 3.4): FlogDio.sse used to bang on
+///     response.data; now returns an SseResponse with an empty stream so
+///     204/empty-body responses do not crash.
 library;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flog_dart/flog_dart.dart';
+import 'package:flog_dart/src/flog_dio_sse.dart' show flogSse;
+
+/// Dio interceptor that resolves every request with `data: null` + 204, so
+/// we can exercise the DART-026 null-body branch of flogSse without a real
+/// network or a matching HttpClientAdapter signature.
+class _NullBodyResolvingInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final response = Response<ResponseBody>(
+      requestOptions: options,
+      statusCode: 204,
+      data: null,
+    );
+    handler.resolve(response, false);
+  }
+}
 
 void main() {
   // ═══════════════════════════════════════════════════════════════
@@ -147,30 +163,25 @@ void main() {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // DART-026: FlogDio.sse() crashes on null response.data
+  // DART-026 (FIXED): sse() returns an empty stream on null body
   // ═══════════════════════════════════════════════════════════════
 
   group('DART-026 sse() on null response.data', () {
     test(
-      'UNTESTABLE END-TO-END: needs a real Dio response with data==null. '
-      'Locked by code inspection at flog_dio.dart:158 (the `!` bang).',
-      () {
-        // UNTESTABLE: PHYS — to trigger the `!` crash we would need a Dio
-        // response whose `.data` is null but whose response still returns
-        // a ResponseBody. Mocking Dio's response pipeline is out of scope
-        // for characterization; Phase 3 should refactor to return an
-        // SseResponse with an empty stream instead of banging.
-        //
-        // Shape we expect to assert after Phase 3:
-        //   final sse = await flogDio.sse('/');
-        //   expect(await sse.stream.toList(), isEmpty);
-        //
-        // For now we document the crash is locked at flog_dio.dart:158.
-        expect(true, isTrue);
+      'returns SseResponse with empty stream when body is null',
+      () async {
+        // Exercise the null-body branch without a real network. A
+        // resolving interceptor hands back a Response<ResponseBody> with
+        // `data: null`; flogSse must detect that and return an empty
+        // stream instead of banging.
+        final dio = Dio(BaseOptions(baseUrl: 'https://example.invalid'));
+        dio.interceptors.add(_NullBodyResolvingInterceptor());
+        final sse = await flogSse(dio, '/events');
+        expect(await sse.stream.toList(), isEmpty,
+            reason: 'DART-026 fix: null body returns empty stream '
+                'instead of throwing NullCheckError.');
+        expect(sse.statusCode, 204);
       },
-      skip:
-          'DART-026 Phase 3 pending: sse() on null body currently throws '
-          'NullCheckError; refactor to return empty stream + err frame.',
     );
   });
 
