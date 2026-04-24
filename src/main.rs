@@ -253,15 +253,34 @@ async fn main() -> io::Result<()> {
                                 // Track adb forward for cleanup
                                 let mut adb_forward_info: Option<(String, u16)> = None;
 
-                                let ws_result = match device.connection_method() {
-                                    transport::ConnectionMethod::Localhost => {
-                                        let url = format!("ws://localhost:{}", target_port);
+                                // TRANS-009: `resolve_transport_addr` turns the
+                                // device kind into a structured plan; the
+                                // match below then runs the platform-specific
+                                // shell-out side effects symmetrically.
+                                let plan =
+                                    match transport::resolve_transport_addr(&device, target_port) {
+                                        Ok(plan) => plan,
+                                        Err(e) => {
+                                            // No variants today; future-proof.
+                                            tokio::time::sleep(Duration::from_secs(
+                                                retry_delay_secs,
+                                            ))
+                                            .await;
+                                            retry_delay_secs = (retry_delay_secs
+                                                * RECONNECT_BACKOFF_FACTOR)
+                                                .min(RECONNECT_MAX_DELAY_SECS);
+                                            eprintln!("transport resolve failed: {e}");
+                                            continue;
+                                        }
+                                    };
+
+                                let ws_result = match plan {
+                                    transport::TransportAddr::Localhost { port } => {
+                                        let url = format!("ws://localhost:{}", port);
                                         connect(&url).await.map_err(|e| e.to_string())
                                     }
-                                    transport::ConnectionMethod::AdbForward { ref serial } => {
-                                        match transport::adb::setup_forward(serial, target_port)
-                                            .await
-                                        {
+                                    transport::TransportAddr::AdbForward { serial, port } => {
+                                        match transport::adb::setup_forward(&serial, port).await {
                                             Some(local_port) => {
                                                 adb_forward_info =
                                                     Some((serial.clone(), local_port));
@@ -275,12 +294,13 @@ async fn main() -> io::Result<()> {
                                             None => Err("adb forward failed".to_string()),
                                         }
                                     }
-                                    transport::ConnectionMethod::Usbmuxd { device_id: uid } => {
-                                        match transport::usbmuxd::connect_device(uid, target_port)
-                                            .await
-                                        {
+                                    transport::TransportAddr::Usbmuxd {
+                                        device_id: uid,
+                                        port,
+                                    } => {
+                                        match transport::usbmuxd::connect_device(uid, port).await {
                                             Ok(tunnel) => {
-                                                let url = format!("ws://localhost:{}", target_port);
+                                                let url = format!("ws://localhost:{}", port);
                                                 connect_stream(tunnel, &url)
                                                     .await
                                                     .map_err(|e| e.to_string())
