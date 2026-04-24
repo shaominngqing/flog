@@ -19,10 +19,10 @@ pub struct ClientInfo {
 }
 
 /// Messages from Dart client → flog server (upstream).
-// Phase 3 redesign — see Audit (Transport step): decide whether to box
-// FlogNetMessage. Net variant is ~352 bytes, Hello ~148 bytes. Current
-// layout favors cache locality and no allocation per message, at the cost
-// of padding all variants to 352 bytes.
+// Phase 3 DOM-002/006 — the Net variant embeds the typed FlogNetKind
+// enum via #[serde(flatten)]. ClientMessage is internally-tagged on
+// "type"; FlogNetKind is internally-tagged on "t" — different tag keys
+// so the two layers compose cleanly.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
@@ -63,7 +63,7 @@ pub enum ClientMessage {
     #[serde(rename = "net")]
     Net {
         #[serde(flatten)]
-        msg: crate::domain::network::FlogNetMessage,
+        msg: crate::domain::network::FlogNetKind,
     },
 }
 
@@ -202,7 +202,11 @@ mod tests {
     fn test_deserialize_net() {
         let json = r#"{"type":"net","id":1,"t":"req","p":"http","method":"GET","url":"https://example.com"}"#;
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
-        assert!(matches!(msg, ClientMessage::Net { .. }));
+        use crate::domain::network::FlogNetKind;
+        match msg {
+            ClientMessage::Net { msg } => assert!(matches!(msg, FlogNetKind::Req { .. })),
+            _ => panic!("expected Net"),
+        }
     }
 
     #[test]
@@ -342,9 +346,10 @@ mod tests {
     // ---- PROTO-103: ClientMessage::Net via flatten -------------------
 
     #[test]
-    fn proto_103_net_variant_flattens_flog_net_message() {
-        // Net uses #[serde(flatten)] so fields sit at top level alongside
-        // the "type":"net" discriminator. Inbound-only (no serialize).
+    fn proto_103_net_variant_flattens_flog_net_kind_req() {
+        // Net uses #[serde(flatten)] on the typed FlogNetKind enum.
+        // Inbound-only (no serialize). Phase 3 DOM-002/006.
+        use crate::domain::network::FlogNetKind;
         let json = r#"{
             "type":"net",
             "t":"req",
@@ -356,32 +361,50 @@ mod tests {
             "body":"{}",
             "ts":1700000000000
         }"#;
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-        match msg {
-            ClientMessage::Net { msg } => {
-                assert_eq!(msg.id, 42);
-                assert_eq!(msg.t, "req");
-                assert_eq!(msg.p.as_deref(), Some("http"));
-                assert_eq!(msg.method.as_deref(), Some("POST"));
-                assert_eq!(msg.url.as_deref(), Some("https://api.example.com/v1/x"));
-                assert_eq!(msg.ts, Some(1_700_000_000_000));
-            }
+        let m: ClientMessage = serde_json::from_str(json).unwrap();
+        match m {
+            ClientMessage::Net { msg } => match msg {
+                FlogNetKind::Req {
+                    id,
+                    p,
+                    method,
+                    url,
+                    ts,
+                    ..
+                } => {
+                    assert_eq!(id, 42);
+                    assert_eq!(p.as_deref(), Some("http"));
+                    assert_eq!(method.as_deref(), Some("POST"));
+                    assert_eq!(url.as_deref(), Some("https://api.example.com/v1/x"));
+                    assert_eq!(ts, Some(1_700_000_000_000));
+                }
+                _ => panic!("expected Req variant"),
+            },
             _ => panic!("expected Net"),
         }
     }
 
     #[test]
     fn proto_103_net_variant_response_shape() {
+        use crate::domain::network::FlogNetKind;
         let json = r#"{"type":"net","t":"res","id":7,"status":200,"duration":99,"size":1024}"#;
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-        match msg {
-            ClientMessage::Net { msg } => {
-                assert_eq!(msg.id, 7);
-                assert_eq!(msg.t, "res");
-                assert_eq!(msg.status, Some(200));
-                assert_eq!(msg.duration, Some(99));
-                assert_eq!(msg.size, Some(1024));
-            }
+        let m: ClientMessage = serde_json::from_str(json).unwrap();
+        match m {
+            ClientMessage::Net { msg } => match msg {
+                FlogNetKind::Res {
+                    id,
+                    status,
+                    duration,
+                    size,
+                    ..
+                } => {
+                    assert_eq!(id, 7);
+                    assert_eq!(status, Some(200));
+                    assert_eq!(duration, Some(99));
+                    assert_eq!(size, Some(1024));
+                }
+                _ => panic!("expected Res variant"),
+            },
             _ => panic!("expected Net"),
         }
     }
@@ -429,7 +452,7 @@ mod tests {
 
     #[test]
     fn proto_104_net_missing_required_id_returns_err() {
-        // FlogNetMessage requires id + t.
+        // FlogNetKind::Req requires id.
         let result = serde_json::from_str::<ClientMessage>(r#"{"type":"net","t":"req"}"#);
         assert!(result.is_err());
     }

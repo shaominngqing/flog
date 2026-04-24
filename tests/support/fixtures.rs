@@ -5,7 +5,7 @@
 
 use flog::domain::entry::{InputSource, LogEntry, LogLevel};
 use flog::domain::network::{
-    EntrySource, FlogNetMessage, NetworkEntry, NetworkStatus, SseChunk, WsDirection, WsMessage,
+    EntrySource, FlogNetKind, NetworkEntry, NetworkStatus, SseChunk, WsDirection, WsMessage,
 };
 
 // ---- LogEntry factories -----------------------------------------------------
@@ -143,63 +143,47 @@ pub fn with_source(mut entry: NetworkEntry, source: EntrySource) -> NetworkEntry
     entry
 }
 
-// ---- FlogNetMessage factories ----------------------------------------------
+// ---- FlogNetKind factories ------------------------------------------------
+// Phase 3 DOM-002/006 replaced the FlogNetMessage loose-bag struct with
+// a typed enum. These helpers build the Req/Res/Chunk variants used by
+// the integration tests.
 
-fn empty_flog_net() -> FlogNetMessage {
-    FlogNetMessage {
-        id: 0,
-        t: String::new(),
-        p: None,
-        method: None,
-        url: None,
-        status: None,
-        duration: None,
+/// Request-start message (HTTP protocol).
+pub fn net_req(id: u64, method: &str, url: &str) -> FlogNetKind {
+    FlogNetKind::Req {
+        id,
+        p: Some("http".to_string()),
+        method: Some(method.to_string()),
+        url: Some(url.to_string()),
         headers: None,
         body: None,
         size: None,
-        data: None,
-        seq: None,
-        chunks: None,
-        code: None,
-        reason: None,
+        ts: None,
+    }
+}
+
+/// Response message.
+pub fn net_res(id: u64, status: u16) -> FlogNetKind {
+    FlogNetKind::Res {
+        id,
+        status: Some(status),
+        duration: Some(42),
+        headers: None,
+        body: None,
+        size: None,
         error: None,
         mocked: None,
         ts: None,
     }
 }
 
-/// Request-start FlogNetMessage.
-pub fn net_req(id: u64, method: &str, url: &str) -> FlogNetMessage {
-    FlogNetMessage {
+/// SSE chunk.
+pub fn net_chunk_sse(id: u64, seq: u32, data: &str) -> FlogNetKind {
+    FlogNetKind::Chunk {
         id,
-        t: "req".to_string(),
-        p: Some("http".to_string()),
-        method: Some(method.to_string()),
-        url: Some(url.to_string()),
-        ..empty_flog_net()
-    }
-}
-
-/// Response FlogNetMessage.
-pub fn net_res(id: u64, status: u16) -> FlogNetMessage {
-    FlogNetMessage {
-        id,
-        t: "res".to_string(),
-        status: Some(status),
-        duration: Some(42),
-        ..empty_flog_net()
-    }
-}
-
-/// SSE chunk FlogNetMessage.
-pub fn net_chunk_sse(id: u64, seq: u32, data: &str) -> FlogNetMessage {
-    FlogNetMessage {
-        id,
-        t: "chunk".to_string(),
-        p: Some("sse".to_string()),
-        seq: Some(seq),
         data: Some(data.to_string()),
         size: Some(data.len() as u64),
-        ..empty_flog_net()
+        seq: Some(seq),
+        ts: None,
     }
 }

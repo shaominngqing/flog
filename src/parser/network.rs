@@ -1,10 +1,13 @@
-//! Parser for flog_net protocol messages.
+//! Parser for flog_net protocol messages embedded in structured logs.
+//!
+//! Phase 3 DOM-002/006: messages now deserialize into the typed
+//! [`FlogNetKind`] enum. The wire format is unchanged.
 
-use crate::domain::network::FlogNetMessage;
+use crate::domain::network::FlogNetKind;
 
 const FLOG_NET_TAG: &str = "flog_net";
 
-pub fn try_parse_network(tag: &str, message: &str) -> Option<FlogNetMessage> {
+pub fn try_parse_network(tag: &str, message: &str) -> Option<FlogNetKind> {
     if tag != FLOG_NET_TAG {
         return None;
     }
@@ -19,10 +22,16 @@ mod tests {
     fn parses_valid_flog_net_message() {
         let json = r#"{"id":42,"t":"req","method":"GET","url":"https://example.com/api"}"#;
         let msg = try_parse_network("flog_net", json).expect("should parse");
-        assert_eq!(msg.id, 42);
-        assert_eq!(msg.t, "req");
-        assert_eq!(msg.method.as_deref(), Some("GET"));
-        assert_eq!(msg.url.as_deref(), Some("https://example.com/api"));
+        match msg {
+            FlogNetKind::Req {
+                id, method, url, ..
+            } => {
+                assert_eq!(id, 42);
+                assert_eq!(method.as_deref(), Some("GET"));
+                assert_eq!(url.as_deref(), Some("https://example.com/api"));
+            }
+            _ => panic!("expected Req"),
+        }
     }
 
     #[test]
@@ -51,8 +60,13 @@ mod tests {
         let long_url = "a".repeat(100_000);
         let json = format!(r#"{{"id":1,"t":"req","url":"{long_url}"}}"#);
         let msg = try_parse_network("flog_net", &json).expect("should parse");
-        assert_eq!(msg.id, 1);
-        assert_eq!(msg.url.as_deref().map(|s| s.len()), Some(100_000));
+        match msg {
+            FlogNetKind::Req { id, url, .. } => {
+                assert_eq!(id, 1);
+                assert_eq!(url.as_deref().map(|s| s.len()), Some(100_000));
+            }
+            _ => panic!("expected Req"),
+        }
 
         // Huge garbage string on wrong tag still short-circuits to None cheaply
         let garbage = "x".repeat(10_000);

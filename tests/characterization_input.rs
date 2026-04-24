@@ -221,21 +221,33 @@ async fn conn_207_receives_net_after_hello() {
         ));
 
         // Two Net messages — request then response.
+        use flog::domain::network::FlogNetKind;
         match event_rx.recv().await.expect("net req") {
-            ConnectorEvent::Message(flog::input::protocol::ClientMessage::Net { msg }) => {
-                assert_eq!(msg.id, 77);
-                assert_eq!(msg.t, "req");
-                assert_eq!(msg.url.as_deref(), Some("https://example.com/api"));
-            }
+            ConnectorEvent::Message(flog::input::protocol::ClientMessage::Net { msg }) => match msg
+            {
+                FlogNetKind::Req { id, url, .. } => {
+                    assert_eq!(id, 77);
+                    assert_eq!(url.as_deref(), Some("https://example.com/api"));
+                }
+                other => panic!("expected Req variant, got {:?}", other),
+            },
             other => panic!("expected Net req, got {:?}", other),
         }
         match event_rx.recv().await.expect("net res") {
-            ConnectorEvent::Message(flog::input::protocol::ClientMessage::Net { msg }) => {
-                assert_eq!(msg.id, 77);
-                assert_eq!(msg.t, "res");
-                assert_eq!(msg.status, Some(200));
-                assert_eq!(msg.duration, Some(42));
-            }
+            ConnectorEvent::Message(flog::input::protocol::ClientMessage::Net { msg }) => match msg
+            {
+                FlogNetKind::Res {
+                    id,
+                    status,
+                    duration,
+                    ..
+                } => {
+                    assert_eq!(id, 77);
+                    assert_eq!(status, Some(200));
+                    assert_eq!(duration, Some(42));
+                }
+                other => panic!("expected Res variant, got {:?}", other),
+            },
             other => panic!("expected Net res, got {:?}", other),
         }
     })

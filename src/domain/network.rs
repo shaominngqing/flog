@@ -239,27 +239,148 @@ impl NetworkEntryBuilder {
     }
 }
 
+/// Wire-level flog_net protocol messages from Dart → flog.
+///
+/// Phase 3 DOM-002 + DOM-006: replaces the 20-field loose-bag
+/// `FlogNetMessage` struct with an externally-tagged enum on `t`.
+/// serde's `#[serde(tag = "t")]` preserves the wire format byte-for-byte
+/// (same field names, same optional-ness) — the change is internal
+/// storage shape only, not a protocol change.
+///
+/// Every variant keeps unused protocol fields as `#[serde(default)]` so
+/// forward-compat Dart clients can send extra fields without breaking
+/// deserialization. SseChunk/WsMessage storage prunes those fields per
+/// DOM-025.
 #[derive(Debug, Deserialize)]
-pub struct FlogNetMessage {
-    pub id: u64,
-    pub t: String,
-    pub p: Option<String>,
-    pub method: Option<String>,
-    pub url: Option<String>,
-    pub status: Option<u16>,
-    pub duration: Option<u64>,
-    pub headers: Option<serde_json::Value>,
-    pub body: Option<String>,
-    pub size: Option<u64>,
-    pub data: Option<String>,
-    pub seq: Option<u32>,
-    pub chunks: Option<u32>,
-    pub code: Option<u16>,
-    pub reason: Option<String>,
-    pub error: Option<String>,
-    pub mocked: Option<bool>,
-    /// Timestamp in milliseconds since epoch (from Dart client).
-    pub ts: Option<u64>,
+#[serde(tag = "t", rename_all = "lowercase")]
+pub enum FlogNetKind {
+    /// Request start. HTTP: Pending; SSE/WS req with matching `p` seeds
+    /// an Active entry.
+    Req {
+        id: u64,
+        #[serde(default)]
+        p: Option<String>,
+        #[serde(default)]
+        method: Option<String>,
+        #[serde(default)]
+        url: Option<String>,
+        #[serde(default)]
+        headers: Option<serde_json::Value>,
+        #[serde(default)]
+        body: Option<String>,
+        #[serde(default)]
+        size: Option<u64>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+    /// HTTP response.
+    Res {
+        id: u64,
+        #[serde(default)]
+        status: Option<u16>,
+        #[serde(default)]
+        duration: Option<u64>,
+        #[serde(default)]
+        headers: Option<serde_json::Value>,
+        #[serde(default)]
+        body: Option<String>,
+        #[serde(default)]
+        size: Option<u64>,
+        #[serde(default)]
+        error: Option<String>,
+        #[serde(default)]
+        mocked: Option<bool>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+    /// HTTP error — transport failure before a full response.
+    Err {
+        id: u64,
+        #[serde(default)]
+        error: Option<String>,
+        #[serde(default)]
+        duration: Option<u64>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+    /// SSE chunk. `seq` and `size` are kept on the wire but discarded at
+    /// ingest per DOM-025 — the domain storage only keeps `data`.
+    Chunk {
+        id: u64,
+        #[serde(default)]
+        data: Option<String>,
+        #[serde(default)]
+        size: Option<u64>,
+        #[serde(default)]
+        seq: Option<u32>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+    /// SSE stream end (no more chunks).
+    Done {
+        id: u64,
+        #[serde(default)]
+        duration: Option<u64>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+    /// WebSocket open.
+    Open {
+        id: u64,
+        #[serde(default)]
+        url: Option<String>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+    /// WebSocket outbound message.
+    Send {
+        id: u64,
+        #[serde(default)]
+        data: Option<String>,
+        #[serde(default)]
+        size: Option<u64>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+    /// WebSocket inbound message.
+    Recv {
+        id: u64,
+        #[serde(default)]
+        data: Option<String>,
+        #[serde(default)]
+        size: Option<u64>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+    /// WebSocket close.
+    Close {
+        id: u64,
+        #[serde(default)]
+        code: Option<u16>,
+        #[serde(default)]
+        reason: Option<String>,
+        #[serde(default)]
+        duration: Option<u64>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
+}
+
+impl FlogNetKind {
+    /// The id of the request/stream this message belongs to.
+    pub fn id(&self) -> u64 {
+        match self {
+            Self::Req { id, .. }
+            | Self::Res { id, .. }
+            | Self::Err { id, .. }
+            | Self::Chunk { id, .. }
+            | Self::Done { id, .. }
+            | Self::Open { id, .. }
+            | Self::Send { id, .. }
+            | Self::Recv { id, .. }
+            | Self::Close { id, .. } => *id,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -505,52 +626,62 @@ mod tests {
     }
 
     #[test]
-    fn dom_025_flog_net_message_accepts_all_fields_from_protocol() {
-        // Lock the current wire format: the Deserialize impl must accept
-        // every field the Dart side may send, including the write-only
-        // seq/size/ts triad for chunks.
+    fn dom_025_flog_net_kind_chunk_accepts_all_wire_fields() {
+        // Phase 3 DOM-002/006/025: Chunk variant retains seq/size/ts on
+        // the wire for back-compat. Extra fields Dart may send alongside
+        // (e.g. legacy `p`, `method`) are ignored silently.
         let j = r#"{
             "id": 1,
             "t": "chunk",
             "p": "sse",
-            "method": null,
-            "url": null,
-            "status": null,
-            "duration": null,
-            "headers": null,
-            "body": null,
             "size": 128,
             "data": "payload",
             "seq": 5,
-            "chunks": null,
-            "code": null,
-            "reason": null,
-            "error": null,
-            "mocked": null,
             "ts": 1700000000000
         }"#;
-        let parsed: FlogNetMessage = serde_json::from_str(j).expect("deserialize");
-        assert_eq!(parsed.id, 1);
-        assert_eq!(parsed.t, "chunk");
-        assert_eq!(parsed.p.as_deref(), Some("sse"));
-        assert_eq!(parsed.seq, Some(5));
-        assert_eq!(parsed.size, Some(128));
-        assert_eq!(parsed.ts, Some(1_700_000_000_000));
-        assert_eq!(parsed.data.as_deref(), Some("payload"));
+        let parsed: FlogNetKind = serde_json::from_str(j).expect("deserialize");
+        match parsed {
+            FlogNetKind::Chunk {
+                id,
+                data,
+                size,
+                seq,
+                ts,
+            } => {
+                assert_eq!(id, 1);
+                assert_eq!(data.as_deref(), Some("payload"));
+                assert_eq!(size, Some(128));
+                assert_eq!(seq, Some(5));
+                assert_eq!(ts, Some(1_700_000_000_000));
+            }
+            _ => panic!("expected Chunk"),
+        }
     }
 
     #[test]
-    fn dom_025_flog_net_message_accepts_minimal_payload() {
+    fn dom_025_flog_net_kind_req_minimal_payload() {
         // Missing optional fields → None
         let j = r#"{"id": 1, "t": "req"}"#;
-        let parsed: FlogNetMessage = serde_json::from_str(j).expect("deserialize");
-        assert_eq!(parsed.id, 1);
-        assert_eq!(parsed.t, "req");
-        assert!(parsed.method.is_none());
-        assert!(parsed.url.is_none());
-        assert!(parsed.seq.is_none());
-        assert!(parsed.size.is_none());
-        assert!(parsed.ts.is_none());
+        let parsed: FlogNetKind = serde_json::from_str(j).expect("deserialize");
+        match parsed {
+            FlogNetKind::Req {
+                id,
+                p,
+                method,
+                url,
+                ts,
+                size,
+                ..
+            } => {
+                assert_eq!(id, 1);
+                assert!(p.is_none());
+                assert!(method.is_none());
+                assert!(url.is_none());
+                assert!(ts.is_none());
+                assert!(size.is_none());
+            }
+            _ => panic!("expected Req"),
+        }
     }
 
     // ---- display_size per protocol -----------------------------------

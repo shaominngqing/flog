@@ -668,24 +668,14 @@ mod tests {
     fn dispatch_net_routes_to_network_store() {
         let mut app = App::new();
         assert!(app.network_store.is_empty());
-        let msg = domain::network::FlogNetMessage {
+        let msg = domain::network::FlogNetKind::Req {
             id: 1,
-            t: "req".into(),
             p: None,
             method: Some("GET".into()),
             url: Some("https://x.com".into()),
-            status: None,
-            duration: None,
             headers: None,
             body: None,
             size: None,
-            data: None,
-            seq: None,
-            chunks: None,
-            code: None,
-            reason: None,
-            error: None,
-            mocked: None,
             ts: None,
         };
         dispatch_client_message(&mut app, ClientMessage::Net { msg });

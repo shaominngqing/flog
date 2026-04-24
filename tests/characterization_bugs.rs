@@ -8,7 +8,7 @@
 //! Audit source: `docs/superpowers/audit/00-index.md` (B-class table).
 
 use flog::domain::filter::FilterState;
-use flog::domain::network::FlogNetMessage;
+use flog::domain::network::FlogNetKind;
 use flog::domain::network_store::NetworkStore;
 
 // ── helper ──────────────────────────────────────────────────────────────
@@ -36,29 +36,8 @@ fn assert_sorted_non_overlapping(positions: &[std::ops::Range<usize>]) {
     }
 }
 
-/// Minimal `FlogNetMessage` with `id` and `t` set, all optional fields None.
-fn make_net_msg(id: u64, t: &str) -> FlogNetMessage {
-    FlogNetMessage {
-        id,
-        t: t.to_string(),
-        p: None,
-        method: None,
-        url: None,
-        status: None,
-        duration: None,
-        headers: None,
-        body: None,
-        size: None,
-        data: None,
-        seq: None,
-        chunks: None,
-        code: None,
-        reason: None,
-        error: None,
-        mocked: None,
-        ts: None,
-    }
-}
+// (No bulk helper after DOM-002/006 — tests build FlogNetKind variants
+// directly so the type carries the payload shape.)
 
 // ── DOM-003: response without prior request silently dropped ────────────
 
@@ -70,9 +49,17 @@ fn make_net_msg(id: u64, t: &str) -> FlogNetMessage {
 #[test]
 fn dom_003_response_without_request_should_not_drop_silently() {
     let mut store = NetworkStore::new();
-    let mut m = make_net_msg(999, "res");
-    m.status = Some(200);
-    m.body = Some("orphan response".into());
+    let m = FlogNetKind::Res {
+        id: 999,
+        status: Some(200),
+        duration: None,
+        headers: None,
+        body: Some("orphan response".into()),
+        size: None,
+        error: None,
+        mocked: None,
+        ts: None,
+    };
     store.process_message(m);
 
     // Expected (post-fix): orphan response produces an observable signal.
