@@ -1,9 +1,9 @@
 /// Characterization tests for `lib/src/flog_http_interceptor.dart`.
 ///
 /// Audit entries locked by this file:
-///   - DART-007 (B): _truncate measures code units, not bytes. Locks the
-///     current (incorrect-for-CJK) behavior so Phase 3's byte-aware fix has
-///     a contract to diff against.
+///   - DART-007 (B, FIXED Phase 3 Step 3.4): _truncate now measures UTF-8
+///     bytes and slices at a character boundary so CJK payloads honor the
+///     byte budget accurately.
 ///   - DART-008 (B): _idMap/_startMap leak when a downstream interceptor
 ///     resolves/rejects before FlogHttpInterceptor.onResponse fires. Locks
 ///     the current leak so Phase 3's Expando/extra-based fix is detectable.
@@ -111,13 +111,13 @@ void main() {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // DART-007: _truncate uses String.length (code units), not bytes
+  // DART-007 (FIXED): _truncate honors the UTF-8 byte budget
   // ═══════════════════════════════════════════════════════════════
 
-  group('DART-007 _truncate measures code units, not bytes', () {
+  group('DART-007 _truncate measures UTF-8 bytes', () {
     test('ASCII body exactly at maxBodySize is NOT truncated', () {
       final interceptor = FlogHttpInterceptor(maxBodySize: 10);
-      final body = '0123456789'; // length == 10 code units
+      final body = '0123456789'; // 10 ASCII = 10 bytes
       final opts = _opts('https://example.com/x', method: 'POST', data: body);
       interceptor.onRequest(opts, _ReqHandler());
 
@@ -129,25 +129,39 @@ void main() {
 
     test('ASCII body exceeding maxBodySize gets `... (truncated)` suffix', () {
       final interceptor = FlogHttpInterceptor(maxBodySize: 5);
-      final body = 'abcdefghij'; // 10 > 5
+      final body = 'abcdefghij'; // 10 bytes > 5
       final opts = _opts('https://example.com/x', method: 'POST', data: body);
       interceptor.onRequest(opts, _ReqHandler());
 
       expect(_nets().first['body'], 'abcde... (truncated)');
     });
 
-    test('CJK 4-char body under byte budget gets truncated (DART-007 bug)', () {
-      // 4 CJK chars = 4 code units = 12 UTF-8 bytes.
-      // DART-007: field reads "bytes" in dartdoc but measures code units.
-      // 4 > 3 triggers truncation despite 12 actual bytes.
-      final interceptor = FlogHttpInterceptor(maxBodySize: 3);
+    test('CJK body under UTF-8 byte budget passes through untruncated', () {
+      // 4 CJK chars = 12 UTF-8 bytes. With a 16-byte budget the payload
+      // fits; the pre-fix (code-unit) measurement would have wrongly
+      // kept ASCII-sized budgets but is unaffected here — this locks
+      // the byte-accurate contract either way.
+      final interceptor = FlogHttpInterceptor(maxBodySize: 16);
       final body = '你好世界';
       final opts = _opts('https://example.com/x', method: 'POST', data: body);
       interceptor.onRequest(opts, _ReqHandler());
 
-      expect(_nets().first['body'], '你好世... (truncated)',
-          reason: 'DART-007 locks the code-unit measurement. Phase 3 fix '
-              'must rename to maxBodyChars or switch to utf8 byte count.');
+      expect(_nets().first['body'], body,
+          reason: 'DART-007 fix: 12 bytes <= 16 budget, no truncation.');
+    });
+
+    test('CJK body slices on a UTF-8 character boundary', () {
+      // 你 = 3 bytes, 好 = 3 bytes. With a 5-byte budget we can keep "你"
+      // (3 bytes) but not "好" (would push us to 6). The walk-back code
+      // must stop at the boundary so the emitted string is valid UTF-8.
+      final interceptor = FlogHttpInterceptor(maxBodySize: 5);
+      final body = '你好世界';
+      final opts = _opts('https://example.com/x', method: 'POST', data: body);
+      interceptor.onRequest(opts, _ReqHandler());
+
+      expect(_nets().first['body'], '你... (truncated)',
+          reason: 'DART-007 fix: slice lands on a char boundary; never '
+              'half a character.');
     });
   });
 

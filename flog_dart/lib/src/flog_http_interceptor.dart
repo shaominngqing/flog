@@ -255,10 +255,22 @@ class FlogHttpInterceptor extends Interceptor {
     return body.toString();
   }
 
+  /// Truncate [value] to at most [maxBodySize] UTF-8 bytes.
+  ///
+  /// [String.length] is a UTF-16 code-unit count, not a byte count, so
+  /// CJK-heavy payloads would undercount and ASCII-only payloads
+  /// overcount when measured that way. Encode once, then slice at a safe
+  /// UTF-8 boundary so we never emit a half-character.
   String _truncate(String value) {
-    if (value.length > maxBodySize) {
-      return '${value.substring(0, maxBodySize)}... (truncated)';
+    final bytes = utf8.encode(value);
+    if (bytes.length <= maxBodySize) return value;
+    // Walk back from the byte budget to the nearest character boundary.
+    // UTF-8 continuation bytes are `10xxxxxx`, i.e. `(b & 0xC0) == 0x80`.
+    int end = maxBodySize;
+    while (end > 0 && (bytes[end] & 0xC0) == 0x80) {
+      end--;
     }
-    return value;
+    final head = utf8.decode(bytes.sublist(0, end), allowMalformed: true);
+    return '$head... (truncated)';
   }
 }
