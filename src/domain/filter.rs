@@ -45,6 +45,30 @@ impl Default for FilterState {
     }
 }
 
+// Merge overlapping or touching ranges produced by OR-term search into a
+// minimal non-overlapping cover. Used by `FilterState::search_positions` so
+// the UI highlighter never double-renders the same character span.
+// Phase 3 DOM-018.
+pub(crate) fn merge_overlapping_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
+    if ranges.len() <= 1 {
+        return ranges;
+    }
+    ranges.sort_by_key(|r| r.start);
+    let mut merged: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
+    let mut cur = ranges[0].clone();
+    for r in ranges.into_iter().skip(1) {
+        if r.start <= cur.end {
+            // Overlap or touch — extend current range.
+            cur.end = cur.end.max(r.end);
+        } else {
+            merged.push(cur);
+            cur = r;
+        }
+    }
+    merged.push(cur);
+    merged
+}
+
 /// OR-match helper used by both Search and Exclude.
 ///
 /// - If `regex` is `Some`, the regex owns the whole query (including `|`); `plain_parts` is ignored.
@@ -204,7 +228,9 @@ impl FilterState {
 
         if self.search_regex {
             if let Some(ref re) = self.compiled_regex {
-                return re.find_iter(text).map(|m| m.start()..m.end()).collect();
+                let positions: Vec<Range<usize>> =
+                    re.find_iter(text).map(|m| m.start()..m.end()).collect();
+                return merge_overlapping_ranges(positions);
             }
             return Vec::new();
         }
@@ -224,8 +250,7 @@ impl FilterState {
                 start = abs_end;
             }
         }
-        positions.sort_by_key(|r| r.start);
-        positions
+        merge_overlapping_ranges(positions)
     }
 
     /// 解析 Tag 过滤输入字符串，预编译正则
@@ -522,6 +547,53 @@ mod tests {
     // behavior. This locks what currently happens — Task 12 writes the
     // red test asserting the desired-fixed behavior. Here we just lock
     // the current plain-mode branches.
+
+    // ---- DOM-018 helper tests -----------------------------------------
+
+    #[test]
+    fn merge_overlapping_ranges_empty_and_single() {
+        let empty: Vec<Range<usize>> = Vec::new();
+        assert!(merge_overlapping_ranges(empty).is_empty());
+        // Single-element input returns unchanged.
+        let one = std::iter::once(2..5usize).collect::<Vec<_>>();
+        assert_eq!(merge_overlapping_ranges(one), vec![2..5]);
+    }
+
+    #[test]
+    fn merge_overlapping_ranges_disjoint_sorted() {
+        assert_eq!(
+            merge_overlapping_ranges(vec![0..2, 5..7, 10..12]),
+            vec![0..2, 5..7, 10..12]
+        );
+    }
+
+    #[test]
+    fn merge_overlapping_ranges_disjoint_unsorted_input_is_sorted() {
+        assert_eq!(
+            merge_overlapping_ranges(vec![10..12, 0..2, 5..7]),
+            vec![0..2, 5..7, 10..12]
+        );
+    }
+
+    #[test]
+    fn merge_overlapping_ranges_touching_ranges_coalesce() {
+        // 0..3 and 3..5 are adjacent/touching → merge into 0..5
+        assert_eq!(merge_overlapping_ranges(vec![0..3, 3..5]), vec![0..5]);
+    }
+
+    #[test]
+    fn merge_overlapping_ranges_strictly_overlapping_coalesce() {
+        // The DOM-018 case: "the" → 0..3 and "e" → 2..3 inside "thee".
+        assert_eq!(merge_overlapping_ranges(vec![0..3, 2..3]), vec![0..3]);
+    }
+
+    #[test]
+    fn merge_overlapping_ranges_multiple_overlaps_collapse() {
+        assert_eq!(
+            merge_overlapping_ranges(vec![0..3, 1..4, 3..5, 10..12]),
+            vec![0..5, 10..12]
+        );
+    }
 
     #[test]
     fn search_positions_empty_query_returns_empty() {

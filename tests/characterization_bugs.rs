@@ -92,7 +92,6 @@ fn dom_003_response_without_request_should_not_drop_silently() {
 /// `[0..3 "the", 2..3 "e"]` (overlap).
 ///
 /// After sort, merging/clipping is the fix. Expected behavior asserted here.
-#[ignore = "bug: DOM-018, fix in Phase 3"]
 #[test]
 fn dom_018_search_positions_no_overlapping_ranges() {
     let mut f = FilterState::default();
@@ -110,7 +109,6 @@ fn dom_018_search_positions_no_overlapping_ranges() {
 
 /// Second DOM-018 case — locking a "no-overlap" expectation across two
 /// OR-terms that both match the same substring via different windows.
-#[ignore = "bug: DOM-018, fix in Phase 3"]
 #[test]
 fn dom_018_search_positions_overlapping_or_terms_on_shared_text() {
     let mut f = FilterState::default();
