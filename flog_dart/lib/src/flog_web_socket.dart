@@ -149,12 +149,27 @@ class FlogWebSocket {
   /// The underlying sink, for advanced usage.
   WebSocketSink get sink => _channel.sink;
 
+  /// Prefix for the binary-message placeholder string emitted by
+  /// [_formatMessage]. The TUI's WS Chat View detects binary frames by
+  /// scanning for this marker (`has_binary_content` in
+  /// `src/domain/ws_chat.rs`); keep in lockstep with that side.
+  /// (DART-019.)
+  static const String binaryFormatPrefix = '<binary: ';
+
+  /// Suffix for the binary placeholder (closes the pair started by
+  /// [binaryFormatPrefix]).
+  static const String binaryFormatSuffix = ' bytes>';
+
+  /// Build the binary placeholder string for a list of [size] bytes.
+  static String formatBinaryLabel(int size) =>
+      '$binaryFormatPrefix$size$binaryFormatSuffix';
+
   /// Format a message for display in logs.
   static String _formatMessage(dynamic message) {
     if (message is String) {
       return message;
     } else if (message is List<int>) {
-      return '<binary: ${message.length} bytes>';
+      return formatBinaryLabel(message.length);
     } else {
       return message.toString();
     }
