@@ -42,7 +42,34 @@ class FlogWebSocket {
       });
     }
 
-    stream = _channel.stream.map((message) {
+    _initFromChannel(uri.toString());
+  }
+
+  /// Creates a [FlogWebSocket] from an existing [WebSocketChannel].
+  ///
+  /// Use this when you already have a connected channel (e.g. from a server
+  /// upgrade). The [url] parameter is used for logging only.
+  FlogWebSocket.fromChannel(this._channel, {required String url})
+      : _id = nextNetId(),
+        _start = DateTime.now() {
+    _initFromChannel(url);
+  }
+
+  /// Shared wiring for both constructors: emit the `open` flog_net frame,
+  /// then install a broadcast stream so callers who read the dartdoc can
+  /// attach multiple listeners without a `Stream has already been listened
+  /// to` error.
+  void _initFromChannel(String url) {
+    if (flogEnabled) {
+      emitNet({
+        'id': _id,
+        't': 'open',
+        'p': 'ws',
+        'url': url,
+      });
+    }
+
+    final mapped = _channel.stream.map((message) {
       if (flogEnabled) {
         final display = _formatMessage(message);
         final size = _messageSize(message);
@@ -69,50 +96,7 @@ class FlogWebSocket {
       // Re-throw so downstream listeners see the error
       throw error;
     });
-  }
-
-  /// Creates a [FlogWebSocket] from an existing [WebSocketChannel].
-  ///
-  /// Use this when you already have a connected channel (e.g. from a server
-  /// upgrade). The [url] parameter is used for logging only.
-  FlogWebSocket.fromChannel(this._channel, {required String url})
-      : _id = nextNetId(),
-        _start = DateTime.now() {
-    if (flogEnabled) {
-      emitNet({
-        'id': _id,
-        't': 'open',
-        'p': 'ws',
-        'url': url,
-      });
-    }
-
-    stream = _channel.stream.map((message) {
-      if (flogEnabled) {
-        final display = _formatMessage(message);
-        final size = _messageSize(message);
-
-        emitNet({
-          'id': _id,
-          't': 'recv',
-          'p': 'ws',
-          'data': display,
-          'size': size,
-        });
-      }
-
-      return message;
-    }).handleError((Object error) {
-      if (flogEnabled) {
-        emitNet({
-          'id': _id,
-          't': 'err',
-          'p': 'ws',
-          'error': error.toString(),
-        });
-      }
-      throw error;
-    });
+    stream = mapped.asBroadcastStream();
   }
 
   /// Send a message through the WebSocket.

@@ -1,9 +1,8 @@
 /// Characterization tests for `lib/src/flog_web_socket.dart`.
 ///
 /// Audit entries locked by this file:
-///   - DART-006 (B): `stream` is documented as broadcast but is a
-///     single-subscription map. Locks the current behavior: second
-///     .listen() throws "Stream has already been listened to."
+///   - DART-006 (B, FIXED Phase 3 Step 3.4): `stream` is now a proper
+///     broadcast stream via asBroadcastStream(); multiple listeners work.
 ///   - DART-018 (D): FlogWebSocket() and FlogWebSocket.fromChannel()
 ///     duplicate setup. Both constructors emit identical `open` nets and
 ///     produce equivalent state.
@@ -114,20 +113,19 @@ void main() {
       expect(opens.first['id'], isA<int>());
     });
 
-    test('fromChannel stream is a single-subscription stream — '
-        'second listen throws (DART-006)', () async {
+    test('fromChannel stream is broadcast — multiple listeners coexist '
+        '(DART-006 fixed)', () async {
       final channel = _FakeChannel();
       final ws = FlogWebSocket.fromChannel(channel, url: 'wss://x/y');
 
-      final sub = ws.stream.listen((_) {});
-      expect(
-        () => ws.stream.listen((_) {}),
-        throwsA(isA<StateError>()),
-        reason:
-            'DART-006: dartdoc claims broadcast but the current implementation '
-            'returns a single-subscription stream.',
-      );
-      await sub.cancel();
+      // DART-006 fixed: stream is now exposed via asBroadcastStream(), so
+      // callers who read the dartdoc ("Broadcast stream of incoming
+      // messages ...") can attach multiple listeners without StateError.
+      expect(ws.stream.isBroadcast, isTrue);
+      final sub1 = ws.stream.listen((_) {});
+      final sub2 = ws.stream.listen((_) {});
+      await sub1.cancel();
+      await sub2.cancel();
     });
 
     test('fromChannel forwards messages through stream and emits recv', () async {
