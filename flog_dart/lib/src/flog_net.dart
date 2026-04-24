@@ -1,6 +1,8 @@
 /// Internal helper for flog_net protocol.
 library;
 
+import 'package:meta/meta.dart';
+
 import 'flog_server.dart';
 
 /// Master kill-switch (compile-time constant for AOT tree-shaking).
@@ -22,9 +24,21 @@ const flogEnabled = bool.fromEnvironment(
 int _nextId = 1;
 
 /// Get next unique request ID.
+///
+/// **Internal to flog_dart.** Still exported from
+/// `package:flog_dart/flog_dart.dart` for back-compat, but users should not
+/// call this directly: a future v1.0 release will remove the export. See
+/// DART-021.
+@internal
 int nextNetId() => _nextId++;
 
 /// Emit a flog_net protocol message via Direct Socket.
+///
+/// **Internal to flog_dart.** Still exported from
+/// `package:flog_dart/flog_dart.dart` for back-compat, but users should not
+/// call this directly: a future v1.0 release will remove the export. See
+/// DART-021.
+@internal
 ///
 /// Copies [data] before decorating with `type` / `ts`, so callers that
 /// inspect or reuse their payload after the call do not see protocol

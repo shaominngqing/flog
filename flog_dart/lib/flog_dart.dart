@@ -10,6 +10,12 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'src/flog_server.dart';
 import 'src/flog_net.dart' show flogEnabled;
 
+// `nextNetId` / `emitNet` are marked `@internal` (DART-021) but we keep the
+// export alive for v0.x back-compat. A future v1.0 release will drop them
+// from the public surface; new code should import from
+// `package:flog_dart/src/flog_net.dart` directly (and even that is
+// discouraged).
+// ignore: invalid_export_of_internal_element
 export 'src/flog_net.dart' show nextNetId, emitNet, flogEnabled;
 export 'src/flog_server.dart' show FlogServer;
 export 'src/flog_store.dart' show FlogStore;
