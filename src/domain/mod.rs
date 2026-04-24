@@ -16,7 +16,7 @@ pub mod ws_chat;
 pub use entry::{InputSource, LogEntry, LogLevel, ParseResult};
 pub use filter::FilterState;
 #[allow(unused_imports)]
-pub use filter_traits::FilterVariant;
+pub use filter_traits::{FilterVariant, MessageFilter};
 pub use network_filter::NetworkFilter;
 pub use network_store::NetworkStore;
 pub use store::LogStore;

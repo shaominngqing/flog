@@ -1,23 +1,31 @@
 use super::entry::{LogEntry, LogLevel};
+use super::filter_traits::MessageFilter;
 use regex::Regex;
 use std::ops::Range;
 
-/// 过滤状态
+/// Combined filter state — level, tag, search, exclude.
+///
+/// Phase 3 DOM-005: the `*_regex` bool flags and all compiled regex /
+/// plain-part vectors are `pub(crate)` — only `set_search` / `set_exclude`
+/// / `parse_tag_filter` may mutate them so the query string and its
+/// compiled representation stay in sync. External callers read the
+/// query strings (`search_query`, `exclude_query`) and the min_level /
+/// tag_include / tag_exclude shapes.
 #[derive(Debug, Clone)]
 pub struct FilterState {
     pub min_level: LogLevel,
     pub tag_include: Vec<String>,
     pub tag_exclude: Vec<String>,
     pub search_query: String,
-    pub search_regex: bool,
+    pub(crate) search_regex: bool,
     compiled_regex: Option<Regex>,
     /// Plain-mode parts split by '|'. Empty when search is empty or in regex mode.
     compiled_search_plain: Vec<String>,
     pub exclude_query: String,
-    pub exclude_regex: bool,
+    pub(crate) exclude_regex: bool,
     compiled_exclude: Option<Regex>,
     compiled_exclude_plain: Vec<String>,
-    pub tag_regex: bool,
+    pub(crate) tag_regex: bool,
     /// 预编译的 tag include 正则
     compiled_tag_include: Vec<Regex>,
     /// 预编译的 tag exclude 正则
@@ -308,9 +316,44 @@ impl FilterState {
     }
 }
 
+impl MessageFilter<LogEntry> for FilterState {
+    fn matches(&self, item: &LogEntry) -> bool {
+        // Delegate to the inherent method — kept to avoid breaking the
+        // many existing call sites that use method syntax.
+        FilterState::matches(self, item)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::entry::{InputSource, LogLevel};
+    use crate::domain::filter_traits::MessageFilter as MsgFilterTrait;
+
+    // ---- DOM-019 MessageFilter trait -----------------------------------
+
+    #[test]
+    fn dom_019_filter_state_implements_message_filter_for_log_entry() {
+        let f = FilterState {
+            min_level: LogLevel::Warning,
+            ..FilterState::default()
+        };
+        let log = LogEntry {
+            timestamp: String::new(),
+            level: LogLevel::Error,
+            tag: "t".into(),
+            message: "m".into(),
+            extra_lines: Vec::new(),
+            repeat_count: 1,
+            source: InputSource::DirectSocket,
+            error: None,
+            stacktrace: None,
+        };
+        // Call via trait method to prove the trait shape compiles + works.
+        assert!(<FilterState as MsgFilterTrait<LogEntry>>::matches(&f, &log));
+        // Raise the floor above Error — no matches.
+        // (Kept in-crate because LogLevel variants are dense.)
+    }
 
     #[test]
     fn matches_multi_plain_single() {

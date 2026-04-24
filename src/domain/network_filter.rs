@@ -1,7 +1,7 @@
 //! Filtering for network entries by status, method, protocol, and search text.
 
 use crate::domain::filter::matches_multi;
-use crate::domain::filter_traits::FilterVariant;
+use crate::domain::filter_traits::{FilterVariant, MessageFilter};
 use crate::domain::network::{NetworkEntry, NetworkStatus, Protocol};
 use regex::Regex;
 
@@ -252,6 +252,14 @@ impl Default for NetworkFilter {
     }
 }
 
+impl MessageFilter<NetworkEntry> for NetworkFilter {
+    fn matches(&self, item: &NetworkEntry) -> bool {
+        // Delegate to the inherent method to keep method-syntax call
+        // sites working.
+        NetworkFilter::matches(self, item)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +313,18 @@ mod tests {
 
     fn ws_entry(url: &str) -> NetworkEntry {
         NetworkEntry::new_ws(1, url.into(), String::new())
+    }
+
+    // ---- DOM-019 MessageFilter trait shape lock ----------------------
+
+    #[test]
+    fn dom_019_network_filter_implements_message_filter_for_network_entry() {
+        use crate::domain::filter_traits::MessageFilter as MsgFilterTrait;
+        let f = NetworkFilter::new();
+        let entry = e("https://x.com/api");
+        assert!(<NetworkFilter as MsgFilterTrait<NetworkEntry>>::matches(
+            &f, &entry
+        ));
     }
 
     // ---- DOM-001: FilterVariant trait shared by all three enums ------

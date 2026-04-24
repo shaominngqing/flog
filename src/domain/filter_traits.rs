@@ -1,9 +1,13 @@
-//! Shared traits for the three network filter enums.
+//! Shared traits for filter enums and whole-filter bundles.
 //!
-//! Phase 3 DOM-001: `StatusFilter`, `MethodFilter`, `ProtocolFilter` share
-//! identical shape (an "all" sentinel variant plus specific variants that
-//! the user cycles through by clicking a pill). This module formalises the
-//! shape so UI code can cycle any of them via a single generic helper.
+//! - Phase 3 DOM-001: `FilterVariant` — `StatusFilter`, `MethodFilter`,
+//!   `ProtocolFilter` share identical shape (an "all" sentinel variant
+//!   plus specific variants the user cycles through by clicking a pill).
+//! - Phase 3 DOM-019: `MessageFilter<T>` — both `FilterState` (for
+//!   `LogEntry`) and `NetworkFilter` (for `NetworkEntry`) collapse level
+//!   / tag / search / exclude predicates into a single `matches()`
+//!   method. The trait formalises that shape so future filters (e.g.
+//!   metric / trace) share the same surface.
 
 // Phase 3 DOM-001 introduces this trait alongside impls on the three network
 // filter enums. Current consumers (event.rs) still dispatch via pill-id
@@ -39,4 +43,15 @@ pub trait FilterVariant: Sized + Copy + PartialEq + 'static {
         let idx = vs.iter().position(|v| v == self).unwrap_or(0);
         vs[(idx + 1) % vs.len()]
     }
+}
+
+/// A filter that accepts-or-rejects items of type `T`. Phase 3 DOM-019.
+///
+/// Currently implemented by `FilterState` (for `LogEntry`) and
+/// `NetworkFilter` (for `NetworkEntry`). The trait is intentionally tiny
+/// — it just names the shape so downstream code can be written once
+/// against any filter bundle.
+#[allow(dead_code)]
+pub trait MessageFilter<T> {
+    fn matches(&self, item: &T) -> bool;
 }
