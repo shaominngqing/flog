@@ -37,6 +37,77 @@ use super::util::ANSI_RE;
 
 pub struct GenericParser;
 
+impl GenericParser {
+    /// Try to parse a `I/flutter (pid): ...` or `flutter: ...` style line.
+    ///
+    /// Returns `Some` when the flutter prefix matches. The embedded
+    /// content may itself be `[LEVEL][Tag] msg` shaped — in that case,
+    /// the level and tag are lifted out; otherwise the whole content
+    /// is stored as a System-level message tagged `flutter`.
+    ///
+    /// Phase 3 Step 3.1 — see Audit DOM-016.
+    fn try_parse_flutter_prefixed(line: &str) -> Option<LogEntry> {
+        let caps = FLUTTER_PLAIN_RE.captures(line)?;
+        let raw = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let content = ANSI_RE.replace_all(raw, "").to_string();
+
+        // Try structured [LEVEL][Tag] lift first; fall through to plain
+        // if the level string is unrecognized or the pattern doesn't
+        // match.
+        Some(
+            Self::try_parse_flutter_structured(&content)
+                .unwrap_or_else(|| Self::build_flutter_plain(content)),
+        )
+    }
+
+    /// When flutter content starts with `[LEVEL][Tag]` AND the level is
+    /// recognized by `LogLevel::from_str`, build a lifted `LogEntry`.
+    /// Returns `None` if either the bracket shape or the level string
+    /// doesn't match — caller falls back to `build_flutter_plain`.
+    ///
+    /// Phase 3 Step 3.1 — see Audit DOM-016.
+    fn try_parse_flutter_structured(content: &str) -> Option<LogEntry> {
+        let bcaps = BRACKET_LEVEL_RE.captures(content)?;
+        let level_str = bcaps.get(1)?.as_str();
+        let level = LogLevel::from_str(level_str)?;
+        let tag = bcaps
+            .get(2)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or("App".into());
+        let message = bcaps.get(3)?.as_str().to_string();
+        Some(LogEntry {
+            timestamp: String::new(),
+            level,
+            tag,
+            message,
+            extra_lines: Vec::new(),
+            repeat_count: 1,
+            source: InputSource::DirectSocket,
+            error: None,
+            stacktrace: None,
+        })
+    }
+
+    /// Flutter content that didn't match `[LEVEL][Tag]` (or had an
+    /// unrecognized level) — treat as a System message tagged `flutter`,
+    /// including empty lines from `print('')`.
+    ///
+    /// Phase 3 Step 3.1 — see Audit DOM-016.
+    fn build_flutter_plain(content: String) -> LogEntry {
+        LogEntry {
+            timestamp: String::new(),
+            level: LogLevel::System,
+            tag: "flutter".to_string(),
+            message: content,
+            extra_lines: Vec::new(),
+            repeat_count: 1,
+            source: InputSource::DirectSocket,
+            error: None,
+            stacktrace: None,
+        }
+    }
+}
+
 impl LogLineParser for GenericParser {
     fn name(&self) -> &'static str {
         "Generic"
@@ -86,46 +157,11 @@ impl LogLineParser for GenericParser {
             }
         }
 
-        // Path 1: `I/flutter (PID): content` — main Flutter output
-        if let Some(caps) = FLUTTER_PLAIN_RE.captures(line) {
-            let raw = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-            let content = ANSI_RE.replace_all(raw, "").to_string();
-
-            // Try [LEVEL] [Tag] message inside flutter content
-            if let Some(bcaps) = BRACKET_LEVEL_RE.captures(&content) {
-                let level_str = bcaps.get(1)?.as_str();
-                if let Some(level) = LogLevel::from_str(level_str) {
-                    let tag = bcaps
-                        .get(2)
-                        .map(|m| m.as_str().to_string())
-                        .unwrap_or("App".into());
-                    let message = bcaps.get(3)?.as_str().to_string();
-                    return Some(LogEntry {
-                        timestamp: String::new(),
-                        level,
-                        tag,
-                        message,
-                        extra_lines: Vec::new(),
-                        repeat_count: 1,
-                        source: InputSource::DirectSocket,
-                        error: None,
-                        stacktrace: None,
-                    });
-                }
-            }
-
-            // Plain flutter content (including empty lines from print(''))
-            return Some(LogEntry {
-                timestamp: String::new(),
-                level: LogLevel::System,
-                tag: "flutter".to_string(),
-                message: content,
-                extra_lines: Vec::new(),
-                repeat_count: 1,
-                source: InputSource::DirectSocket,
-                error: None,
-                stacktrace: None,
-            });
+        // Path 1: `I/flutter (PID): content` — main Flutter output.
+        // Phase 3 Step 3.1 — see Audit DOM-016. Extracted into
+        // try_parse_flutter_prefixed + helpers.
+        if let Some(entry) = Self::try_parse_flutter_prefixed(line) {
+            return Some(entry);
         }
 
         // Path 2: Other logcat tags — `X/Tag(PID): content`
@@ -396,5 +432,73 @@ mod tests {
         let entry = p.try_parse(line).unwrap();
         assert_eq!(entry.level, LogLevel::System);
         assert_eq!(entry.tag, "flutter");
+    }
+
+    // ---- Phase 3 Step 3.1 DOM-016: flutter helper extractions ----
+
+    #[test]
+    fn try_parse_flutter_prefixed_accepts_i_flutter_line() {
+        let entry =
+            GenericParser::try_parse_flutter_prefixed("I/flutter ( 1234): hello world").unwrap();
+        assert_eq!(entry.tag, "flutter");
+        assert_eq!(entry.message, "hello world");
+        assert_eq!(entry.level, LogLevel::System);
+    }
+
+    #[test]
+    fn try_parse_flutter_prefixed_accepts_flutter_colon_line() {
+        let entry = GenericParser::try_parse_flutter_prefixed("flutter: simple message").unwrap();
+        assert_eq!(entry.tag, "flutter");
+        assert_eq!(entry.message, "simple message");
+        assert_eq!(entry.level, LogLevel::System);
+    }
+
+    #[test]
+    fn try_parse_flutter_prefixed_lifts_bracketed_level_and_tag() {
+        let entry =
+            GenericParser::try_parse_flutter_prefixed("flutter: [ERROR][Net] connection failed")
+                .unwrap();
+        assert_eq!(entry.level, LogLevel::Error);
+        assert_eq!(entry.tag, "Net");
+        assert_eq!(entry.message, "connection failed");
+    }
+
+    #[test]
+    fn try_parse_flutter_prefixed_empty_content_yields_system() {
+        let entry = GenericParser::try_parse_flutter_prefixed("flutter: ").unwrap();
+        assert_eq!(entry.level, LogLevel::System);
+        assert_eq!(entry.tag, "flutter");
+        assert_eq!(entry.message, "");
+    }
+
+    #[test]
+    fn try_parse_flutter_prefixed_non_flutter_line_returns_none() {
+        assert!(GenericParser::try_parse_flutter_prefixed("[INFO][Tag] not flutter").is_none());
+        assert!(GenericParser::try_parse_flutter_prefixed("plain message").is_none());
+    }
+
+    #[test]
+    fn try_parse_flutter_structured_requires_bracket_shape_and_known_level() {
+        // No bracket → None
+        assert!(GenericParser::try_parse_flutter_structured("no brackets here").is_none());
+        // Bracket with unknown level → None (caller must fall back to plain)
+        assert!(GenericParser::try_parse_flutter_structured("[NOTALEVEL][Tag] msg").is_none());
+        // Valid bracket + known level → Some
+        let e = GenericParser::try_parse_flutter_structured("[INFO][Tag] msg").unwrap();
+        assert_eq!(e.level, LogLevel::Info);
+        assert_eq!(e.tag, "Tag");
+        assert_eq!(e.message, "msg");
+    }
+
+    #[test]
+    fn build_flutter_plain_always_system_level_tagged_flutter() {
+        let e = GenericParser::build_flutter_plain("anything".to_string());
+        assert_eq!(e.level, LogLevel::System);
+        assert_eq!(e.tag, "flutter");
+        assert_eq!(e.message, "anything");
+        // Empty content is also valid (print('') case)
+        let e2 = GenericParser::build_flutter_plain(String::new());
+        assert_eq!(e2.message, "");
+        assert_eq!(e2.level, LogLevel::System);
     }
 }
