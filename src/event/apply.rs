@@ -13,8 +13,13 @@ use crate::app::{App, InputField, ViewTab};
 use super::click_region::{ClickClass, ClickRegion};
 
 /// Perform all mutations for a detected click region.
-#[allow(dead_code)] // wired up via Task 5 two-phase dispatch
-pub(crate) fn apply_click_region(app: &mut App, region: ClickRegion, class: ClickClass) {
+pub(crate) fn apply_click_region(
+    app: &mut App,
+    region: ClickRegion,
+    class: ClickClass,
+    x: u16,
+    y: u16,
+) {
     match region {
         // ── Device picker overlay ─────────────────────────────────────
         ClickRegion::DevicePickerOutside => {
@@ -71,7 +76,7 @@ pub(crate) fn apply_click_region(app: &mut App, region: ClickRegion, class: Clic
             if let Some(idx) = app.selected_store_index() {
                 if let Some(entry) = app.store.get(idx) {
                     let text = entry.full_message();
-                    let msg = super::copy_to_clipboard(&text);
+                    let msg = super::actions::copy_to_clipboard(&text);
                     app.show_status(msg);
                 }
             }
@@ -118,19 +123,25 @@ pub(crate) fn apply_click_region(app: &mut App, region: ClickRegion, class: Clic
         ClickRegion::NetworkDetailSectionToggle { section_key } => {
             apply_network_detail_section_toggle(app, &section_key);
         }
-        ClickRegion::NetworkDetailMockBtn => super::mock_from_selected(app),
-        ClickRegion::NetworkDetailReplayBtn => super::replay_selected(app),
+        ClickRegion::NetworkDetailMockBtn => super::actions::mock_from_selected(app),
+        ClickRegion::NetworkDetailReplayBtn => super::actions::replay_selected(app),
         ClickRegion::NetworkDetailClose => {
             app.network.show_detail = false;
         }
 
         // ── Mock rules panel ───────────────────────────────────────────
         ClickRegion::MockRuleRow { index } => apply_mock_rule_row(app, index, class),
+        ClickRegion::MockRuleEditBtn { index } => {
+            if let Some(rule) = app.mock_rules.rules().get(index) {
+                let id = rule.id;
+                app.enter_mock_edit(id);
+            }
+        }
         ClickRegion::MockRuleToggle { index } => {
             if let Some(rule) = app.mock_rules.rules().get(index) {
                 let id = rule.id;
                 app.mock_rules.toggle(id);
-                super::trigger_mock_sync(app);
+                super::actions::trigger_mock_sync(app);
             }
         }
         ClickRegion::MockRuleDelete { index } => {
@@ -140,7 +151,7 @@ pub(crate) fn apply_click_region(app: &mut App, region: ClickRegion, class: Clic
                 if app.mock_rule_selected >= app.mock_rules.len() && app.mock_rule_selected > 0 {
                     app.mock_rule_selected -= 1;
                 }
-                super::trigger_mock_sync(app);
+                super::actions::trigger_mock_sync(app);
             }
         }
         ClickRegion::MockRuleAdd => {}
@@ -149,9 +160,15 @@ pub(crate) fn apply_click_region(app: &mut App, region: ClickRegion, class: Clic
         }
 
         // ── Status bar / misc ──────────────────────────────────────────
-        ClickRegion::StatusBar => {}
+        ClickRegion::StatusBar => apply_status_bar(app, x, y),
         ClickRegion::Scrollbar { .. } => {}
     }
+}
+
+/// Status-bar click handler. Delegates to the shared
+/// `apply::status_bar` module.
+fn apply_status_bar(app: &mut App, x: u16, y: u16) {
+    super::apply_status::handle(app, x, y);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -407,7 +424,7 @@ mod tests {
     fn apply_logs_tab_switches_tab() {
         let mut app = App::default();
         app.active_tab = ViewTab::Network;
-        apply_click_region(&mut app, ClickRegion::LogsTab, ClickClass::Single);
+        apply_click_region(&mut app, ClickRegion::LogsTab, ClickClass::Single, 0, 0);
         assert_eq!(app.active_tab, ViewTab::Logs);
     }
 
@@ -419,6 +436,8 @@ mod tests {
             &mut app,
             ClickRegion::DevicePickerOutside,
             ClickClass::Single,
+            0,
+            0,
         );
         assert!(!app.show_device_picker);
     }
@@ -430,6 +449,8 @@ mod tests {
             &mut app,
             ClickRegion::NetworkProtocolPill(ProtocolFilter::Http),
             ClickClass::Single,
+            0,
+            0,
         );
         assert_eq!(app.network.filter.protocol, ProtocolFilter::Http);
     }

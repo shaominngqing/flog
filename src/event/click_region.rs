@@ -93,6 +93,7 @@ pub(crate) enum ClickRegion {
 
     // ── Mock rules side panel ─────────────────────────────────────────
     MockRuleRow { index: usize },
+    MockRuleEditBtn { index: usize },
     MockRuleToggle { index: usize },
     MockRuleDelete { index: usize },
     MockRuleAdd,

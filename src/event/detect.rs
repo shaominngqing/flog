@@ -25,7 +25,6 @@ use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 use crate::domain::LogLevel;
 
 use super::click_region::{ClickClass, ClickRegion};
-use super::pills::{PILL_PADDING, SSE_EVENTS_PILL, SSE_MERGED_PILL, WS_CHAT_PILL, WS_LIST_PILL};
 use super::DOUBLE_CLICK_MS;
 
 #[allow(dead_code)] // wired up via Task 5 two-phase dispatch
@@ -136,163 +135,7 @@ fn detect_logs_detail_panel(app: &App, x: u16, y: u16) -> Option<ClickRegion> {
 
 #[allow(dead_code)]
 fn detect_network(app: &App, x: u16, y: u16) -> Option<ClickRegion> {
-    // Toolbar line 1: search + exclude
-    if y == app.layout.net_toolbar_y {
-        if x >= app.layout.net_search_x.0 && x < app.layout.net_search_x.1 {
-            return Some(ClickRegion::NetworkToolbarSearch);
-        }
-        if x >= app.layout.net_exclude_x.0 && x < app.layout.net_exclude_x.1 {
-            return Some(ClickRegion::NetworkToolbarExclude);
-        }
-    }
-    // Toolbar line 2: filter pills
-    if y == app.layout.net_filter_pills_y {
-        for (id, x_start, x_end) in &app.layout.net_filter_pills {
-            if x >= *x_start && x < *x_end {
-                return pill_id_to_region(id);
-            }
-        }
-    }
-
-    // Mock rules panel
-    if app.network.show_mock_rules_panel
-        && x >= app.layout.net_detail_x
-        && y >= app.layout.list_y
-        && y < app.layout.bottom_y
-    {
-        for (row_idx, action, ry, x_start, x_end) in &app.layout.mock_rule_regions {
-            if y == *ry && x >= *x_start && x < *x_end {
-                return Some(match action.as_str() {
-                    "select" => ClickRegion::MockRuleRow { index: *row_idx },
-                    "edit" => ClickRegion::MockRuleRow { index: *row_idx },
-                    "toggle" => ClickRegion::MockRuleToggle { index: *row_idx },
-                    "delete" => ClickRegion::MockRuleDelete { index: *row_idx },
-                    _ => return None,
-                });
-            }
-        }
-        // Inside mock panel area but no row match — original handler
-        // consumed the event (returned) and did nothing. Signal with None.
-        return None;
-    }
-
-    // Network detail panel (scroll / click)
-    if app.network.show_detail
-        && x >= app.layout.net_detail_x
-        && y >= app.layout.list_y
-        && y < app.layout.bottom_y
-    {
-        // [Mock] button in detail header
-        if let Some((btn_y, btn_x_start, btn_x_end)) = app.layout.detail_mock_btn {
-            if y == btn_y && x >= btn_x_start && x < btn_x_end {
-                return Some(ClickRegion::NetworkDetailMockBtn);
-            }
-        }
-
-        let detail_content_y = app.layout.net_detail_content_y;
-        if y >= detail_content_y && y < app.layout.bottom_y {
-            let line_idx = app.network.detail_scroll + (y - detail_content_y) as usize;
-
-            // SSE pill click detection
-            if let Some((pill_line, header_w)) = app.layout.sse_pill_line {
-                if line_idx == pill_line {
-                    let click_x = (x.saturating_sub(app.layout.net_detail_x + 1)) as usize;
-                    let events_start = header_w;
-                    let events_end = events_start + SSE_EVENTS_PILL.len();
-                    let merged_start = events_end + PILL_PADDING;
-                    let merged_end = merged_start + SSE_MERGED_PILL.len();
-                    if click_x >= events_start && click_x < events_end {
-                        return Some(ClickRegion::NetworkDetailSseEventsPill);
-                    } else if click_x >= merged_start && click_x < merged_end {
-                        return Some(ClickRegion::NetworkDetailSseMergedPill);
-                    } else {
-                        let clear_start = merged_end + 1;
-                        let clear_end = clear_start + " \u{00d7} ".len();
-                        if click_x >= clear_start && click_x < clear_end {
-                            return Some(ClickRegion::NetworkDetailSectionToggle {
-                                section_key: "SSE_CLEAR_RULE".to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-
-            // WS pill click detection
-            if let Some((pill_line, header_w)) = app.layout.ws_pill_line {
-                if line_idx == pill_line {
-                    let click_x = (x.saturating_sub(app.layout.net_detail_x + 1)) as usize;
-                    let chat_start = header_w;
-                    let chat_end = chat_start + WS_CHAT_PILL.len();
-                    let raw_start = chat_end + PILL_PADDING;
-                    let raw_end = raw_start + WS_LIST_PILL.len();
-                    if click_x >= chat_start && click_x < chat_end {
-                        return Some(ClickRegion::NetworkDetailWsChatPill);
-                    } else if click_x >= raw_start && click_x < raw_end {
-                        // "Raw" = exit chat mode. Reuse section toggle
-                        // carrying a sentinel key so apply can branch.
-                        return Some(ClickRegion::NetworkDetailSectionToggle {
-                            section_key: "WS_RAW_EXIT".to_string(),
-                        });
-                    }
-                }
-            }
-
-            // SSE_FIELD / SSE_CLEAR_RULE / WS_GROUP / generic section
-            if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
-                if let Some(idx_str) = section_key.strip_prefix("SSE_FIELD#") {
-                    if let Ok(fi) = idx_str.parse::<usize>() {
-                        return Some(ClickRegion::NetworkDetailSseFieldPill { idx: fi });
-                    }
-                }
-                if section_key == "SSE_CLEAR_RULE" {
-                    return Some(ClickRegion::NetworkDetailSectionToggle {
-                        section_key: "SSE_CLEAR_RULE".to_string(),
-                    });
-                }
-                if section_key.strip_prefix("WS_GROUP#").is_some() {
-                    return Some(ClickRegion::NetworkDetailSectionToggle {
-                        section_key: section_key.clone(),
-                    });
-                }
-                return Some(ClickRegion::NetworkDetailSectionToggle {
-                    section_key: section_key.clone(),
-                });
-            }
-
-            // JSON fold click
-            if let Some(Some((section_key, node_id))) =
-                app.network.detail_json_click_map.get(line_idx).cloned()
-            {
-                return Some(ClickRegion::NetworkDetailSectionToggle {
-                    section_key: format!("JSON#{section_key}#{node_id}"),
-                });
-            }
-        }
-        return None;
-    }
-
-    // Status bar
-    if y == app.layout.bottom_y {
-        if x >= app.layout.source_info_x.0 && x < app.layout.source_info_x.1 {
-            return Some(ClickRegion::StatusBar);
-        }
-        for (name, x_start, x_end) in &app.layout.net_buttons {
-            if x >= *x_start && x < *x_end {
-                return Some(match name.as_str() {
-                    "mock" => ClickRegion::NetworkMockRulesBtn,
-                    _ => ClickRegion::StatusBar, // generic action-button group
-                });
-            }
-        }
-    }
-
-    // List area
-    if y >= app.layout.list_y && y < app.layout.list_y + app.layout.list_height {
-        let row_in_list = y - app.layout.list_y;
-        return Some(ClickRegion::NetworkListRow { row: row_in_list });
-    }
-
-    None
+    super::detect_net::detect(app, x, y)
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -359,7 +202,7 @@ fn detect_logs(app: &App, x: u16, y: u16) -> Option<ClickRegion> {
 // ─────────────────────────────────────────────────────────────────────
 
 #[allow(dead_code)]
-fn pill_id_to_region(id: &str) -> Option<ClickRegion> {
+pub(super) fn pill_id_to_region(id: &str) -> Option<ClickRegion> {
     Some(match id {
         "proto_All" => ClickRegion::NetworkProtocolPill(ProtocolFilter::All),
         "proto_HTTP" => ClickRegion::NetworkProtocolPill(ProtocolFilter::Http),
