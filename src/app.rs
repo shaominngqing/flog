@@ -275,6 +275,18 @@ impl Default for NetworkState {
 }
 
 /// UI layout coordinate cache (written by renderer, read by event handler).
+///
+/// Every field is a snapshot of the last rendered frame's geometry. The
+/// renderer overwrites the relevant fields on each draw; the event handler
+/// reads them to translate mouse coordinates back into logical widgets
+/// (rows, pills, buttons, etc.). See audit UI-017.
+///
+/// Invariants
+/// - All fields reset cleanly via `Default` — no state is retained across
+///   sessions (verified by `app_new_starts_with_default_layout_cache`).
+/// - Fields are ONLY read by `src/event.rs` and written by `src/ui/*`.
+///   No domain or transport code touches this struct.
+/// - Coordinates are terminal cells (not pixels). `(x, y)` origin = top-left.
 #[derive(Default)]
 pub struct LayoutCache {
     pub toolbar_y: u16,

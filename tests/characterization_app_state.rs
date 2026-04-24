@@ -29,7 +29,7 @@
 #![allow(clippy::too_many_lines)]
 
 use flog::app::{
-    App, AppMode, ConnectedApp, InputBuffers, InputField, NetworkState, SseMergeRule,
+    App, AppMode, ConnectedApp, InputBuffers, InputField, LayoutCache, NetworkState, SseMergeRule,
     SsePathSegment, ViewTab,
 };
 use flog::domain::entry::{InputSource, LogEntry, LogLevel};
@@ -1646,4 +1646,65 @@ fn app_mode_help_vs_stats_vs_normal_distinct() {
     assert_ne!(AppMode::Help, AppMode::Stats);
     assert_ne!(AppMode::Normal, AppMode::Help);
     assert_ne!(AppMode::Normal, AppMode::MockRuleEdit);
+}
+
+// =====================================================================
+//  LayoutCache (UI-017)
+// =====================================================================
+//
+// `LayoutCache` is the render-layout coordinate snapshot written by the
+// renderer and read by the event handler. These tests lock the default
+// shape (all-zero / empty collections) and that new App instances start
+// with a pristine cache, so future renderer changes that accidentally
+// persist layout state between frames will fail here.
+
+#[test]
+fn layout_cache_default_is_all_zeroed() {
+    let lc = LayoutCache::default();
+    // Scalar coordinates default to zero.
+    assert_eq!(lc.toolbar_y, 0);
+    assert_eq!(lc.list_y, 0);
+    assert_eq!(lc.list_height, 0);
+    assert_eq!(lc.bottom_y, 0);
+    assert_eq!(lc.width, 0);
+    assert_eq!(lc.tab_bar_y, 0);
+    assert_eq!(lc.net_detail_x, 0);
+    assert_eq!(lc.net_toolbar_y, 0);
+    assert_eq!(lc.input_row_y, 0);
+    // Collections start empty.
+    assert!(lc.bottom_buttons.is_empty());
+    assert!(lc.row_to_filtered_idx.is_empty());
+    assert!(lc.net_buttons.is_empty());
+    assert!(lc.net_filter_pills.is_empty());
+    assert!(lc.mock_rule_regions.is_empty());
+    assert!(lc.mock_edit_regions.is_empty());
+    assert!(lc.stats_slowest_regions.is_empty());
+    assert!(lc.device_picker_items.is_empty());
+    assert!(lc.device_picker_item_ids.is_empty());
+    // Optional rects / buttons default to None.
+    assert!(lc.last_click.is_none());
+    assert!(lc.detail_mock_btn.is_none());
+    assert!(lc.detail_copy_btn.is_none());
+    assert!(lc.sse_pill_line.is_none());
+    assert!(lc.ws_pill_line.is_none());
+    assert!(lc.mock_edit_body_rect.is_none());
+    assert!(lc.device_picker_rect.is_none());
+    assert!(lc.jump_to_bottom_rect.is_none());
+    // Rendered state starts false.
+    assert!(!lc.rendered_to_end);
+    assert_eq!(lc.visible_entry_count, 0);
+    assert_eq!(lc.device_picker_total_lines, 0);
+}
+
+#[test]
+fn app_new_starts_with_default_layout_cache() {
+    // A fresh App must have a pristine LayoutCache — no bleed-over from
+    // any construction path.
+    let app = App::new();
+    assert_eq!(app.layout.list_y, 0);
+    assert_eq!(app.layout.width, 0);
+    assert!(app.layout.row_to_filtered_idx.is_empty());
+    assert!(app.layout.last_click.is_none());
+    assert!(app.layout.device_picker_items.is_empty());
+    assert!(!app.layout.rendered_to_end);
 }
