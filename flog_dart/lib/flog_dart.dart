@@ -5,6 +5,7 @@
 /// point is [Flog.init]; see its dartdoc for the canonical bootstrap example.
 library flog_dart;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'src/flog_server.dart';
@@ -54,7 +55,14 @@ class Flog {
         appVersion: info.version,
         packageName: info.packageName,
       );
-    }).catchError((_) {});
+    }).catchError((Object e, StackTrace st) {
+      // DART-023: previously swallowed silently, leaving the TUI stuck on
+      // the placeholder `app='flutter'` with no diagnostic. Log to the
+      // Flutter debug log so the developer at least sees why. (In release
+      // builds flogEnabled is false and this branch is never reached, so
+      // debugPrint does not leak into production output.)
+      debugPrint('flog_dart: PackageInfo.fromPlatform failed: $e');
+    });
   }
 }
 
