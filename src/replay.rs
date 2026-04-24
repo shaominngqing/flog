@@ -159,3 +159,28 @@ async fn insert_failed_replay(app: &Arc<Mutex<App>>, entry: &NetworkEntry, error
     a.network.invalidate_filter();
     a.show_status(format!("Replay failed: {}", error));
 }
+
+#[cfg(test)]
+mod tests {
+    //! TRANS-013: this module is archived per audit. Phase 3 moves it to
+    //! `docs/archived/replay.rs.v0.6.1` and removes it from `Cargo.toml`,
+    //! so further characterization tests are not cost-effective.
+    //!
+    //! The single smoke test below pins "the module still compiles and
+    //! exports its public surface" so an accidental rename of
+    //! `REPLAY_ID_OFFSET` or `replay_request` fails fast, rather than
+    //! silently rotting until archival.
+
+    use super::*;
+
+    #[test]
+    fn replay_module_compiles_smoke() {
+        // `REPLAY_ID_OFFSET` is the only compile-time constant.
+        assert_eq!(REPLAY_ID_OFFSET, 10_000_000);
+
+        // Reference the public fn so the linker keeps it — the body is
+        // PHYS (needs tokio runtime + real HTTP) and cannot be exercised
+        // from a sync unit test.
+        let _fp = replay_request;
+    }
+}
