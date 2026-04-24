@@ -907,61 +907,61 @@ fn ui_mock_edit_esc_cancels_to_normal() {
     let mut app = app_in_mock_edit();
     event::handle_key(&mut app, key_code(KeyCode::Esc));
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
 }
 
 #[test]
 fn ui_mock_edit_tab_cycles_field_forward() {
     let mut app = app_in_mock_edit();
-    assert_eq!(app.mock_edit_field, 0);
+    assert_eq!(app.mock_edit.field, 0);
     event::handle_key(&mut app, key_code(KeyCode::Tab));
-    assert_eq!(app.mock_edit_field, 1);
+    assert_eq!(app.mock_edit.field, 1);
     event::handle_key(&mut app, key_code(KeyCode::Tab));
-    assert_eq!(app.mock_edit_field, 2);
+    assert_eq!(app.mock_edit.field, 2);
     event::handle_key(&mut app, key_code(KeyCode::Tab));
-    assert_eq!(app.mock_edit_field, 3);
+    assert_eq!(app.mock_edit.field, 3);
     event::handle_key(&mut app, key_code(KeyCode::Tab));
-    assert_eq!(app.mock_edit_field, 4);
+    assert_eq!(app.mock_edit.field, 4);
     event::handle_key(&mut app, key_code(KeyCode::Tab));
     // wraps modulo 5
-    assert_eq!(app.mock_edit_field, 0);
+    assert_eq!(app.mock_edit.field, 0);
 }
 
 #[test]
 fn ui_mock_edit_backtab_cycles_field_backward() {
     let mut app = app_in_mock_edit();
-    assert_eq!(app.mock_edit_field, 0);
+    assert_eq!(app.mock_edit.field, 0);
     event::handle_key(&mut app, key_code(KeyCode::BackTab));
-    assert_eq!(app.mock_edit_field, 4);
+    assert_eq!(app.mock_edit.field, 4);
     event::handle_key(&mut app, key_code(KeyCode::BackTab));
-    assert_eq!(app.mock_edit_field, 3);
+    assert_eq!(app.mock_edit.field, 3);
 }
 
 #[test]
 fn ui_mock_edit_char_appends_to_single_line_field() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 0;
-    app.mock_edit_top_values[0] = "/foo".into();
+    app.mock_edit.field = 0;
+    app.mock_edit.top_values[0] = "/foo".into();
     event::handle_key(&mut app, key('X'));
-    assert_eq!(app.mock_edit_top_values[0], "/fooX");
+    assert_eq!(app.mock_edit.top_values[0], "/fooX");
 }
 
 #[test]
 fn ui_mock_edit_backspace_removes_last_char() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 0;
-    app.mock_edit_top_values[0] = "/foo".into();
+    app.mock_edit.field = 0;
+    app.mock_edit.top_values[0] = "/foo".into();
     event::handle_key(&mut app, key_code(KeyCode::Backspace));
-    assert_eq!(app.mock_edit_top_values[0], "/fo");
+    assert_eq!(app.mock_edit.top_values[0], "/fo");
 }
 
 #[test]
 fn ui_mock_edit_backspace_on_empty_field_noop() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 1;
-    app.mock_edit_top_values[1] = "".into();
+    app.mock_edit.field = 1;
+    app.mock_edit.top_values[1] = "".into();
     event::handle_key(&mut app, key_code(KeyCode::Backspace));
-    assert_eq!(app.mock_edit_top_values[1], "");
+    assert_eq!(app.mock_edit.top_values[1], "");
 }
 
 #[test]
@@ -969,7 +969,7 @@ fn ui_mock_edit_ctrl_s_saves_and_exits() {
     let mut app = app_in_mock_edit();
     event::handle_key(&mut app, key_ctrl('s'));
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
 }
 
 #[test]
@@ -980,34 +980,34 @@ fn ui_mock_edit_ctrl_enter_saves_and_exits() {
         key_code_mod(KeyCode::Enter, KeyModifiers::CONTROL),
     );
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
 }
 
 // ---- body editor (field index 4) ----------------------------------
 
 fn app_in_mock_body_field() -> App {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 4;
+    app.mock_edit.field = 4;
     app
 }
 
 #[test]
 fn ui_mock_edit_body_enter_inserts_newline() {
     let mut app = app_in_mock_body_field();
-    let before = app.mock_edit_body.content();
+    let before = app.mock_edit.body.content();
     event::handle_key(&mut app, key_code(KeyCode::Enter));
-    let after = app.mock_edit_body.content();
+    let after = app.mock_edit.body.content();
     assert!(after.contains('\n') || after.len() > before.len());
 }
 
 #[test]
 fn ui_mock_edit_body_backspace_deletes() {
     let mut app = app_in_mock_body_field();
-    let before = app.mock_edit_body.content().len();
+    let before = app.mock_edit.body.content().len();
     // Position at end
-    app.mock_edit_body.move_end();
+    app.mock_edit.body.move_end();
     event::handle_key(&mut app, key_code(KeyCode::Backspace));
-    let after = app.mock_edit_body.content().len();
+    let after = app.mock_edit.body.content().len();
     assert!(after <= before);
 }
 
@@ -1064,9 +1064,9 @@ fn ui_mock_edit_body_end_moves_cursor_to_line_end() {
 #[test]
 fn ui_mock_edit_body_char_inserts_into_editor() {
     let mut app = app_in_mock_body_field();
-    let before = app.mock_edit_body.content();
+    let before = app.mock_edit.body.content();
     event::handle_key(&mut app, key('Z'));
-    let after = app.mock_edit_body.content();
+    let after = app.mock_edit.body.content();
     assert!(after.len() > before.len());
     assert!(after.contains('Z'));
 }
@@ -1091,7 +1091,7 @@ fn ui_mock_edit_body_unhandled_code_is_noop() {
 #[test]
 fn ui_mock_edit_top_field_unhandled_code_is_noop() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 2;
+    app.mock_edit.field = 2;
     event::handle_key(&mut app, key_code(KeyCode::Insert));
     assert_eq!(app.mode, AppMode::MockRuleEdit);
 }

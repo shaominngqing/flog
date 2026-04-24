@@ -1127,9 +1127,9 @@ fn mock_rules_panel_any_method_shown_as_star() {
 // ══════════════════════════════════════════════════════════════════════
 
 fn open_mock_edit(app: &mut App) {
-    app.mock_edit_field = 0;
-    app.mock_edit_top_values = vec!["/api/users".into(), "GET".into(), "200".into(), "0".into()];
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new("{\"ok\":true}");
+    app.mock_edit.field = 0;
+    app.mock_edit.top_values = vec!["/api/users".into(), "GET".into(), "200".into(), "0".into()];
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new("{\"ok\":true}");
 }
 
 #[test]
@@ -1150,7 +1150,7 @@ fn mock_edit_shows_title_and_labels() {
 fn mock_edit_url_field_focused_shows_cursor_pipe() {
     let mut app = app_connected();
     open_mock_edit(&mut app);
-    app.mock_edit_field = 0;
+    app.mock_edit.field = 0;
     let buf = render_mock_edit(&mut app, 120, 30);
     // cursor rendered as "|"
     assert!(full_text(&buf).contains("|"));
@@ -1160,7 +1160,7 @@ fn mock_edit_url_field_focused_shows_cursor_pipe() {
 fn mock_edit_method_field_focused() {
     let mut app = app_connected();
     open_mock_edit(&mut app);
-    app.mock_edit_field = 1;
+    app.mock_edit.field = 1;
     let buf = render_mock_edit(&mut app, 120, 30);
     // Input still renders ("GET|"), and label is bolded.
     assert!(full_text(&buf).contains("GET"));
@@ -1170,7 +1170,7 @@ fn mock_edit_method_field_focused() {
 fn mock_edit_status_field_focused() {
     let mut app = app_connected();
     open_mock_edit(&mut app);
-    app.mock_edit_field = 2;
+    app.mock_edit.field = 2;
     let buf = render_mock_edit(&mut app, 120, 30);
     assert!(full_text(&buf).contains("200"));
 }
@@ -1179,7 +1179,7 @@ fn mock_edit_status_field_focused() {
 fn mock_edit_delay_field_focused() {
     let mut app = app_connected();
     open_mock_edit(&mut app);
-    app.mock_edit_field = 3;
+    app.mock_edit.field = 3;
     let buf = render_mock_edit(&mut app, 120, 30);
     // delay has value "0"
     let text = full_text(&buf);
@@ -1190,7 +1190,7 @@ fn mock_edit_delay_field_focused() {
 fn mock_edit_body_field_focused() {
     let mut app = app_connected();
     open_mock_edit(&mut app);
-    app.mock_edit_field = 4;
+    app.mock_edit.field = 4;
     let buf = render_mock_edit(&mut app, 120, 30);
     let text = full_text(&buf);
     assert!(text.contains("ok") || text.contains("true"));
@@ -1200,7 +1200,7 @@ fn mock_edit_body_field_focused() {
 fn mock_edit_body_multiline_renders() {
     let mut app = app_connected();
     open_mock_edit(&mut app);
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new("{\n  \"a\": 1,\n  \"b\": 2\n}");
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new("{\n  \"a\": 1,\n  \"b\": 2\n}");
     let buf = render_mock_edit(&mut app, 120, 30);
     let text = full_text(&buf);
     assert!(text.contains("\"a\"") || text.contains("a"));
@@ -1594,13 +1594,13 @@ fn mock_rules_panel_long_url_truncates_with_ellipsis() {
 fn mock_edit_body_with_long_content_shows_scrollbar() {
     let mut app = app_connected();
     open_mock_edit(&mut app);
-    app.mock_edit_field = 4;
+    app.mock_edit.field = 4;
     // Body with many lines > visible_height triggers scrollbar branch.
     let many_lines = (0..50)
         .map(|i| format!("line-{i}"))
         .collect::<Vec<_>>()
         .join("\n");
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new(&many_lines);
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new(&many_lines);
     let buf = render_mock_edit(&mut app, 120, 30);
     assert_eq!(buf.area.width, 120);
 }
@@ -1609,10 +1609,10 @@ fn mock_edit_body_with_long_content_shows_scrollbar() {
 fn mock_edit_body_cursor_at_end_renders_reversed_space() {
     let mut app = app_connected();
     open_mock_edit(&mut app);
-    app.mock_edit_field = 4; // body focused
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new("abc");
-    app.mock_edit_body.cursor_row = 0;
-    app.mock_edit_body.cursor_col = 3; // at end
+    app.mock_edit.field = 4; // body focused
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new("abc");
+    app.mock_edit.body.cursor_row = 0;
+    app.mock_edit.body.cursor_col = 3; // at end
     let buf = render_mock_edit(&mut app, 120, 30);
     assert!(full_text(&buf).contains("abc"));
 }
@@ -1620,9 +1620,9 @@ fn mock_edit_body_cursor_at_end_renders_reversed_space() {
 #[test]
 fn mock_edit_empty_top_values_renders_without_panic() {
     let mut app = app_connected();
-    app.mock_edit_field = 0;
-    app.mock_edit_top_values = Vec::new(); // hits the "val missing" branch
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new("");
+    app.mock_edit.field = 0;
+    app.mock_edit.top_values = Vec::new(); // hits the "val missing" branch
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new("");
     let buf = render_mock_edit(&mut app, 120, 30);
     assert!(full_text(&buf).contains("Edit Mock Rule"));
 }
@@ -1631,9 +1631,9 @@ fn mock_edit_empty_top_values_renders_without_panic() {
 fn mock_edit_overflow_url_renders_trailing_portion() {
     let mut app = app_connected();
     let long_url = "/api/".to_string() + &"abcdefgh".repeat(50);
-    app.mock_edit_field = 0;
-    app.mock_edit_top_values = vec![long_url, "GET".into(), "200".into(), "0".into()];
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new("{}");
+    app.mock_edit.field = 0;
+    app.mock_edit.top_values = vec![long_url, "GET".into(), "200".into(), "0".into()];
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new("{}");
     // Narrow field so url.len() > max_chars.
     let buf = render_mock_edit(&mut app, 60, 30);
     // Tail of URL is shown (ends with "h|" cursor marker for focused URL field).
@@ -1644,9 +1644,9 @@ fn mock_edit_overflow_url_renders_trailing_portion() {
 fn mock_edit_overflow_unfocused_field_shows_tail() {
     let mut app = app_connected();
     let long_val = "z".repeat(200);
-    app.mock_edit_field = 4; // body focused, URL unfocused
-    app.mock_edit_top_values = vec![long_val, "GET".into(), "200".into(), "0".into()];
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new("{}");
+    app.mock_edit.field = 4; // body focused, URL unfocused
+    app.mock_edit.top_values = vec![long_val, "GET".into(), "200".into(), "0".into()];
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new("{}");
     let buf = render_mock_edit(&mut app, 60, 30);
     assert!(full_text(&buf).contains("z"));
 }
@@ -1654,11 +1654,11 @@ fn mock_edit_overflow_unfocused_field_shows_tail() {
 #[test]
 fn mock_edit_body_cursor_mid_line_renders_cursor_char() {
     let mut app = app_connected();
-    app.mock_edit_field = 4;
-    app.mock_edit_top_values = vec!["/api".into(), "GET".into(), "200".into(), "0".into()];
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new("abcdef");
-    app.mock_edit_body.cursor_row = 0;
-    app.mock_edit_body.cursor_col = 3; // mid-line
+    app.mock_edit.field = 4;
+    app.mock_edit.top_values = vec!["/api".into(), "GET".into(), "200".into(), "0".into()];
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new("abcdef");
+    app.mock_edit.body.cursor_row = 0;
+    app.mock_edit.body.cursor_col = 3; // mid-line
     let buf = render_mock_edit(&mut app, 120, 30);
     assert!(full_text(&buf).contains("abc"));
 }

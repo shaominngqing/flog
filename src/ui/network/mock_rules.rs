@@ -57,7 +57,7 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    let field = app.mock_edit_field;
+    let field = app.mock_edit.field;
     let label_w: u16 = 18;
     let input_w = inner.width.saturating_sub(label_w + 2);
 
@@ -94,8 +94,8 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
         let input_x = inner.x + label_w;
         let input_rect = ratatui::layout::Rect::new(input_x, y, input_w, 1);
 
-        let val = if i < app.mock_edit_top_values.len() {
-            &app.mock_edit_top_values[i]
+        let val = if i < app.mock_edit.top_values.len() {
+            &app.mock_edit.top_values[i]
         } else {
             &String::new()
         };
@@ -169,7 +169,7 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
         body_w.saturating_sub(2),
         body_h.saturating_sub(2),
     ));
-    app.mock_edit_body.visible_height = body_h as usize;
+    app.mock_edit.body.visible_height = body_h as usize;
 
     // Draw body border
     let body_border_style = if body_focused { SURFACE1 } else { SURFACE0 };
@@ -191,10 +191,10 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
 
     if content_h > 0 && content_w > 0 {
         // Get colorized JSON lines
-        let body_text = app.mock_edit_body.content();
+        let body_text = app.mock_edit.body.content();
         let colored_lines = crate::ui::json_viewer::colorize_json_text(&body_text);
 
-        let scroll = app.mock_edit_body.scroll_offset;
+        let scroll = app.mock_edit.body.scroll_offset;
         let visible = content_h as usize;
 
         for (vi, line_idx) in (scroll..scroll + visible).enumerate() {
@@ -204,10 +204,10 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
             if line_idx < colored_lines.len() {
                 let line = colored_lines[line_idx].clone();
 
-                if body_focused && line_idx == app.mock_edit_body.cursor_row {
+                if body_focused && line_idx == app.mock_edit.body.cursor_row {
                     // Render line with cursor highlight
-                    let raw = app.mock_edit_body.lines[line_idx].as_str();
-                    let col = app.mock_edit_body.cursor_col;
+                    let raw = app.mock_edit.body.lines[line_idx].as_str();
+                    let col = app.mock_edit.body.cursor_col;
 
                     // Build spans with cursor
                     let mut spans: Vec<Span> = Vec::new();
@@ -282,7 +282,7 @@ pub fn draw_mock_rule_edit(f: &mut Frame, app: &mut App) {
         }
 
         // Scrollbar if content exceeds visible area
-        let total = app.mock_edit_body.total_lines();
+        let total = app.mock_edit.body.total_lines();
         if total > visible {
             use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
             let scrollbar_area =

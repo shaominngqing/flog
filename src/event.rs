@@ -1577,47 +1577,47 @@ fn handle_mock_edit_key(app: &mut App, key: KeyEvent) {
             trigger_mock_sync(app);
         }
         KeyCode::Tab => {
-            app.mock_edit_field = (app.mock_edit_field + 1) % 5;
+            app.mock_edit.field = (app.mock_edit.field + 1) % 5;
         }
         KeyCode::BackTab => {
-            app.mock_edit_field = if app.mock_edit_field == 0 {
+            app.mock_edit.field = if app.mock_edit.field == 0 {
                 4
             } else {
-                app.mock_edit_field - 1
+                app.mock_edit.field - 1
             };
         }
         _ => {
-            if app.mock_edit_field < 4 {
+            if app.mock_edit.field < 4 {
                 // Single-line field
                 match key.code {
                     KeyCode::Char(c) => {
-                        app.mock_edit_top_values[app.mock_edit_field].push(c);
+                        app.mock_edit.top_values[app.mock_edit.field].push(c);
                     }
                     KeyCode::Backspace => {
-                        app.mock_edit_top_values[app.mock_edit_field].pop();
+                        app.mock_edit.top_values[app.mock_edit.field].pop();
                     }
                     _ => {}
                 }
             } else {
                 // Body editor
                 match key.code {
-                    KeyCode::Enter => app.mock_edit_body.insert_char('\n'),
-                    KeyCode::Backspace => app.mock_edit_body.backspace(),
-                    KeyCode::Delete => app.mock_edit_body.delete(),
-                    KeyCode::Left => app.mock_edit_body.move_left(),
-                    KeyCode::Right => app.mock_edit_body.move_right(),
-                    KeyCode::Up => app.mock_edit_body.move_up(),
-                    KeyCode::Down => app.mock_edit_body.move_down(),
-                    KeyCode::Home => app.mock_edit_body.move_home(),
-                    KeyCode::End => app.mock_edit_body.move_end(),
+                    KeyCode::Enter => app.mock_edit.body.insert_char('\n'),
+                    KeyCode::Backspace => app.mock_edit.body.backspace(),
+                    KeyCode::Delete => app.mock_edit.body.delete(),
+                    KeyCode::Left => app.mock_edit.body.move_left(),
+                    KeyCode::Right => app.mock_edit.body.move_right(),
+                    KeyCode::Up => app.mock_edit.body.move_up(),
+                    KeyCode::Down => app.mock_edit.body.move_down(),
+                    KeyCode::Home => app.mock_edit.body.move_home(),
+                    KeyCode::End => app.mock_edit.body.move_end(),
                     KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         if let Ok(output) = std::process::Command::new("pbpaste").output() {
                             if let Ok(text) = String::from_utf8(output.stdout) {
-                                app.mock_edit_body.paste(&text);
+                                app.mock_edit.body.paste(&text);
                             }
                         }
                     }
-                    KeyCode::Char(c) => app.mock_edit_body.insert_char(c),
+                    KeyCode::Char(c) => app.mock_edit.body.insert_char(c),
                     _ => {}
                 }
             }
@@ -1635,10 +1635,10 @@ fn handle_mock_edit_mouse(app: &mut App, mouse: MouseEvent) {
             for (field, ry, x_start, x_end) in app.layout.mock_edit_regions.clone() {
                 if y == ry && x >= x_start && x < x_end {
                     match field.as_str() {
-                        "url" => app.mock_edit_field = 0,
-                        "method" => app.mock_edit_field = 1,
-                        "status" => app.mock_edit_field = 2,
-                        "delay" => app.mock_edit_field = 3,
+                        "url" => app.mock_edit.field = 0,
+                        "method" => app.mock_edit.field = 1,
+                        "status" => app.mock_edit.field = 2,
+                        "delay" => app.mock_edit.field = 3,
                         "save" => {
                             app.save_mock_edit();
                             trigger_mock_sync(app);
@@ -1657,27 +1657,29 @@ fn handle_mock_edit_mouse(app: &mut App, mouse: MouseEvent) {
             // Check body area click
             if let Some((bx, by, bw, bh)) = app.layout.mock_edit_body_rect {
                 if x >= bx && x < bx + bw && y >= by && y < by + bh {
-                    app.mock_edit_field = 4;
+                    app.mock_edit.field = 4;
                     let click_row = (y - by) as usize;
                     let click_col = (x - bx) as usize;
-                    app.mock_edit_body
-                        .click(app.mock_edit_body.scroll_offset + click_row, click_col);
+                    app.mock_edit
+                        .body
+                        .click(app.mock_edit.body.scroll_offset + click_row, click_col);
                 }
             }
         }
         MouseEventKind::ScrollUp => {
-            if app.mock_edit_field == 4 {
-                app.mock_edit_body.scroll_offset =
-                    app.mock_edit_body.scroll_offset.saturating_sub(3);
+            if app.mock_edit.field == 4 {
+                app.mock_edit.body.scroll_offset =
+                    app.mock_edit.body.scroll_offset.saturating_sub(3);
             }
         }
         MouseEventKind::ScrollDown => {
-            if app.mock_edit_field == 4 {
+            if app.mock_edit.field == 4 {
                 let max = app
-                    .mock_edit_body
+                    .mock_edit
+                    .body
                     .total_lines()
-                    .saturating_sub(app.mock_edit_body.visible_height);
-                app.mock_edit_body.scroll_offset = (app.mock_edit_body.scroll_offset + 3).min(max);
+                    .saturating_sub(app.mock_edit.body.visible_height);
+                app.mock_edit.body.scroll_offset = (app.mock_edit.body.scroll_offset + 3).min(max);
             }
         }
         _ => {}

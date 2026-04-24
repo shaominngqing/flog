@@ -1160,9 +1160,9 @@ fn ui_mock_edit_click_url_field_sets_field_0() {
         ("status".into(), 5, 0, 30),
         ("delay".into(), 6, 0, 30),
     ];
-    app.mock_edit_field = 2;
+    app.mock_edit.field = 2;
     event::handle_mouse(&mut app, click(5, 3));
-    assert_eq!(app.mock_edit_field, 0);
+    assert_eq!(app.mock_edit.field, 0);
 }
 
 #[test]
@@ -1170,7 +1170,7 @@ fn ui_mock_edit_click_method_field_sets_field_1() {
     let mut app = app_in_mock_edit();
     app.layout.mock_edit_regions = vec![("method".into(), 4, 0, 30)];
     event::handle_mouse(&mut app, click(5, 4));
-    assert_eq!(app.mock_edit_field, 1);
+    assert_eq!(app.mock_edit.field, 1);
 }
 
 #[test]
@@ -1178,7 +1178,7 @@ fn ui_mock_edit_click_status_field_sets_field_2() {
     let mut app = app_in_mock_edit();
     app.layout.mock_edit_regions = vec![("status".into(), 5, 0, 30)];
     event::handle_mouse(&mut app, click(5, 5));
-    assert_eq!(app.mock_edit_field, 2);
+    assert_eq!(app.mock_edit.field, 2);
 }
 
 #[test]
@@ -1186,7 +1186,7 @@ fn ui_mock_edit_click_delay_field_sets_field_3() {
     let mut app = app_in_mock_edit();
     app.layout.mock_edit_regions = vec![("delay".into(), 6, 0, 30)];
     event::handle_mouse(&mut app, click(5, 6));
-    assert_eq!(app.mock_edit_field, 3);
+    assert_eq!(app.mock_edit.field, 3);
 }
 
 #[test]
@@ -1195,7 +1195,7 @@ fn ui_mock_edit_click_save_saves_and_exits() {
     app.layout.mock_edit_regions = vec![("save".into(), 8, 0, 10)];
     event::handle_mouse(&mut app, click(3, 8));
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
 }
 
 #[test]
@@ -1204,56 +1204,56 @@ fn ui_mock_edit_click_cancel_cancels_and_exits() {
     app.layout.mock_edit_regions = vec![("cancel".into(), 8, 20, 30)];
     event::handle_mouse(&mut app, click(25, 8));
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
 }
 
 #[test]
 fn ui_mock_edit_click_body_area_selects_field_4() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 0;
+    app.mock_edit.field = 0;
     app.layout.mock_edit_body_rect = Some((5, 10, 40, 10));
     event::handle_mouse(&mut app, click(10, 12));
-    assert_eq!(app.mock_edit_field, 4);
+    assert_eq!(app.mock_edit.field, 4);
 }
 
 #[test]
 fn ui_mock_edit_click_outside_all_regions_is_noop() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 0;
+    app.mock_edit.field = 0;
     // No regions set; click anywhere → no state change.
     event::handle_mouse(&mut app, click(100, 100));
     assert_eq!(app.mode, AppMode::MockRuleEdit);
-    assert_eq!(app.mock_edit_field, 0);
+    assert_eq!(app.mock_edit.field, 0);
 }
 
 #[test]
 fn ui_mock_edit_scroll_down_in_body_field_scrolls_editor() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 4;
-    app.mock_edit_body =
+    app.mock_edit.field = 4;
+    app.mock_edit.body =
         flog::ui::text_editor::TextEditor::new("l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\n");
-    app.mock_edit_body.visible_height = 3;
-    let before = app.mock_edit_body.scroll_offset;
+    app.mock_edit.body.visible_height = 3;
+    let before = app.mock_edit.body.scroll_offset;
     event::handle_mouse(&mut app, scroll_down(5, 5));
-    assert!(app.mock_edit_body.scroll_offset >= before);
+    assert!(app.mock_edit.body.scroll_offset >= before);
 }
 
 #[test]
 fn ui_mock_edit_scroll_up_in_body_field_retreats_editor() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 4;
-    app.mock_edit_body.scroll_offset = 5;
+    app.mock_edit.field = 4;
+    app.mock_edit.body.scroll_offset = 5;
     event::handle_mouse(&mut app, scroll_up(5, 5));
-    assert!(app.mock_edit_body.scroll_offset < 5);
+    assert!(app.mock_edit.body.scroll_offset < 5);
 }
 
 #[test]
 fn ui_mock_edit_scroll_when_not_in_body_field_is_noop() {
     let mut app = app_in_mock_edit();
-    app.mock_edit_field = 0;
-    let before = app.mock_edit_body.scroll_offset;
+    app.mock_edit.field = 0;
+    let before = app.mock_edit.body.scroll_offset;
     event::handle_mouse(&mut app, scroll_down(5, 5));
-    assert_eq!(app.mock_edit_body.scroll_offset, before);
+    assert_eq!(app.mock_edit.body.scroll_offset, before);
 }
 
 #[test]

@@ -274,6 +274,78 @@ impl Default for NetworkState {
     }
 }
 
+/// Mock rule editor state — bundles fields formerly scattered on `App`.
+///
+/// See audit UI-026 / UI-034. The editor has 5 logical fields indexed 0..5:
+/// 0 = URL pattern, 1 = HTTP method, 2 = status code, 3 = delay ms,
+/// 4 = response body (multi-line `TextEditor`).
+///
+/// `rule_id` == `None` means "new-rule draft"; `Some(id)` means "editing
+/// the existing rule with that id".
+///
+/// Mock-edit state machine transitions (audit UI-028):
+/// - `Normal` → `enter_mock_rules()` → toggles the rules-list side panel
+///   in `NetworkState`. Does **not** transition to `MockRuleEdit`.
+/// - `Normal` → `enter_mock_edit(id)` → `MockRuleEdit` with a populated
+///   `MockEditState::from_rule(&rule)`.
+/// - `MockRuleEdit` → `save_mock_edit()` → `Normal`, rule in `mock_rules`
+///   updated in place.
+/// - `MockRuleEdit` → `cancel_mock_edit()` → `Normal`, `mock_rules`
+///   unchanged.
+pub struct MockEditState {
+    /// `None` = new-rule draft; `Some(id)` = editing rule with that id.
+    pub rule_id: Option<usize>,
+    /// Currently-focused field index (0..5). 4 = body, 0..4 = top row.
+    pub field: usize,
+    /// String buffers for the 4 single-line fields: URL, method, status, delay.
+    pub top_values: Vec<String>,
+    /// Multi-line editor for the response body (field 5).
+    pub body: crate::ui::text_editor::TextEditor,
+}
+
+impl MockEditState {
+    /// Blank editor state — `rule_id: None` (new-rule draft), all fields empty.
+    pub fn new_blank() -> Self {
+        Self {
+            rule_id: None,
+            field: 0,
+            top_values: Vec::new(),
+            body: crate::ui::text_editor::TextEditor::new(""),
+        }
+    }
+
+    /// Populate editor state from an existing `MockRule`. Flattens the
+    /// previously-nested `enter_mock_rules` → overwrite dance (audit UI-034).
+    ///
+    /// JSON bodies are pretty-printed for readability; non-JSON bodies pass
+    /// through unchanged.
+    pub fn from_rule(rule: &crate::domain::mock::MockRule) -> Self {
+        let pretty_body =
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&rule.response_body) {
+                serde_json::to_string_pretty(&val).unwrap_or_else(|_| rule.response_body.clone())
+            } else {
+                rule.response_body.clone()
+            };
+        Self {
+            rule_id: Some(rule.id),
+            field: 0,
+            top_values: vec![
+                rule.url_pattern.clone(),
+                rule.method.clone().unwrap_or_else(|| "*".to_string()),
+                rule.status_code.to_string(),
+                rule.delay_ms.to_string(),
+            ],
+            body: crate::ui::text_editor::TextEditor::new(&pretty_body),
+        }
+    }
+}
+
+impl Default for MockEditState {
+    fn default() -> Self {
+        Self::new_blank()
+    }
+}
+
 /// UI layout coordinate cache (written by renderer, read by event handler).
 ///
 /// Every field is a snapshot of the last rendered frame's geometry. The
@@ -430,10 +502,8 @@ pub struct App {
     // Mock rules
     pub mock_rules: crate::domain::mock::MockRuleStore,
     pub mock_rule_selected: usize,
-    pub mock_edit_rule_id: Option<usize>,
-    pub mock_edit_field: usize,
-    pub mock_edit_top_values: Vec<String>,
-    pub mock_edit_body: crate::ui::text_editor::TextEditor,
+    /// Bundled mock rule editor state (audit UI-026 / UI-034).
+    pub mock_edit: MockEditState,
 
     // UI
     pub layout: LayoutCache,
@@ -482,10 +552,7 @@ impl App {
             connect_device_tx: None,
             mock_rules: crate::domain::mock::MockRuleStore::new(),
             mock_rule_selected: 0,
-            mock_edit_rule_id: None,
-            mock_edit_field: 0,
-            mock_edit_top_values: Vec::new(),
-            mock_edit_body: crate::ui::text_editor::TextEditor::new(""),
+            mock_edit: MockEditState::new_blank(),
             layout: LayoutCache::default(),
             tick: 0,
             stats_snapshot: None,
@@ -1040,48 +1107,33 @@ impl App {
     }
 
     pub fn enter_mock_edit(&mut self, rule_id: usize) {
+        // Flattened via MockEditState::from_rule (audit UI-034).
         if let Some(rule) = self.mock_rules.rules().iter().find(|r| r.id == rule_id) {
-            self.mock_edit_rule_id = Some(rule_id);
-            self.mock_edit_field = 0;
-            self.mock_edit_top_values = vec![
-                rule.url_pattern.clone(),
-                rule.method.clone().unwrap_or_else(|| "*".to_string()),
-                rule.status_code.to_string(),
-                rule.delay_ms.to_string(),
-            ];
-            // Pretty-print JSON body for readability
-            let pretty_body = if let Ok(val) =
-                serde_json::from_str::<serde_json::Value>(&rule.response_body)
-            {
-                serde_json::to_string_pretty(&val).unwrap_or_else(|_| rule.response_body.clone())
-            } else {
-                rule.response_body.clone()
-            };
-            self.mock_edit_body = crate::ui::text_editor::TextEditor::new(&pretty_body);
+            self.mock_edit = MockEditState::from_rule(rule);
             self.mode = AppMode::MockRuleEdit;
         }
     }
 
     pub fn save_mock_edit(&mut self) {
-        if let Some(id) = self.mock_edit_rule_id {
+        if let Some(id) = self.mock_edit.rule_id {
             if let Some(rule) = self.mock_rules.get_mut(id) {
-                rule.url_pattern = self.mock_edit_top_values[0].clone();
-                rule.method = if self.mock_edit_top_values[1] == "*" {
+                rule.url_pattern = self.mock_edit.top_values[0].clone();
+                rule.method = if self.mock_edit.top_values[1] == "*" {
                     None
                 } else {
-                    Some(self.mock_edit_top_values[1].clone())
+                    Some(self.mock_edit.top_values[1].clone())
                 };
-                rule.status_code = self.mock_edit_top_values[2].parse().unwrap_or(200);
-                rule.delay_ms = self.mock_edit_top_values[3].parse().unwrap_or(0);
-                rule.response_body = self.mock_edit_body.content();
+                rule.status_code = self.mock_edit.top_values[2].parse().unwrap_or(200);
+                rule.delay_ms = self.mock_edit.top_values[3].parse().unwrap_or(0);
+                rule.response_body = self.mock_edit.body.content();
             }
         }
-        self.mock_edit_rule_id = None;
+        self.mock_edit.rule_id = None;
         self.mode = AppMode::Normal;
     }
 
     pub fn cancel_mock_edit(&mut self) {
-        self.mock_edit_rule_id = None;
+        self.mock_edit.rule_id = None;
         self.mode = AppMode::Normal;
     }
 

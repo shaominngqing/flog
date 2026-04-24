@@ -29,8 +29,8 @@
 #![allow(clippy::too_many_lines)]
 
 use flog::app::{
-    App, AppMode, ConnectedApp, InputBuffers, InputField, LayoutCache, NetworkState, SseMergeRule,
-    SsePathSegment, ViewTab,
+    App, AppMode, ConnectedApp, InputBuffers, InputField, LayoutCache, MockEditState, NetworkState,
+    SseMergeRule, SsePathSegment, ViewTab,
 };
 use flog::domain::entry::{InputSource, LogEntry, LogLevel};
 use flog::domain::network::NetworkEntry;
@@ -1272,7 +1272,7 @@ fn enter_mock_edit_unknown_id_is_noop() {
     let mut app = App::new();
     app.enter_mock_edit(999);
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
 }
 
 #[test]
@@ -1287,13 +1287,13 @@ fn enter_mock_edit_populates_fields_from_rule() {
     );
     app.enter_mock_edit(id);
     assert_eq!(app.mode, AppMode::MockRuleEdit);
-    assert_eq!(app.mock_edit_rule_id, Some(id));
-    assert_eq!(app.mock_edit_top_values[0], "https://ex.test");
-    assert_eq!(app.mock_edit_top_values[1], "POST");
-    assert_eq!(app.mock_edit_top_values[2], "404");
-    assert_eq!(app.mock_edit_top_values[3], "150");
+    assert_eq!(app.mock_edit.rule_id, Some(id));
+    assert_eq!(app.mock_edit.top_values[0], "https://ex.test");
+    assert_eq!(app.mock_edit.top_values[1], "POST");
+    assert_eq!(app.mock_edit.top_values[2], "404");
+    assert_eq!(app.mock_edit.top_values[3], "150");
     // pretty-printed body is multiline.
-    assert!(app.mock_edit_body.content().contains('1'));
+    assert!(app.mock_edit.body.content().contains('1'));
 }
 
 #[test]
@@ -1301,7 +1301,7 @@ fn enter_mock_edit_none_method_yields_star() {
     let mut app = App::new();
     let id = app.mock_rules.add("u".into(), None, 200, "{}".into(), 0);
     app.enter_mock_edit(id);
-    assert_eq!(app.mock_edit_top_values[1], "*");
+    assert_eq!(app.mock_edit.top_values[1], "*");
 }
 
 #[test]
@@ -1311,7 +1311,7 @@ fn enter_mock_edit_invalid_json_body_passes_through() {
         .mock_rules
         .add("u".into(), None, 200, "not-json".into(), 0);
     app.enter_mock_edit(id);
-    assert_eq!(app.mock_edit_body.content(), "not-json");
+    assert_eq!(app.mock_edit.body.content(), "not-json");
 }
 
 #[test]
@@ -1321,13 +1321,13 @@ fn save_mock_edit_updates_rule_and_exits_mode() {
         .mock_rules
         .add("old".into(), Some("GET".into()), 200, "{}".into(), 0);
     app.enter_mock_edit(id);
-    app.mock_edit_top_values[0] = "new-url".to_string();
-    app.mock_edit_top_values[1] = "*".to_string();
-    app.mock_edit_top_values[2] = "418".to_string();
-    app.mock_edit_top_values[3] = "99".to_string();
+    app.mock_edit.top_values[0] = "new-url".to_string();
+    app.mock_edit.top_values[1] = "*".to_string();
+    app.mock_edit.top_values[2] = "418".to_string();
+    app.mock_edit.top_values[3] = "99".to_string();
     app.save_mock_edit();
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
     let rule = app.mock_rules.rules().iter().find(|r| r.id == id).unwrap();
     assert_eq!(rule.url_pattern, "new-url");
     assert!(rule.method.is_none());
@@ -1341,7 +1341,7 @@ fn save_mock_edit_without_rule_id_still_exits_mode() {
     app.mode = AppMode::MockRuleEdit;
     app.save_mock_edit();
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
 }
 
 #[test]
@@ -1351,7 +1351,7 @@ fn save_mock_edit_bad_status_parses_fallback_200() {
         .mock_rules
         .add("u".into(), Some("GET".into()), 500, "{}".into(), 0);
     app.enter_mock_edit(id);
-    app.mock_edit_top_values[2] = "not-a-number".to_string();
+    app.mock_edit.top_values[2] = "not-a-number".to_string();
     app.save_mock_edit();
     let rule = app.mock_rules.rules().iter().find(|r| r.id == id).unwrap();
     assert_eq!(rule.status_code, 200);
@@ -1362,7 +1362,7 @@ fn save_mock_edit_bad_delay_parses_fallback_0() {
     let mut app = App::new();
     let id = app.mock_rules.add("u".into(), None, 200, "{}".into(), 0);
     app.enter_mock_edit(id);
-    app.mock_edit_top_values[3] = "nope".to_string();
+    app.mock_edit.top_values[3] = "nope".to_string();
     app.save_mock_edit();
     let rule = app.mock_rules.rules().iter().find(|r| r.id == id).unwrap();
     assert_eq!(rule.delay_ms, 0);
@@ -1373,7 +1373,7 @@ fn save_mock_edit_preserves_body_content() {
     let mut app = App::new();
     let id = app.mock_rules.add("u".into(), None, 200, "{}".into(), 0);
     app.enter_mock_edit(id);
-    app.mock_edit_body = flog::ui::text_editor::TextEditor::new("new-body");
+    app.mock_edit.body = flog::ui::text_editor::TextEditor::new("new-body");
     app.save_mock_edit();
     let rule = app.mock_rules.rules().iter().find(|r| r.id == id).unwrap();
     assert_eq!(rule.response_body, "new-body");
@@ -1384,10 +1384,10 @@ fn cancel_mock_edit_discards_changes() {
     let mut app = App::new();
     let id = app.mock_rules.add("orig".into(), None, 200, "{}".into(), 0);
     app.enter_mock_edit(id);
-    app.mock_edit_top_values[0] = "would-be-dropped".to_string();
+    app.mock_edit.top_values[0] = "would-be-dropped".to_string();
     app.cancel_mock_edit();
     assert_eq!(app.mode, AppMode::Normal);
-    assert!(app.mock_edit_rule_id.is_none());
+    assert!(app.mock_edit.rule_id.is_none());
     let rule = app.mock_rules.rules().iter().find(|r| r.id == id).unwrap();
     assert_eq!(rule.url_pattern, "orig");
 }
@@ -1707,4 +1707,58 @@ fn app_new_starts_with_default_layout_cache() {
     assert!(app.layout.last_click.is_none());
     assert!(app.layout.device_picker_items.is_empty());
     assert!(!app.layout.rendered_to_end);
+}
+
+// =====================================================================
+//  MockEditState (UI-026 + UI-034)
+// =====================================================================
+
+#[test]
+fn mock_edit_state_new_blank_has_no_rule_id_and_empty_fields() {
+    let st = MockEditState::new_blank();
+    assert!(st.rule_id.is_none());
+    assert_eq!(st.field, 0);
+    assert!(st.top_values.is_empty());
+    assert_eq!(st.body.content(), "");
+}
+
+#[test]
+fn mock_edit_state_from_rule_populates_all_fields() {
+    let rule = flog::domain::mock::MockRule {
+        id: 7,
+        url_pattern: "https://ex.test/api".into(),
+        method: Some("POST".into()),
+        status_code: 404,
+        response_body: "{\"err\":1}".into(),
+        delay_ms: 250,
+        enabled: true,
+        hit_count: 0,
+    };
+    let st = MockEditState::from_rule(&rule);
+    assert_eq!(st.rule_id, Some(7));
+    assert_eq!(st.field, 0);
+    assert_eq!(st.top_values[0], "https://ex.test/api");
+    assert_eq!(st.top_values[1], "POST");
+    assert_eq!(st.top_values[2], "404");
+    assert_eq!(st.top_values[3], "250");
+    // JSON body is pretty-printed; verify it contains the field.
+    assert!(st.body.content().contains("err"));
+}
+
+#[test]
+fn mock_edit_state_from_rule_none_method_becomes_star_and_non_json_passes_through() {
+    let rule = flog::domain::mock::MockRule {
+        id: 1,
+        url_pattern: "u".into(),
+        method: None,
+        status_code: 200,
+        response_body: "not-json".into(),
+        delay_ms: 0,
+        enabled: true,
+        hit_count: 0,
+    };
+    let st = MockEditState::from_rule(&rule);
+    assert_eq!(st.top_values[1], "*");
+    // Non-JSON body passes through unchanged.
+    assert_eq!(st.body.content(), "not-json");
 }
