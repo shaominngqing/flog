@@ -500,4 +500,121 @@ mod tests {
         assert_eq!(ed.lines, vec![""]);
         assert!(ed.total_lines() >= 1);
     }
+
+    // ── Phase 2.5B Task 10b additions ────────────────────────────────
+    //
+    // Fill remaining uncovered branches.
+
+    #[test]
+    fn ensure_cursor_visible_zero_height_no_op() {
+        let mut ed = TextEditor::new("a\nb\nc\nd");
+        ed.visible_height = 0;
+        ed.cursor_row = 3;
+        ed.ensure_cursor_visible();
+        // No change with zero visible height.
+        assert_eq!(ed.scroll_offset, 0);
+    }
+
+    #[test]
+    fn paste_empty_string_is_single_empty_fragment() {
+        // split("\n") on "" yields [""] — which is len==1 but not is_empty.
+        // Covers the "parts.len() == 1" branch where the fragment is "".
+        let mut ed = TextEditor::new("abc");
+        ed.cursor_col = 1;
+        ed.paste("");
+        // Nothing inserted; cursor stays at col 1.
+        assert_eq!(ed.lines, vec!["abc"]);
+        assert_eq!(ed.cursor_col, 1);
+    }
+
+    #[test]
+    fn paste_multiline_three_parts_middle_inserted() {
+        // Exercises the "middle fragment" branch (i != 0, i != last).
+        let mut ed = TextEditor::new("xyz");
+        ed.cursor_col = 1;
+        ed.paste("A\nB\nC");
+        assert_eq!(ed.lines, vec!["xA", "B", "Cyz"]);
+        assert_eq!(ed.cursor_row, 2);
+        assert_eq!(ed.cursor_col, 1);
+    }
+
+    #[test]
+    fn backspace_with_multibyte_char() {
+        let mut ed = TextEditor::new("a中b");
+        // "中" is 3 bytes UTF-8.
+        ed.cursor_col = 4; // after "中"
+        ed.backspace();
+        assert_eq!(ed.lines, vec!["ab"]);
+        assert_eq!(ed.cursor_col, 1);
+    }
+
+    #[test]
+    fn move_right_across_multibyte() {
+        let mut ed = TextEditor::new("a中b");
+        ed.cursor_col = 0;
+        ed.move_right();
+        assert_eq!(ed.cursor_col, 1); // after 'a'
+        ed.move_right();
+        assert_eq!(ed.cursor_col, 4); // after '中' (3 bytes)
+        ed.move_right();
+        assert_eq!(ed.cursor_col, 5); // after 'b'
+    }
+
+    #[test]
+    fn click_with_wide_char_maps_screen_col_to_byte() {
+        // "a中b": screen cols are [a=0, 中=1..3, b=3..4]
+        let mut ed = TextEditor::new("a中b");
+        ed.click(0, 1); // inside 中
+                        // Only 'a' consumed before reaching screen_col 1: byte_offset=1
+        assert_eq!(ed.cursor_col, 1);
+        ed.click(0, 3); // after 中
+                        // a (1 byte, w=1) -> 中 (3 bytes, w=2 so screen_col=3 after it)
+        assert_eq!(ed.cursor_col, 4);
+    }
+
+    #[test]
+    fn insert_multibyte_char() {
+        let mut ed = TextEditor::new("ab");
+        ed.cursor_col = 1;
+        ed.insert_char('中');
+        assert_eq!(ed.lines, vec!["a中b"]);
+        // cursor moves by len_utf8=3
+        assert_eq!(ed.cursor_col, 4);
+    }
+
+    #[test]
+    fn move_left_at_start_no_change() {
+        let mut ed = TextEditor::new("abc");
+        ed.move_left();
+        assert_eq!(ed.cursor_col, 0);
+        assert_eq!(ed.cursor_row, 0);
+    }
+
+    #[test]
+    fn move_left_across_multibyte() {
+        // The move_left char-boundary branch (cursor_col > 0) was exercised by
+        // test_cursor_movement only via wrap; here we explicitly step back over
+        // a multi-byte codepoint.
+        let mut ed = TextEditor::new("a中b");
+        ed.cursor_col = 4; // after 中
+        ed.move_left();
+        assert_eq!(ed.cursor_col, 1); // now before 中
+        ed.move_left();
+        assert_eq!(ed.cursor_col, 0);
+    }
+
+    #[test]
+    fn move_end_on_empty_line() {
+        let mut ed = TextEditor::new("");
+        ed.move_end();
+        assert_eq!(ed.cursor_col, 0);
+    }
+
+    #[test]
+    fn delete_with_multibyte_char() {
+        let mut ed = TextEditor::new("中a");
+        ed.cursor_col = 0;
+        ed.delete();
+        assert_eq!(ed.lines, vec!["a"]);
+    }
 }

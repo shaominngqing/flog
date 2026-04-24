@@ -257,4 +257,183 @@ mod tests {
         assert_eq!(out.len(), 3);
         assert_eq!(out[0], "a");
     }
+
+    // ── Phase 2.5B Task 10b additions ────────────────────────────────
+    //
+    // Cover the shared helpers that power toolbar / detail rendering.
+
+    #[test]
+    fn safe_pad_shorter_than_width_pads_spaces() {
+        let r = safe_pad("hi", 5);
+        assert_eq!(r, "hi   ");
+        assert_eq!(r.len(), 5);
+    }
+
+    #[test]
+    fn safe_pad_exactly_width_returns_unchanged() {
+        let r = safe_pad("hello", 5);
+        assert_eq!(r, "hello");
+    }
+
+    #[test]
+    fn safe_pad_longer_than_width_truncates_no_ellipsis() {
+        let r = safe_pad("abcdefgh", 5);
+        // safe_pad truncates to fit exactly `width` cells (no ellipsis).
+        assert_eq!(r.width(), 5);
+        assert!("abcdefgh".starts_with(&r));
+    }
+
+    #[test]
+    fn safe_pad_cjk_respects_display_width() {
+        // "中" is width 2
+        let r = safe_pad("中", 5);
+        assert_eq!(r.width(), 5);
+        assert!(r.starts_with('中'));
+    }
+
+    #[test]
+    fn safe_pad_cjk_truncates_by_display_width() {
+        // "中" width=2, so safe_pad with width=1 truncates the wide char and pads with spaces.
+        let r = safe_pad("中a", 1);
+        assert_eq!(r.width(), 1);
+    }
+
+    #[test]
+    fn safe_truncate_short_enough_returns_unchanged() {
+        let r = safe_truncate("hello", 10);
+        assert_eq!(r, "hello");
+    }
+
+    #[test]
+    fn safe_truncate_exactly_fits() {
+        let r = safe_truncate("hello", 5);
+        assert_eq!(r, "hello");
+    }
+
+    #[test]
+    fn safe_truncate_long_cuts_and_ellipses() {
+        let r = safe_truncate("abcdefghij", 7);
+        // max_w - 3 = 4 chars + "..."
+        assert_eq!(r, "abcd...");
+    }
+
+    #[test]
+    fn safe_truncate_zero_width_returns_empty() {
+        let r = safe_truncate("abc", 0);
+        assert_eq!(r, "");
+    }
+
+    #[test]
+    fn safe_truncate_cjk_width_aware() {
+        // "中中中" total width 6; with max_w=5, trunc_w=2 → keep "中" (width 2) + "..."
+        let r = safe_truncate("中中中", 5);
+        assert!(r.ends_with("..."));
+        assert!(r.starts_with('中'));
+        // Width is "中" (2) + "..." (3) = 5.
+        assert!(r.width() <= 5);
+    }
+
+    #[test]
+    fn wrap_text_zero_width_returns_empty_placeholder() {
+        let out = wrap_text("anything", 0, 3);
+        assert_eq!(out, vec![""]);
+    }
+
+    #[test]
+    fn wrap_text_zero_max_lines_returns_empty_placeholder() {
+        let out = wrap_text("anything", 10, 0);
+        assert_eq!(out, vec![""]);
+    }
+
+    #[test]
+    fn wrap_text_exactly_width_one_line() {
+        let out = wrap_text("abcde", 5, 5);
+        assert_eq!(out, vec!["abcde"]);
+    }
+
+    #[test]
+    fn wrap_text_splits_on_width_boundary() {
+        let out = wrap_text("abcdefghij", 5, 5);
+        assert_eq!(out, vec!["abcde", "fghij"]);
+    }
+
+    #[test]
+    fn wrap_text_max_lines_cap_with_ellipsis() {
+        let out = wrap_text("aaaaaaaaaaaaaaaaaaaa", 5, 2);
+        // Hit cap of 2 lines then truncate last with "..."
+        assert_eq!(out.len(), 2);
+        assert!(out[1].ends_with("..."));
+    }
+
+    #[test]
+    fn wrap_text_empty_string_yields_one_empty_line() {
+        let out = wrap_text("", 10, 5);
+        assert_eq!(out, vec![""]);
+    }
+
+    #[test]
+    fn wrap_multiline_zero_width_returns_empty() {
+        let out = wrap_multiline("abc\ndef", 0, 5);
+        assert_eq!(out, vec![""]);
+    }
+
+    #[test]
+    fn wrap_multiline_zero_lines_returns_empty() {
+        let out = wrap_multiline("abc\ndef", 10, 0);
+        assert_eq!(out, vec![""]);
+    }
+
+    #[test]
+    fn wrap_multiline_leading_newline_preserves_blank() {
+        let out = wrap_multiline("\nsecond", 10, 5);
+        assert_eq!(out, vec!["", "second"]);
+    }
+
+    #[test]
+    fn draw_separator_rule_renders_horizontal_line() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+        let backend = TestBackend::new(10, 1);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            let area = Rect::new(0, 0, 10, 1);
+            draw_separator_rule(f, area);
+        })
+        .unwrap();
+        let buf = term.backend().buffer().clone();
+        let row: String = (0..10).map(|x| buf[(x, 0)].symbol().to_string()).collect();
+        assert!(
+            row.contains('─'),
+            "expected separator rule char '─' in: {:?}",
+            row
+        );
+    }
+
+    #[test]
+    fn draw_top_level_dispatches_logs_tab() {
+        use crate::app::{App, ViewTab};
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+        let mut app = App::new();
+        app.active_tab = ViewTab::Logs;
+        let backend = TestBackend::new(80, 12);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| draw(f, &mut app)).unwrap();
+        // Tick incremented by draw.
+        assert!(app.tick >= 1);
+        assert_eq!(app.layout.width, 80);
+    }
+
+    #[test]
+    fn draw_top_level_dispatches_network_tab() {
+        use crate::app::{App, ViewTab};
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+        let mut app = App::new();
+        app.active_tab = ViewTab::Network;
+        let backend = TestBackend::new(80, 12);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| draw(f, &mut app)).unwrap();
+        assert_eq!(app.layout.tab_bar_y, 0);
+    }
 }

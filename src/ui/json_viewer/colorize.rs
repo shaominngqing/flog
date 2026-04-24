@@ -234,3 +234,305 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    //! Phase 2.5B Task 10b — characterization tests for `colorize_json_text`.
+    //!
+    //! Covers every tokenizer branch of the raw-text JSON syntax highlighter:
+    //! strings (incl. escapes + unterminated), braces/brackets (depth-cycled),
+    //! commas/colons, keywords (true/false/null and near-misses like truely),
+    //! numbers (int, float, negative, exponent), whitespace, fallthrough
+    //! text, multi-line handling, and empty lines.
+    //!
+    //! Rule 3 — we assert on OBSERVABLE styling: the color of each span, not
+    //! the full internal representation. Rule 11 UNTESTABLE:
+    //!   - Exact palette colors are constants; tests reference them via the
+    //!     private `palette` module (available because tests live in the
+    //!     same crate).
+    use super::super::palette::{
+        brace_color, key_color, BOOL_COLOR, COMMA_COLOR, NULL_COLOR, NUM_COLOR, STR_COLOR,
+    };
+    use super::*;
+
+    /// Collect every span's content across all lines.
+    fn all_text(lines: &[Line<'static>]) -> String {
+        lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn colorize_empty_string_returns_single_empty_line() {
+        let out = colorize_json_text("");
+        // "" splits into [""] -> empty line branch pushes Line::raw("").
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].spans.len(), 0);
+    }
+
+    #[test]
+    fn colorize_blank_line_passes_through() {
+        let out = colorize_json_text("\n\n");
+        assert_eq!(out.len(), 3);
+    }
+
+    #[test]
+    fn colorize_simple_key_value_object() {
+        let out = colorize_json_text(r#"{"a":1}"#);
+        // spans expected: { (brace d0), "a" (key at depth 1 — opened brace first),
+        // : (comma), 1 (num), } (brace d0 — decremented before rendering)
+        let line = &out[0];
+        assert_eq!(line.spans[0].content, "{");
+        assert_eq!(line.spans[0].style.fg, Some(brace_color(0)));
+        assert_eq!(line.spans[1].content, "\"a\"");
+        assert_eq!(line.spans[1].style.fg, Some(key_color(1)));
+        assert_eq!(line.spans[2].content, ":");
+        assert_eq!(line.spans[2].style.fg, Some(COMMA_COLOR));
+        assert_eq!(line.spans[3].content, "1");
+        assert_eq!(line.spans[3].style.fg, Some(NUM_COLOR));
+        assert_eq!(line.spans[4].content, "}");
+        assert_eq!(line.spans[4].style.fg, Some(brace_color(0)));
+    }
+
+    #[test]
+    fn colorize_nested_object_uses_depth_colors() {
+        let out = colorize_json_text(r#"{"a":{"b":1}}"#);
+        let line = &out[0];
+        // After '{' depth=1 → "a" uses key_color(1);
+        // after inner '{' depth=2 → "b" uses key_color(2). Distinct.
+        let key_a_fg = line
+            .spans
+            .iter()
+            .find(|s| s.content == "\"a\"")
+            .and_then(|s| s.style.fg)
+            .unwrap();
+        let key_b_fg = line
+            .spans
+            .iter()
+            .find(|s| s.content == "\"b\"")
+            .and_then(|s| s.style.fg)
+            .unwrap();
+        assert_ne!(key_a_fg, key_b_fg);
+        assert_eq!(key_a_fg, key_color(1));
+        assert_eq!(key_b_fg, key_color(2));
+    }
+
+    #[test]
+    fn colorize_string_value_uses_str_color() {
+        let out = colorize_json_text(r#""hello""#);
+        // Standalone string — no colon follows, so it's a value.
+        assert_eq!(out[0].spans[0].content, "\"hello\"");
+        assert_eq!(out[0].spans[0].style.fg, Some(STR_COLOR));
+    }
+
+    #[test]
+    fn colorize_string_with_escape() {
+        let out = colorize_json_text(r#""he\"llo""#);
+        assert_eq!(out[0].spans[0].content, r#""he\"llo""#);
+        assert_eq!(out[0].spans[0].style.fg, Some(STR_COLOR));
+    }
+
+    #[test]
+    fn colorize_unterminated_string_enters_multiline_state() {
+        // Line 1 opens a string that doesn't close → line 2 continues in-string.
+        let out = colorize_json_text("\"abc\n\"def\"");
+        // Line 0: opened string, pushed as STR_COLOR unterminated
+        assert_eq!(out[0].spans[0].style.fg, Some(STR_COLOR));
+        // Line 1: continues inside string until closing '"'
+        assert!(!out[1].spans.is_empty());
+        assert_eq!(out[1].spans[0].style.fg, Some(STR_COLOR));
+    }
+
+    #[test]
+    fn colorize_array_brackets_uses_brace_color() {
+        let out = colorize_json_text(r#"[1, 2]"#);
+        let line = &out[0];
+        assert_eq!(line.spans[0].content, "[");
+        assert_eq!(line.spans[0].style.fg, Some(brace_color(0)));
+        // 1
+        assert_eq!(line.spans[1].style.fg, Some(NUM_COLOR));
+        // ','
+        let comma_span = line.spans.iter().find(|s| s.content == ",").unwrap();
+        assert_eq!(comma_span.style.fg, Some(COMMA_COLOR));
+        // ']'
+        let close_span = line.spans.iter().find(|s| s.content == "]").unwrap();
+        assert_eq!(close_span.style.fg, Some(brace_color(0)));
+    }
+
+    #[test]
+    fn colorize_true_and_false_use_bool_color() {
+        let out = colorize_json_text("true false");
+        let t = out[0].spans.iter().find(|s| s.content == "true").unwrap();
+        let f = out[0].spans.iter().find(|s| s.content == "false").unwrap();
+        assert_eq!(t.style.fg, Some(BOOL_COLOR));
+        assert_eq!(f.style.fg, Some(BOOL_COLOR));
+    }
+
+    #[test]
+    fn colorize_null_uses_null_color_and_italic() {
+        use ratatui::style::Modifier;
+        let out = colorize_json_text("null");
+        let n = &out[0].spans[0];
+        assert_eq!(n.content, "null");
+        assert_eq!(n.style.fg, Some(NULL_COLOR));
+        assert!(n.style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn colorize_truely_is_not_keyword() {
+        // "truely" starts with "true" but followed by alphanumeric — not recognized.
+        let out = colorize_json_text("truely");
+        let joined = all_text(&out);
+        assert_eq!(joined, "truely");
+        // No span should be styled as BOOL_COLOR for the "true" prefix.
+        for span in &out[0].spans {
+            assert_ne!(span.style.fg, Some(BOOL_COLOR));
+        }
+    }
+
+    #[test]
+    fn colorize_falsey_is_not_keyword() {
+        let out = colorize_json_text("falsey");
+        assert_eq!(all_text(&out), "falsey");
+        for span in &out[0].spans {
+            assert_ne!(span.style.fg, Some(BOOL_COLOR));
+        }
+    }
+
+    #[test]
+    fn colorize_nullable_is_not_keyword() {
+        let out = colorize_json_text("nullable");
+        assert_eq!(all_text(&out), "nullable");
+        for span in &out[0].spans {
+            assert_ne!(span.style.fg, Some(NULL_COLOR));
+        }
+    }
+
+    #[test]
+    fn colorize_integer() {
+        let out = colorize_json_text("42");
+        assert_eq!(out[0].spans[0].content, "42");
+        assert_eq!(out[0].spans[0].style.fg, Some(NUM_COLOR));
+    }
+
+    #[test]
+    fn colorize_float() {
+        let out = colorize_json_text("3.14");
+        assert_eq!(out[0].spans[0].content, "3.14");
+        assert_eq!(out[0].spans[0].style.fg, Some(NUM_COLOR));
+    }
+
+    #[test]
+    fn colorize_negative_number() {
+        let out = colorize_json_text("-17");
+        assert_eq!(out[0].spans[0].content, "-17");
+        assert_eq!(out[0].spans[0].style.fg, Some(NUM_COLOR));
+    }
+
+    #[test]
+    fn colorize_negative_not_followed_by_digit_is_text() {
+        // "- abc" → the '-' goes to fallthrough (default text), not a number.
+        let out = colorize_json_text("- abc");
+        let joined = all_text(&out);
+        assert_eq!(joined, "- abc");
+        // No NUM_COLOR span.
+        for span in &out[0].spans {
+            assert_ne!(span.style.fg, Some(NUM_COLOR));
+        }
+    }
+
+    #[test]
+    fn colorize_exponent_number() {
+        let out = colorize_json_text("1.5e10");
+        assert_eq!(out[0].spans[0].content, "1.5e10");
+        assert_eq!(out[0].spans[0].style.fg, Some(NUM_COLOR));
+    }
+
+    #[test]
+    fn colorize_malformed_json_passes_through() {
+        // Closing brace with no open — depth saturating_sub keeps it safe.
+        let out = colorize_json_text("}]");
+        assert_eq!(out[0].spans.len(), 2);
+        // Both are brace-colored.
+        assert_eq!(out[0].spans[0].style.fg, Some(brace_color(0)));
+    }
+
+    #[test]
+    fn colorize_preserves_surrounding_non_json_text() {
+        let out = colorize_json_text("prefix {\"k\":1} suffix");
+        let joined = all_text(&out);
+        assert_eq!(joined, "prefix {\"k\":1} suffix");
+    }
+
+    #[test]
+    fn colorize_multiline_json() {
+        let src = "{\n  \"a\": 1\n}";
+        let out = colorize_json_text(src);
+        assert_eq!(out.len(), 3);
+        // line 0: '{'
+        assert_eq!(out[0].spans[0].content, "{");
+        // line 1 contains "a" key and a number
+        let l1_text = all_text(&[out[1].clone()]);
+        assert!(l1_text.contains("\"a\""));
+        assert!(l1_text.contains("1"));
+        // line 2: '}'
+        assert_eq!(out[2].spans[0].content, "}");
+    }
+
+    #[test]
+    fn colorize_whitespace_runs_grouped_as_default() {
+        let out = colorize_json_text("   ");
+        // three spaces flushed as a single default span on exit.
+        assert_eq!(out[0].spans.len(), 1);
+        assert_eq!(out[0].spans[0].content, "   ");
+    }
+
+    #[test]
+    fn colorize_tab_and_cr_in_whitespace() {
+        let out = colorize_json_text("\t\r ");
+        assert_eq!(out[0].spans.len(), 1);
+        assert_eq!(out[0].spans[0].content, "\t\r ");
+    }
+
+    #[test]
+    fn colorize_unterminated_string_middle_of_line() {
+        // Open a string that never closes on this single line.
+        let out = colorize_json_text("\"abc");
+        assert_eq!(out[0].spans[0].style.fg, Some(STR_COLOR));
+    }
+
+    #[test]
+    fn colorize_escape_in_unterminated_string_on_continuing_line() {
+        // Multi-line: line 0 opens with a string that goes into line 1 with an escape.
+        let src = "\"a\nb\\nend\"";
+        let out = colorize_json_text(src);
+        // line 1 was in_string and should close after final '"'.
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn colorize_key_with_whitespace_before_colon() {
+        // "a"  :1 — key detection skips whitespace before ':'
+        let out = colorize_json_text(r#"{"a" :1}"#);
+        let line = &out[0];
+        let a_span = line.spans.iter().find(|s| s.content == "\"a\"").unwrap();
+        assert_eq!(a_span.style.fg, Some(key_color(1)));
+    }
+
+    #[test]
+    fn colorize_deep_nesting_beyond_palette_wraps() {
+        // 7 nesting levels — palette has 6. After opening 7 '{' depth=7; key_color(7 % 6) == key_color(1).
+        let out = colorize_json_text(r#"{"a":{"b":{"c":{"d":{"e":{"f":{"g":1}}}}}}}"#);
+        let line = &out[0];
+        let g_span = line.spans.iter().find(|s| s.content == "\"g\"").unwrap();
+        assert_eq!(g_span.style.fg, Some(key_color(7)));
+    }
+}

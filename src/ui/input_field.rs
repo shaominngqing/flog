@@ -282,4 +282,200 @@ mod tests {
         let (out, _, _) = visible_window("abc", 0, 0, false);
         assert_eq!(out, "");
     }
+
+    // ── Phase 2.5B Task 10b additions ────────────────────────────────
+    //
+    // Fill remaining uncovered branches: idle+empty hint rendering, active+
+    // empty state, cursor at start, cursor mid-string slide window, exact-fit
+    // box, CJK wide char slide.
+
+    #[test]
+    fn visible_window_idle_exact_fit_no_ellipsis() {
+        // total == box_width → returns unchanged.
+        let (out, l, r) = visible_window("abcde", 3, 5, false);
+        assert_eq!(out, "abcde");
+        assert!(!l && !r);
+    }
+
+    #[test]
+    fn visible_window_active_cursor_at_start_no_left_ellipsis() {
+        // cursor at byte 0, short string fits → returns whole string
+        let (out, l, r) = visible_window("abc", 0, 5, true);
+        assert_eq!(out, "abc");
+        assert!(!l && !r);
+    }
+
+    #[test]
+    fn visible_window_active_cursor_in_middle() {
+        // 20 chars, box=5, cursor at byte 10 → slide so cursor visible
+        let value = "abcdefghijklmnopqrst";
+        let (out, _l, _r) = visible_window(value, 10, 5, true);
+        let out_w: usize = out
+            .chars()
+            .map(|c| unicode_width::UnicodeWidthChar::width(c).unwrap_or(0))
+            .sum();
+        assert!(
+            out_w <= 5,
+            "window exceeded box_width: {:?} w={}",
+            out,
+            out_w
+        );
+    }
+
+    #[test]
+    fn render_input_field_idle_empty_shows_hint() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "Search",
+                hint: "regex",
+                value: "",
+                active: false,
+                cursor_byte: 0,
+                total_width: 30,
+            },
+            0,
+        );
+        // spans: [label, body]
+        assert_eq!(r.spans.len(), 2);
+        let body = &r.spans[1].content;
+        assert!(
+            body.contains("regex"),
+            "body should contain hint: {:?}",
+            body
+        );
+    }
+
+    #[test]
+    fn render_input_field_idle_with_text_yellow_fg() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "Search",
+                hint: "regex",
+                value: "hello",
+                active: false,
+                cursor_byte: 0,
+                total_width: 30,
+            },
+            0,
+        );
+        // Body span fg should be YELLOW when has_text && !active.
+        let body_span = &r.spans[1];
+        assert_eq!(body_span.style.fg, Some(YELLOW));
+        assert!(body_span.content.contains("hello"));
+    }
+
+    #[test]
+    fn render_input_field_active_shows_underscore_cursor() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "Search",
+                hint: "regex",
+                value: "abc",
+                active: true,
+                cursor_byte: 3,
+                total_width: 30,
+            },
+            0,
+        );
+        let body = &r.spans[1].content;
+        assert!(
+            body.contains('_'),
+            "active body should have cursor '_': {:?}",
+            body
+        );
+        assert!(body.contains("abc"));
+        // fg=TEXT when active.
+        assert_eq!(r.spans[1].style.fg, Some(TEXT));
+    }
+
+    #[test]
+    fn render_input_field_active_empty_shows_only_cursor() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "S",
+                hint: "h",
+                value: "",
+                active: true,
+                cursor_byte: 0,
+                total_width: 20,
+            },
+            0,
+        );
+        let body = &r.spans[1].content;
+        assert!(
+            body.starts_with('_'),
+            "active empty body starts with '_': {:?}",
+            body
+        );
+    }
+
+    #[test]
+    fn render_input_field_used_width_consistent_with_hit_x() {
+        let x = 12u16;
+        let r = render_input_field(
+            InputFieldProps {
+                label: "Tag",
+                hint: "pat",
+                value: "",
+                active: false,
+                cursor_byte: 0,
+                total_width: 40,
+            },
+            x,
+        );
+        assert_eq!(r.hit_x, (x, x + r.used_width));
+    }
+
+    #[test]
+    fn render_input_field_long_text_truncates_with_ellipsis_when_idle() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "S",
+                hint: "",
+                value: "abcdefghijklmnopqrstuvwxyz",
+                active: false,
+                cursor_byte: 0,
+                total_width: 12, // label=" S: " (4) + box=8
+            },
+            0,
+        );
+        let body = &r.spans[1].content;
+        assert!(
+            body.contains('…'),
+            "idle long text should have ellipsis: {:?}",
+            body
+        );
+    }
+
+    #[test]
+    fn render_input_field_bg_active_is_surface1() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "S",
+                hint: "",
+                value: "x",
+                active: true,
+                cursor_byte: 1,
+                total_width: 20,
+            },
+            0,
+        );
+        assert_eq!(r.spans[1].style.bg, Some(SURFACE1));
+    }
+
+    #[test]
+    fn render_input_field_bg_idle_is_surface0() {
+        let r = render_input_field(
+            InputFieldProps {
+                label: "S",
+                hint: "",
+                value: "x",
+                active: false,
+                cursor_byte: 0,
+                total_width: 20,
+            },
+            0,
+        );
+        assert_eq!(r.spans[1].style.bg, Some(SURFACE0));
+    }
 }
