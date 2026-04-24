@@ -7,6 +7,7 @@ pub mod generic;
 pub mod keyword;
 pub mod network;
 pub mod structured;
+pub mod util;
 
 use crate::domain::{LogEntry, ParseResult};
 
