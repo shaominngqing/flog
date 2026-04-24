@@ -1,16 +1,8 @@
-/// Lightweight structured logger for Flutter.
+/// Lightweight structured logger and network inspector bridge for Flutter.
 ///
-/// Sends structured log messages to flog TUI via Direct Socket.
-///
-/// ```dart
-/// // Initialize once, as early as possible:
-/// flog();
-///
-/// // Then use FlogLogger anywhere:
-/// final log = FlogLogger('Network');
-/// log.i('-> GET /api/users');
-/// log.e('Connection failed', error: e, stackTrace: st);
-/// ```
+/// Sends structured log messages and HTTP/SSE/WebSocket traffic metadata to
+/// the flog TUI via a Direct Socket WebSocket server. The authoritative entry
+/// point is [Flog.init]; see its dartdoc for the canonical bootstrap example.
 library flog_dart;
 
 import 'package:package_info_plus/package_info_plus.dart';
