@@ -7,9 +7,14 @@
 //!
 //! Audit source: `docs/superpowers/audit/00-index.md` (B-class table).
 
+#[path = "support/mod.rs"]
+mod support;
+
+use flog::app::{App, ConnectedApp};
 use flog::domain::filter::FilterState;
-use flog::domain::network::FlogNetKind;
+use flog::domain::network::{FlogNetKind, NetworkEntry};
 use flog::domain::network_store::NetworkStore;
+use flog::input::ConnectorHandle;
 
 // ── helper ──────────────────────────────────────────────────────────────
 
@@ -140,3 +145,95 @@ fn trans_007_tcp_open_correct_behavior() {
         let _ = flog::transport::start_discovery;
     };
 }
+
+// ── UI-042: WS raw/chat mode toggle corrupts UI ─────────────────────────
+
+/// User-reported bug (2026-04-24): switching a WS detail view from Chat to
+/// Raw format causes text to bleed into the left (list) pane and persist;
+/// subsequent clicks render the page incorrectly.
+///
+/// Two suspected root causes, one red test each. Fixed by Step 3.8 (UI
+/// Network redesign).
+///
+/// ## UI-042.a: stale `collapsed_sections` leaks across mode toggles
+///
+/// Chat mode uses collapse keys like `WS_GROUP#0`, `WS_GROUP#1` to remember
+/// which message groups the user expanded. Raw mode uses `WS#0`, `WS#1`.
+/// When the user toggles Chat→Raw, the old `WS_GROUP#*` keys are still in
+/// `app.network.collapsed_sections`, polluting any future Chat render.
+///
+/// Additionally, `json_viewer_states` accumulated in one mode can apply to
+/// stale node ids in the other mode, producing out-of-range fold reads.
+///
+/// A correct toggle path resets the mode-specific state.
+fn ws_app_with_msgs() -> App {
+    let mut app = App::default();
+    // Mimic app_connected() from characterization_ui_network.rs.
+    let (handle, _rx) = ConnectorHandle::for_testing();
+    app.connected_apps.push(ConnectedApp {
+        id: "fake".into(),
+        device_id: "devA".into(),
+        device_name: "Pixel 8".into(),
+        port: 9753,
+        app_name: "demo".into(),
+        app_version: "1.0.0".into(),
+        os: "android".into(),
+        package_name: "com.example.demo".into(),
+        build_mode: "debug".into(),
+        handle,
+    });
+    app.active_app_id = Some("fake".into());
+
+    // Build a WS entry with a mix of sends + receives.
+    let mut entry: NetworkEntry = support::fixtures::ws_entry(1, "wss://example.test/socket");
+    entry.ws_messages = vec![
+        support::fixtures::ws_send(r#"{"type":"hello","n":1}"#),
+        support::fixtures::ws_recv(r#"{"type":"ack","n":1}"#),
+        support::fixtures::ws_send(r#"{"type":"ping"}"#),
+        support::fixtures::ws_recv(r#"{"type":"pong"}"#),
+    ];
+    app.network_store.push_entry(entry);
+    app.network.invalidate_filter();
+    app.network.selected = 0;
+    app.network.show_detail = true;
+    app
+}
+
+#[test]
+#[ignore = "bug: UI-042 WS chat→raw toggle leaves stale collapsed_sections entries"]
+fn ui_042_a_chat_to_raw_toggle_clears_mode_specific_collapse_keys() {
+    let mut app = ws_app_with_msgs();
+    // Put us in Chat mode and mark group 0 as expanded (collapsed_sections
+    // in chat mode semantics = "expanded" per the render code's inverted
+    // convention; see detail.rs WS_GROUP handling).
+    app.network.ws_chat_mode = true;
+    app.network
+        .collapsed_sections
+        .insert("WS_GROUP#0".to_string());
+    // Also add a raw-mode key from some earlier session to simulate drift.
+    app.network.collapsed_sections.insert("WS#3".to_string());
+
+    // Toggle Chat → Raw (what the user does via pill click).
+    app.network.ws_chat_mode = false;
+
+    // Invariant: after a mode toggle, any keys belonging to the OLD mode
+    // should be purged. Chat uses WS_GROUP#*, Raw uses WS#*.
+    let has_old_chat_keys = app
+        .network
+        .collapsed_sections
+        .iter()
+        .any(|k| k.starts_with("WS_GROUP#"));
+    assert!(
+        !has_old_chat_keys,
+        "Chat→Raw toggle left stale WS_GROUP#* keys in collapsed_sections: {:?}",
+        app.network.collapsed_sections
+    );
+}
+
+// Note: a secondary "round-trip render idempotence" invariant was drafted
+// and verified GREEN — ruling out the "cell-level leak" theory. The real
+// symptom (user-reported "list pane corruption after raw-mode click") must
+// therefore be explained by either (i) the collapsed_sections pollution
+// above, or (ii) a click-region map staleness that only manifests on the
+// _next_ mouse event after toggle — which requires event-path integration
+// testing and is left for Step 3.8's characterization batch.
