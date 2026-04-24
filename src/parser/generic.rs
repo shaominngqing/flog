@@ -12,6 +12,10 @@ use std::sync::LazyLock;
 use super::LogLineParser;
 use crate::domain::{InputSource, LogEntry, LogLevel};
 
+// LazyLock regex compilation is deliberate — compiles on first use, O(1)
+// thereafter. Audit DOM-014 reviewed and approved. Do not replace with
+// runtime-rebuilt regex without profiling first.
+
 /// `[LEVEL] [Tag] message` or `[LEVEL] message`
 static BRACKET_LEVEL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\[(\w+)\]\s*(?:\[(\w+)\]\s*)?(.+)$").unwrap());

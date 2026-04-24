@@ -9,6 +9,10 @@ use std::sync::LazyLock;
 use super::LogLineParser;
 use crate::domain::{InputSource, LogEntry, LogLevel};
 
+// LazyLock regex compilation is deliberate — compiles on first use, O(1)
+// thereafter. Audit DOM-014 reviewed and approved. Do not replace with
+// runtime-rebuilt regex without profiling first.
+
 /// Keyword sets used by the fallback parser to infer a log level from
 /// free-form text. Extracted from inline regex — Phase 3 Step 3.1, see
 /// Audit DOM-017. Single source of truth for "what counts as an ERROR

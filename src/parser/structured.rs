@@ -17,6 +17,10 @@ use crate::domain::{InputSource, LogEntry, LogLevel};
 // ANSI stripping lives in parser::util — Phase 3 DOM-015.
 use super::util::ANSI_RE;
 
+// LazyLock regex compilation is deliberate — compiles on first use, O(1)
+// thereafter. Audit DOM-014 reviewed and approved. Do not replace with
+// runtime-rebuilt regex without profiling first.
+
 /// Matches ADB logcat format: `I/flutter (PID): content`
 /// and VM Service stdout format: `flutter: content`
 static FLUTTER_PREFIX_RE: LazyLock<Regex> =
