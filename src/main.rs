@@ -218,6 +218,13 @@ async fn main() -> io::Result<()> {
     let adb_forwards_c = Arc::clone(&adb_forwards);
     let base_port = cli.port;
     tokio::spawn(async move {
+        // TRANS-015 (A-class ack): the device discovery channel is expected
+        // to outlive the app — `start_discovery` spawns three infinite
+        // loops that never drop their sender. If `device_rx.recv()`
+        // returns None (i.e. all senders were dropped), something inside
+        // transport layer has crashed hard; we intentionally exit the
+        // task and rely on reconnect/reopen via session restart. A richer
+        // "restart discovery" strategy is deferred to Phase 3.5.
         while let Some(event) = device_rx.recv().await {
             match event {
                 transport::DeviceEvent::Added(device) => {
@@ -360,6 +367,12 @@ async fn main() -> io::Result<()> {
                                                 break;
                                             }
                                             ConnectorEvent::Message(msg) => {
+                                                // TRANS-010 (A-class ack): inactive-app
+                                                // messages are intentionally dropped here.
+                                                // Each flog_dart instance buffers its own
+                                                // log/network entries via FlogStore; when
+                                                // the user switches active_app_id we
+                                                // subscribe() which replays the buffer.
                                                 if a.active_app_id.as_deref()
                                                     == Some(task_key_c.as_str())
                                                 {
@@ -378,6 +391,16 @@ async fn main() -> io::Result<()> {
 
                                 // Retry with exponential backoff
                                 // (2s → 4s → 8s → 16s → 30s cap). TRANS-008.
+                                //
+                                // TRANS-011 (A-class ack): the retry loop is
+                                // intentionally unlogged per-attempt — the
+                                // reader/writer task exit-cause eprintln!s
+                                // from TRANS-006 already tell the user the
+                                // connection dropped, and spamming status
+                                // bar toasts on every 2s–30s poll cycle
+                                // would drown out real events. Observability
+                                // upgrade (retry_count on ConnectedApp) is
+                                // deferred to Phase 3.5.
                                 tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
                                 retry_delay_secs = (retry_delay_secs * RECONNECT_BACKOFF_FACTOR)
                                     .min(RECONNECT_MAX_DELAY_SECS);

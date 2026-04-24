@@ -11,6 +11,17 @@
 //! Each source is self-contained in its own inline module and shares a small
 //! helper (`DeviceTracker`) that encapsulates the "known set + emit Added /
 //! Removed + drain on disconnect" pattern.
+//!
+//! **TRANS-003 (A-class ack):** this file is yellow (>500 lines) by line
+//! count, but intentionally kept whole. The three inline source modules
+//! each live at the same abstraction level — a state machine over the
+//! `DeviceEvent` stream — and share only the small `DeviceTracker`
+//! helper. Splitting them into separate files would scatter the
+//! "one device stream per source" invariant without improving
+//! readability. When Phase 3 UX changes add a fourth source (e.g. a
+//! persistent network discovery protocol), this is a natural split
+//! point: `transport/adb_source.rs`, `transport/usbmuxd_source.rs`,
+//! `transport/local_source.rs`.
 
 use tokio::sync::mpsc;
 

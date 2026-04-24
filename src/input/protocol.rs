@@ -30,6 +30,15 @@ pub struct ClientInfo {
 // enum via #[serde(flatten)]. ClientMessage is internally-tagged on
 // "type"; FlogNetKind is internally-tagged on "t" — different tag keys
 // so the two layers compose cleanly.
+//
+// TRANS-012 (A-class ack): every live match against `ClientMessage` —
+// `dispatch_client_message` in main.rs and the Hello handshake in
+// connector.rs — is exhaustive (no `_` wildcard). Adding a new variant
+// is therefore a compile-time change that surfaces at every handler.
+// The only `_ => ...` arms that look like catch-alls are deliberate
+// "expected Hello, got something else" error-reporting branches which
+// continue to work if ClientMessage grows new variants (they'd fall
+// through the explicit Log/Net checks into an "unrecognized" bucket).
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
