@@ -1710,6 +1710,27 @@ fn app_new_starts_with_default_layout_cache() {
 }
 
 // =====================================================================
+//  auto_scroll_for_tab (UI-006)
+// =====================================================================
+
+#[test]
+fn auto_scroll_for_tab_reads_correct_flag_per_tab() {
+    let mut app = App::new();
+    // Default: both start true.
+    assert!(app.auto_scroll_for_tab(ViewTab::Logs));
+    assert!(app.auto_scroll_for_tab(ViewTab::Network));
+    // Flip Logs flag only.
+    app.auto_scroll = false;
+    assert!(!app.auto_scroll_for_tab(ViewTab::Logs));
+    assert!(app.auto_scroll_for_tab(ViewTab::Network));
+    // Flip Network flag only.
+    app.auto_scroll = true;
+    app.network.auto_scroll = false;
+    assert!(app.auto_scroll_for_tab(ViewTab::Logs));
+    assert!(!app.auto_scroll_for_tab(ViewTab::Network));
+}
+
+// =====================================================================
 //  InputField::tab (UI-002)
 // =====================================================================
 

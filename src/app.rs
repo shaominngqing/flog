@@ -1091,6 +1091,25 @@ impl App {
         self.active_tab = tab;
     }
 
+    /// Returns the auto-scroll flag for the given tab (audit UI-006).
+    ///
+    /// Until LogsViewState is extracted (deferred to Step 3.10), `auto_scroll`
+    /// lives on `App` for Logs and on `NetworkState` for Network. This helper
+    /// gives callers a single entry point so future consolidation is a local
+    /// change.
+    //
+    // `#[allow(dead_code)]`: the binary (src/main.rs) compiles each `mod`
+    // privately and so does not see the integration-test call sites in
+    // tests/*.rs. The helper is exercised by characterization_app_state.rs
+    // and is kept on `App` as public API for forthcoming Step 3.10 use.
+    #[allow(dead_code)]
+    pub fn auto_scroll_for_tab(&self, tab: ViewTab) -> bool {
+        match tab {
+            ViewTab::Logs => self.auto_scroll,
+            ViewTab::Network => self.network.auto_scroll,
+        }
+    }
+
     // ── Mode switches ──
 
     pub fn enter_help(&mut self) {
