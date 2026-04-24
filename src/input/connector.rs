@@ -151,6 +151,7 @@ where
                 package_name,
                 port,
                 build_mode,
+                session_id,
                 ..
             }) => ClientInfo {
                 id: 1,
@@ -161,6 +162,7 @@ where
                 port: port.unwrap_or(0),
                 build_mode: build_mode.unwrap_or_default(),
                 connected_at: std::time::Instant::now(),
+                session_id,
             },
             Ok(other) => {
                 let variant = match other {

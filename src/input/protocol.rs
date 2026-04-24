@@ -6,6 +6,12 @@ use serde::{Deserialize, Serialize};
 pub type ClientId = u64;
 
 /// Information about a connected flog_dart client, extracted from Hello message.
+///
+/// `session_id` is populated from the optional `sessionId` field of the
+/// Hello frame (TRANS-014) — older flog_dart clients don't send it, so
+/// the field is `None` in that case. Future work can use this to detect
+/// app restarts and replay buffered state without breaking the wire
+/// format: the field is additive and defaults cleanly.
 #[derive(Debug, Clone)]
 pub struct ClientInfo {
     pub id: ClientId,
@@ -16,6 +22,7 @@ pub struct ClientInfo {
     pub port: u16,
     pub build_mode: String,
     pub connected_at: std::time::Instant,
+    pub session_id: Option<String>,
 }
 
 /// Messages from Dart client → flog server (upstream).
@@ -44,6 +51,12 @@ pub enum ClientMessage {
         #[serde(default)]
         #[serde(rename = "buildMode")]
         build_mode: Option<String>,
+        /// TRANS-014: optional session id, used to correlate reconnects
+        /// with a prior session (e.g. after a hot-restart). Additive: older
+        /// Dart clients omit it and we default to `None`.
+        #[serde(default)]
+        #[serde(rename = "sessionId")]
+        session_id: Option<String>,
     },
     #[serde(rename = "log")]
     Log {
@@ -268,6 +281,7 @@ mod tests {
                 package_name,
                 port,
                 build_mode,
+                session_id,
             } => {
                 assert_eq!(device, None);
                 assert_eq!(app, "com.min");
@@ -276,6 +290,7 @@ mod tests {
                 assert_eq!(package_name, None);
                 assert_eq!(port, None);
                 assert_eq!(build_mode, None);
+                assert_eq!(session_id, None);
             }
             _ => panic!("expected Hello"),
         }
@@ -303,6 +318,7 @@ mod tests {
                 package_name,
                 port,
                 build_mode,
+                session_id,
             } => {
                 assert_eq!(device, Some("Pixel 7".to_string()));
                 assert_eq!(app, "com.example");
@@ -311,6 +327,8 @@ mod tests {
                 assert_eq!(package_name, Some("com.example.pkg".to_string()));
                 assert_eq!(port, Some(9753));
                 assert_eq!(build_mode, Some("debug".to_string()));
+                // `sessionId` absent → default None.
+                assert_eq!(session_id, None);
             }
             _ => panic!("expected Hello"),
         }
@@ -537,8 +555,8 @@ mod tests {
     fn proto_120_client_info_fields_round_trip() {
         // ClientInfo has no Serialize/Deserialize; just assert the field
         // layout is honored by normal construction. This locks the struct
-        // shape so TRANS-014 additions (protocol_version, session_id,
-        // device_id) are detected as breaking changes.
+        // shape so TRANS-014 additions (session_id today; protocol_version,
+        // device_id in future) are detected as breaking changes.
         let now = std::time::Instant::now();
         let info = ClientInfo {
             id: 1,
@@ -549,6 +567,7 @@ mod tests {
             port: 9753,
             build_mode: "debug".to_string(),
             connected_at: now,
+            session_id: Some("sess-42".to_string()),
         };
         assert_eq!(info.id, 1);
         assert_eq!(info.app, "com.t");
@@ -558,6 +577,37 @@ mod tests {
         assert_eq!(info.port, 9753);
         assert_eq!(info.build_mode, "debug");
         assert_eq!(info.connected_at, now);
+        assert_eq!(info.session_id.as_deref(), Some("sess-42"));
+    }
+
+    // ---- PROTO-121: session_id field behavior (TRANS-014) -----------
+
+    #[test]
+    fn proto_121_hello_with_session_id_deserializes() {
+        // TRANS-014: a Dart client that sends `sessionId` must have it
+        // captured on the Hello variant.
+        let json = r#"{"type":"hello","app":"com.x","os":"ios","sessionId":"abc-123"}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::Hello { session_id, .. } => {
+                assert_eq!(session_id.as_deref(), Some("abc-123"));
+            }
+            _ => panic!("expected Hello"),
+        }
+    }
+
+    #[test]
+    fn proto_121_hello_without_session_id_defaults_to_none() {
+        // TRANS-014: additive — older clients that don't know about
+        // `sessionId` must still deserialize cleanly with None.
+        let json = r#"{"type":"hello","app":"com.legacy","os":"ios"}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::Hello { session_id, .. } => {
+                assert_eq!(session_id, None);
+            }
+            _ => panic!("expected Hello"),
+        }
     }
 
     #[test]
@@ -571,6 +621,7 @@ mod tests {
             port: 1,
             build_mode: "b".to_string(),
             connected_at: std::time::Instant::now(),
+            session_id: None,
         };
         let clone = info.clone();
         assert_eq!(clone.id, info.id);

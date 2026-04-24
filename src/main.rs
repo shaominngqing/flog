@@ -620,6 +620,7 @@ mod tests {
                 package_name: None,
                 port: None,
                 build_mode: None,
+                session_id: None,
             },
         );
         assert_eq!(app.store.len(), before);
