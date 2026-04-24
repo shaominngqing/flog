@@ -29,15 +29,24 @@ pub struct MultiStrategyParser {
 }
 
 impl MultiStrategyParser {
-    /// Create a parser chain with the default set of strategies.
+    /// Create a parser chain with an explicit list of strategies.
+    ///
+    /// Callers decide the order. Useful for tests, custom parser
+    /// injection, or A/B evaluation of alternative strategies.
+    ///
+    /// Phase 3 Step 3.1 — see Audit DOM-013.
+    pub fn with_strategies(strategies: Vec<Box<dyn LogLineParser>>) -> Self {
+        Self { strategies }
+    }
+
+    /// Create a parser chain with the default set of strategies, in
+    /// priority order: Structured → Generic → Keyword.
     pub fn default_chain() -> Self {
-        Self {
-            strategies: vec![
-                Box::new(structured::StructuredParser),
-                Box::new(generic::GenericParser),
-                Box::new(keyword::KeywordParser),
-            ],
-        }
+        Self::with_strategies(vec![
+            Box::new(structured::StructuredParser),
+            Box::new(generic::GenericParser),
+            Box::new(keyword::KeywordParser),
+        ])
     }
 
     /// Parse a raw line, trying each strategy in order.
@@ -213,5 +222,33 @@ mod tests {
         let entry = unwrap_new(parse_line(&line));
         assert_eq!(entry.level, LogLevel::Info);
         assert_eq!(entry.message.len(), 10_000);
+    }
+
+    // ---- Phase 3 Step 3.1: with_strategies (DOM-013) ------------------
+
+    #[test]
+    fn with_strategies_preserves_order_and_delegates_to_first_match() {
+        // Construct a chain with keyword-only (no structured or generic).
+        // Feed a line that would parse as structured — verify it falls
+        // through to keyword (which accepts any non-empty line and infers
+        // level from keywords).
+        let p = MultiStrategyParser::with_strategies(vec![Box::new(KeywordParser)]);
+        let result = p.parse("[INFO][Tag] message");
+        match result {
+            ParseResult::NewEntry(entry) => {
+                // KeywordParser's default tag is "App" — proves we did NOT
+                // use StructuredParser (which would produce tag="Tag").
+                assert_eq!(entry.tag, "App");
+            }
+            _ => panic!("expected NewEntry"),
+        }
+    }
+
+    #[test]
+    fn with_strategies_empty_chain_returns_ignored() {
+        // Edge case: empty strategy list — no parser can match.
+        let p = MultiStrategyParser::with_strategies(vec![]);
+        let result = p.parse("any input");
+        assert!(matches!(result, ParseResult::Ignored));
     }
 }
