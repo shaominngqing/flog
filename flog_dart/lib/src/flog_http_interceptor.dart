@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import 'flog_net.dart' show flogEnabled, nextNetId, emitNet;
+import 'flog_mock_interceptor.dart' show kFlogMockedExtrasKey;
 
 /// Predicate to decide whether a request should be logged.
 typedef FlogHttpFilter = bool Function(RequestOptions options);
@@ -114,8 +115,10 @@ class FlogHttpInterceptor extends Interceptor {
       return;
     }
 
-    // Handle mocked responses — onRequest was never called, so no _idMap entry
-    final isMocked = response.requestOptions.extra['flog_mocked'] == true;
+    // Handle mocked responses — FlogMockInterceptor runs first, resolves,
+    // and stamps `kFlogMockedExtrasKey` on options.extra. Our onRequest is
+    // therefore skipped, so no `_flog_id` is present on the response path.
+    final isMocked = response.requestOptions.extra[kFlogMockedExtrasKey] == true;
     if (isMocked) {
       final id = nextNetId();
       final url = response.requestOptions.uri.toString();

@@ -70,6 +70,17 @@ class FlogDio implements Dio {
   /// If [baseUrl] is provided and [options] is null, sets the base URL on the
   /// default options. If [flogEnabled] is true, a [FlogMockInterceptor] and
   /// [FlogHttpInterceptor] are automatically inserted.
+  ///
+  /// ### Interceptor ordering (DART-011)
+  ///
+  /// The ctor places `FlogMockInterceptor` at position 0 and
+  /// `FlogHttpInterceptor` at position 1. Later calls such as
+  /// `interceptors.add(MyInterceptor())` append, leaving flog's pair
+  /// at the front. **However**, callers that manually splice into index 0
+  /// (`interceptors.insert(0, X)`) or call `clear()` silently defeat the
+  /// contract. A debug-mode assertion at first use catches the most
+  /// common mistake; for the full history see
+  /// `memory/feedback_interceptor_ordering.md`.
   FlogDio({
     String? baseUrl,
     FlogHttpConfig? flogConfig,
@@ -86,10 +97,11 @@ class FlogDio implements Dio {
       // FlogServer.start() should have been called earlier in bootstrap.
       FlogServer.instance.registerDio(_inner);
 
-      // Mock interceptor first — intercepts before real network
+      // Mock interceptor first — intercepts before real network.
       _inner.interceptors.insert(0, FlogMockInterceptor());
 
-      // HTTP logging interceptor second — logs all requests (including mocked ones)
+      // HTTP logging interceptor second — logs all requests (including
+      // mocked ones).
       _inner.interceptors.insert(
         1,
         FlogHttpInterceptor(
@@ -100,6 +112,20 @@ class FlogDio implements Dio {
           maxBodySize: config.maxBodySize,
           filter: config.filter,
         ),
+      );
+
+      // DART-011: verify ordering at construction. Catches the case
+      // where a user's subclass or post-ctor tweak reshuffles the list
+      // before the ctor returns. `assert` is stripped in release.
+      assert(
+        _inner.interceptors.isNotEmpty &&
+            _inner.interceptors[0] is FlogMockInterceptor,
+        'FlogDio: FlogMockInterceptor must be at position 0',
+      );
+      assert(
+        _inner.interceptors.length >= 2 &&
+            _inner.interceptors[1] is FlogHttpInterceptor,
+        'FlogDio: FlogHttpInterceptor must be at position 1',
       );
     }
   }

@@ -3,6 +3,12 @@ import 'package:dio/dio.dart';
 
 import 'flog_net.dart' show flogEnabled;
 
+/// The `options.extra` key FlogMockInterceptor sets to mark a request as
+/// mocked. FlogHttpInterceptor reads it back to emit `mocked: true` on
+/// the response log. Exposed as a single const so the magic string lives
+/// in one place (DART-014).
+const String kFlogMockedExtrasKey = 'flog_mocked';
+
 /// A single mock rule received from flog via VM Service extension.
 class FlogMockRule {
   /// Substring pattern matched against the request URL.
@@ -61,6 +67,15 @@ class FlogMockRule {
 /// 2. URL match is **case-sensitive**.
 /// 3. If a rule has a non-null `method`, it is compared case-insensitively.
 /// 4. **First matching rule wins**. Later rules for the same URL are dead.
+///
+/// ### Rule-list scope (DART-012 ack)
+///
+/// Rules live on `FlogMockInterceptor._rules` as process-wide static state,
+/// mirroring the single-TUI-drives-all-apps sync channel: the flog TUI
+/// broadcasts one rule table and expects every FlogDio in the same isolate
+/// to obey. Per-Dio scoping would split the rule table and break that
+/// contract, so the global store is deliberate. Tests that want isolation
+/// should call `updateRules([])` in setUp/tearDown.
 class FlogMockInterceptor extends Interceptor {
   static List<FlogMockRule> _rules = [];
 
@@ -90,8 +105,9 @@ class FlogMockInterceptor extends Interceptor {
         continue;
       }
 
-      // Mark this request as mocked so FlogHttpInterceptor can flag it
-      options.extra['flog_mocked'] = true;
+      // Mark this request as mocked so FlogHttpInterceptor can flag it.
+      // Key name is shared with flog_http_interceptor.dart (DART-014).
+      options.extra[kFlogMockedExtrasKey] = true;
 
       final response = Response(
         requestOptions: options,
