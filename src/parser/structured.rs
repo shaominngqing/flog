@@ -14,7 +14,8 @@ use std::sync::LazyLock;
 use super::LogLineParser;
 use crate::domain::{InputSource, LogEntry, LogLevel};
 
-static ANSI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
+// ANSI stripping lives in parser::util — Phase 3 DOM-015.
+use super::util::ANSI_RE;
 
 /// Matches ADB logcat format: `I/flutter (PID): content`
 /// and VM Service stdout format: `flutter: content`

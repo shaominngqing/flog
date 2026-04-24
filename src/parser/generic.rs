@@ -32,7 +32,8 @@ static FLUTTER_PLAIN_RE: LazyLock<Regex> =
 static LOGCAT_LINE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([VDIWEF])/(\S+)\s*\(\s*\d+\):\s?(.*)$").unwrap());
 
-static ANSI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
+// ANSI stripping lives in parser::util — Phase 3 DOM-015.
+use super::util::ANSI_RE;
 
 pub struct GenericParser;
 
