@@ -225,6 +225,11 @@ class FlogServer {
     _clients.add(ws);
 
     // 4. Listen for incoming messages from flog TUI.
+    // DART-030 ack: onError currently drops the exception object on the
+    // floor. Behavior is correct (a broken WS is removed from the set)
+    // but we lose observability on malformed frames or reconnect storms.
+    // Low priority — the server keeps running either way; future work
+    // may thread the error into FlogLogger debug.
     ws.listen(
       (message) {
         if (message is String) _onMessage(message, ws);
@@ -259,17 +264,15 @@ class FlogServer {
   ///
   /// This is triggered when the flog TUI switches sessions. The client
   /// clears its local stores and asks us to replay everything.
+  ///
+  /// DART-031 ack: the remove/add dance around replayTo is a no-op on
+  /// Dart's single-isolate event loop, but kept for documentation — if
+  /// Dart ever gains true threading, a proper synchronization primitive
+  /// (not a remove/add race) would be required. Current behavior is
+  /// correct; ack tracked in audit.
   void _handleSubscribe(WebSocket ws) {
-    // Temporarily remove from broadcast set so the client doesn't receive
-    // duplicates of messages that are both in the buffer and newly produced.
-    // (In practice, Dart is single-threaded so no new messages arrive during
-    // replayTo, but this is semantically correct.)
     _clients.remove(ws);
-
-    // Replay the full buffer.
     FlogStore.instance.replayTo(ws);
-
-    // Re-add to broadcast set for live messages.
     _clients.add(ws);
   }
 
