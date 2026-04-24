@@ -180,16 +180,31 @@ where
 
     let _ = event_tx.send(ConnectorEvent::Connected(client_info));
 
-    // Spawn writer task
+    // Spawn writer task.
+    //
+    // TRANS-006: the task is fire-and-forget by design — we only surface
+    // exit reasons via `eprintln!` so debugging session issues doesn't
+    // require attaching a debugger. TODO-phase3.5: if connection flakiness
+    // surfaces, promote these to `tracing` events and/or return a
+    // JoinHandle so the connector can proactively detect writer-only
+    // failures that the reader half hasn't noticed yet.
     tokio::spawn(async move {
         while let Some(json) = cmd_rx.recv().await {
-            if ws_sink.send(Message::Text(json.into())).await.is_err() {
+            if let Err(e) = ws_sink.send(Message::Text(json.into())).await {
+                eprintln!("connector writer task exiting: send failed: {e}");
                 break;
             }
         }
+        // Channel closed (ConnectorHandle + all clones dropped) or send
+        // errored out above. Either way, there's nothing more to write.
     });
 
-    // Spawn reader task
+    // Spawn reader task.
+    //
+    // TRANS-006: same deal — log the exit cause before falling through to
+    // the `Disconnected` event, so stale-connection symptoms can be
+    // correlated with stderr output. TODO-phase3.5: JoinHandle monitoring
+    // if flakiness surfaces.
     let event_tx_clone = event_tx.clone();
     tokio::spawn(async move {
         while let Some(msg_result) = ws_read.next().await {
@@ -199,8 +214,14 @@ where
                         let _ = event_tx_clone.send(ConnectorEvent::Message(client_msg));
                     }
                 }
-                Ok(Message::Close(_)) => break,
-                Err(_) => break,
+                Ok(Message::Close(_)) => {
+                    eprintln!("connector reader task exiting: peer sent Close");
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("connector reader task exiting: read error: {e}");
+                    break;
+                }
                 _ => {}
             }
         }
