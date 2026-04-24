@@ -505,6 +505,49 @@ pub struct ConnectedApp {
     pub handle: ConnectorHandle,
 }
 
+/// Application state machine — the single mutable root owned by `main`.
+///
+/// ## Multi-app connection state invariants (audit UI-040)
+///
+/// flog can be attached to multiple running Flutter apps simultaneously
+/// (e.g. one app per device), but the UI shows exactly one at a time.
+/// Three collections cooperate to track this state:
+///
+/// - `connected_apps: Vec<ConnectedApp>` — every app whose WS server has
+///   completed the Hello handshake. Entries survive until
+///   [`Self::remove_connected_app`] is called (on disconnect).
+/// - `active_app_id: Option<String>` — the id currently being viewed, or
+///   `None` if nothing is attached.
+/// - `discovered_devices: HashMap<String, Device>` — raw device inventory
+///   from `flutter devices --machine`, keyed by device id.
+///
+/// **Invariants (enforced by `add_connected_app` / `remove_connected_app`
+/// / `switch_to_app`):**
+///
+/// 1. `active_app_id == Some(id)` ⇒ `connected_apps` contains an entry
+///    whose `.id == id`. Never `active_app_id = Some(x)` without `x` in
+///    `connected_apps`.
+/// 2. `active_app_id == None` ⇒ `connected_apps.is_empty()` OR we're in
+///    a transient remove-and-reassign window (same method call).
+/// 3. `discovered_devices` may contain device ids that have NO
+///    corresponding entry in `connected_apps` (device visible but not
+///    attached yet, or attached then disconnected).
+/// 4. `connected_apps` may contain entries whose `device_id` is NOT in
+///    `discovered_devices` (device went offline mid-session; we keep the
+///    attachment until explicit removal).
+/// 5. `device_picker_selected` / `device_picker_scroll` are only
+///    meaningful when `show_device_picker == true`; both are clamped by
+///    the renderer against `layout.device_picker_items.len()` each frame.
+///
+/// **Switch semantics:** `switch_to_app(id)` is a no-op unless id is in
+/// `connected_apps`. On success it resets session data and sends a
+/// `subscribe` on the target app's `ConnectorHandle` so the Dart side
+/// replays its buffer.
+///
+/// **Remove semantics:** `remove_connected_app(id)` retains the entry
+/// unconditionally; if it was the active id, it promotes the first
+/// remaining entry to active or falls back to `None` with a "Scanning..."
+/// source name.
 pub struct App {
     // Active session data (points to the currently viewed app's data)
     pub store: LogStore,
