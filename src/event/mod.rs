@@ -6,6 +6,7 @@ use crate::app::{App, AppMode, ViewTab};
 use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 use crate::domain::LogLevel;
 
+mod apply;
 mod click_region;
 mod detect;
 mod pills;
@@ -770,6 +771,11 @@ fn handle_list_click(app: &mut App, y: u16, _is_double: bool) {
     }
 }
 
+/// Public-to-module wrapper for apply::apply_click_region.
+pub(super) fn handle_list_click_public(app: &mut App, y: u16) {
+    handle_list_click(app, y, false);
+}
+
 fn handle_list_right_click(app: &mut App, y: u16) {
     if let Some(target) = compute_list_target(app, y) {
         app.selected = target;
@@ -929,7 +935,7 @@ fn handle_detail_panel_click(app: &mut App, mouse: &MouseEvent) {
 }
 
 /// Copy text to system clipboard (pbcopy on macOS, xclip on Linux).
-fn copy_to_clipboard(text: &str) -> String {
+pub(super) fn copy_to_clipboard(text: &str) -> String {
     let result = std::process::Command::new("pbcopy")
         .stdin(std::process::Stdio::piped())
         .spawn()
@@ -964,7 +970,7 @@ fn copy_to_clipboard(text: &str) -> String {
 }
 
 /// Replay the currently selected HTTP request.
-fn replay_selected(app: &mut App) {
+pub(super) fn replay_selected(app: &mut App) {
     if !app.has_connected_client() {
         app.show_status("Replay unavailable — no client connected".to_string());
         return;
@@ -1166,7 +1172,7 @@ fn copy_response(app: &mut App) {
 }
 
 /// Trigger mock rule sync to connected clients.
-fn trigger_mock_sync(app: &App) {
+pub(super) fn trigger_mock_sync(app: &App) {
     if let Some(handle) = app.get_active_handle() {
         let json = app.mock_rules.to_json_string();
         handle.send_mock_sync(json);
@@ -1174,7 +1180,7 @@ fn trigger_mock_sync(app: &App) {
 }
 
 /// Create a mock rule from the currently selected network request and open editor.
-fn mock_from_selected(app: &mut App) {
+pub(super) fn mock_from_selected(app: &mut App) {
     if !app.has_connected_client() {
         app.show_status("Mock unavailable — no client connected".to_string());
         return;
