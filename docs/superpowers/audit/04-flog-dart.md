@@ -873,6 +873,74 @@ proposed_action: |
 risk: low
 ```
 
+```yaml
+id: DART-033
+label: D
+location: flog_dart/lib/src/flog_sse_parser.dart + flog_dart/lib/src/flog_dio.dart + flog_dart/lib/src/flog_dio_sse.dart
+title: SSE subsystem has layering, API, and protocol-completeness issues
+evidence: |
+  External reviewer (2026-04-24) flagged 7 architecture-level issues in the
+  SSE path, which remain even after Step 3.4's _SseLineParser rewrite
+  resolved the single-blank-line multi-data bug (DART-001):
+
+  1. Layering: FlogSseParser mixes byte decode + SSE protocol parse +
+     flog_net telemetry. Correct stratification is
+     `bytes -> utf8 -> lines -> SseEvent -> tee(business, inspector)`.
+     Inspector should be an independent observer, not embedded in parser.
+
+  2. API asymmetry: FlogDio.sse() returns Stream<String> (data-only),
+     consuming the raw byte stream. Users who discover a parser bug must
+     bypass sse() entirely to recover raw bytes. Preferred shape:
+     expose `SseDecoder` as a `StreamTransformer<List<int>, SseEvent>`
+     so consumers can plug/unplug at will.
+
+  3. State via closure-writes: _run() threads _SseLineParser state via
+     closures that read/write outer locals. Would be cleaner as
+     `StreamTransformer` subclass owning its own state.
+
+  4. Protocol completeness gaps (partially addressed by Step 3.4 but
+     worth a holistic review): wrap() returns String (data payload only);
+     loses event:, id:, retry: — wrapTyped() has these but the primary
+     API doesn't. Backpressure: StreamController is unbounded; slow
+     consumers can OOM.
+
+  5. UTF-8 decode perf: current impl does sublist(0,n) + sublist(n)
+     on FormatException. For very high-throughput SSE (token stream),
+     this allocates two copies per chunk. Uint8List + view slicing
+     would be zero-copy.
+
+  6. Unbounded byteBuffer: byteBuffer.addAll(chunk) on pathological
+     input (source sending illegal UTF-8 forever) grows without bound.
+     Needs hard cap with error close.
+
+  7. Duplicate parser paths: _run() handles both flogOn and !flogOn
+     via conditionals, not via composition. A future bug fix in one
+     branch could skip the other. Preferred: single SseDecoder stream
+     transformer, then FlogSseReporter transformer layered on top only
+     when flogOn.
+
+  Summary: the current parser is CORRECT post-Step-3.4 (see DART-001
+  regression tests) but architecturally monolithic. Refactoring to a
+  transformer-based layered design is a breaking API change and
+  belongs in flog_dart v0.8.
+proposed_action: |
+  Schedule for flog_dart v0.8 (post-Phase-5 release):
+    - Extract pure SseDecoder: StreamTransformer<List<int>, SseEvent>
+    - Extract FlogSseReporter: StreamTransformer<SseEvent, SseEvent>
+    - FlogDio.sse() returns Stream<SseEvent>; add sseData() convenience
+      wrapper that keeps the current Stream<String> contract for v0.7.x
+      consumers.
+    - Add backpressure via pause/resume pass-through.
+    - Bound byteBuffer with configurable cap (default 1 MiB) — throw on
+      overrun.
+    - CHANGELOG: document migration path with before/after snippets.
+  Do NOT attempt this in Phase 3. Rationale: Step 3.4 already delivered
+  the B-class correctness fix (DART-001/002); this is pure architectural
+  debt. Phase 5 writes the v0.8 migration doc; v0.8 ships as a dedicated
+  breaking release after the cleanup campaign completes.
+risk: medium
+```
+
 ## Summary
 
 | label | count |
@@ -880,5 +948,5 @@ risk: low
 | A | 3 |
 | B | 9 |
 | C | 0 |
-| D | 18 |
+| D | 19 |
 | E | 2 |

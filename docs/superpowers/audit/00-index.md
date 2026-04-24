@@ -10,13 +10,14 @@ gate entry to Phase 2.
 |---|---|---|---|---|---|---|
 | 01-transport | 6 | 1 | 0 | 6 | 2 | 15 |
 | 02-domain    | 5 | 2 | 0 | 14 | 4 | 25 |
-| 03-ui        | 13 | 0 | 0 | 27 | 1 | 41 |
-| 04-flog-dart | 3 | 9 | 0 | 18 | 2 | 32 |
-| **Total**    | **27** | **12** | **0** | **65** | **9** | **113** |
+| 03-ui        | 13 | 1 | 0 | 27 | 1 | 42 |
+| 04-flog-dart | 3 | 9 | 0 | 19 | 2 | 33 |
+| **Total**    | **27** | **13** | **0** | **66** | **9** | **115** |
 
 **DOM-025 added during Phase 2 Task 2** — see "Addenda" section at the
 end of this file.
 **UI-041 added during Phase 2.5A Task 6** — see "Addenda" section.
+**UI-042 + DART-033 added during Phase 3 Step 3.5→3.6 transition** — see "Addenda".
 
 C = 0 as required: all C-class entries resolved with user in Task 3 and
 reclassified into A/B/D/E.
@@ -261,3 +262,31 @@ Full detail in `03-ui.md`. Short version:
 - Phase 2.5B consequence: mouse-routing characterization tests fall back
   to `ratatui::backend::TestBackend` snapshot tests until Phase 3 does
   the refactor.
+
+### UI-042 — reported Phase 3 Step 3.5→3.6 transition (2026-04-24)
+
+User-reported: in Network tab → WS entry → detail pane, toggling to
+"raw" format view causes text to leak into the left (list) pane and
+not clear; subsequent clicks render the whole page incorrectly.
+
+Classified **B** (real bug — user-observable incorrect rendering).
+Owner step: **Phase 3 Step 3.8** (UI Network redesign). Characterization
+red test scheduled as part of Step 3.8 Task 0.
+
+### DART-033 — reported Phase 3 Step 3.5→3.6 transition (2026-04-24)
+
+External reviewer audit of flog_dart SSE subsystem flagged 7
+architecture-level issues: layering mix (parser + telemetry), API
+asymmetry (sse() swallows raw stream), closure-variable state,
+protocol completeness gaps, UTF-8 decode perf, unbounded byte buffer,
+duplicate parser paths.
+
+Classified **D** (architecture debt; parser is CORRECT post-Step-3.4).
+Deferred to **flog_dart v0.8 breaking release** after Phase 5. Phase 5
+writes the migration doc; v0.8 ships separately.
+
+Rationale for deferral: Step 3.4 already delivered the B-class
+correctness fix (DART-001/002 parser rewrite). The remaining issues
+are design quality, require API breakage to fix properly, and should
+land as a coherent v0.8 release with migration docs rather than be
+squeezed into the current campaign.
