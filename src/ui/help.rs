@@ -2,25 +2,15 @@
 
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
 
-// Catppuccin Macchiato palette
-const BASE: Color = Color::Rgb(36, 39, 58);
-const MANTLE: Color = Color::Rgb(30, 32, 48);
-const SURFACE0: Color = Color::Rgb(54, 58, 79);
-const OVERLAY0: Color = Color::Rgb(110, 115, 141);
-const TEXT: Color = Color::Rgb(202, 211, 245);
-const BLUE: Color = Color::Rgb(138, 173, 244);
-const GREEN: Color = Color::Rgb(166, 218, 149);
-const YELLOW: Color = Color::Rgb(238, 212, 159);
-const PEACH: Color = Color::Rgb(245, 169, 127);
-const RED: Color = Color::Rgb(237, 135, 150);
-const MAUVE: Color = Color::Rgb(198, 160, 246);
-const SAPPHIRE: Color = Color::Rgb(125, 196, 228);
+use crate::ui::{
+    BASE, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, PEACH, RED, SAPPHIRE, SURFACE0, TEXT, YELLOW,
+};
 
 fn key(s: &str) -> Span<'static> {
     Span::styled(
@@ -540,4 +530,30 @@ pub fn draw_help(f: &mut Frame) {
             .wrap(Wrap { trim: false }),
         chunks[1],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    // UI-013: help overlay must use the shared crate::ui palette, not private constants.
+    // The help content area (chunks[1]) paints its background with BASE.
+    #[test]
+    fn help_content_bg_uses_shared_base_palette() {
+        let backend = TestBackend::new(80, 30);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(draw_help).unwrap();
+        let buf = term.backend().buffer().clone();
+        // Row 0 is the nav bar (MANTLE bg); row 1 onwards is the content block on BASE.
+        // Pick a column in the middle of a content row.
+        let cell = &buf[(5, 5)];
+        assert_eq!(
+            cell.style().bg,
+            Some(crate::ui::BASE),
+            "help content row should use shared BASE palette color, got {:?}",
+            cell.style().bg
+        );
+    }
 }
