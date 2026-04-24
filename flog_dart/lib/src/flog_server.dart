@@ -52,19 +52,17 @@ class FlogServer {
   /// Call this as early as possible in your app (e.g. right after
   /// `WidgetsFlutterBinding.ensureInitialized()`). Safe to call multiple
   /// times — only the first call takes effect.
-  void start({
-    int port = 9753,
-    String appName = 'flutter',
-    String appVersion = '',
-    String packageName = '',
-  }) {
+  ///
+  /// App-identity metadata (appName / appVersion / packageName) is set by
+  /// [updateAppInfo], which [Flog.init] calls asynchronously via
+  /// `PackageInfo.fromPlatform()`. Earlier versions of `start` also took
+  /// those three params, but the only production caller (`Flog.init`)
+  /// never forwarded them — they were dead code. Removed per DART-022.
+  void start({int port = 9753}) {
     if (!flogEnabled) return;
     if (_started) return;
     _started = true;
     _port = port;
-    _appName = appName;
-    _appVersion = appVersion;
-    _packageName = packageName;
     _installSystemHooks();
     _startServer();
   }

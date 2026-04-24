@@ -10,7 +10,8 @@
 ///
 /// Cross-reference:
 ///   - DART-004 locked in flog_mock_interceptor_test.dart.
-///   - DART-022 (start params dead on init path) locked in flog_server_test.dart.
+///   - DART-022 (start params, FIXED Phase 3 Step 3.4) — see
+///     flog_server_test.dart.
 library;
 
 import 'package:flutter_test/flutter_test.dart';

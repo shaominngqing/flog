@@ -9,8 +9,10 @@
 ///     all 10 ports are taken. Locked buggy behavior.
 ///   - DART-017 (D): _handleReplay fires-and-forgets Dio.request; errors
 ///     are not surfaced.
-///   - DART-022 (D): FlogServer.start's appName/appVersion/packageName
-///     parameters are accepted but not reflected on Flog.init path.
+///   - DART-022 (D, FIXED Phase 3 Step 3.4): FlogServer.start's
+///     appName/appVersion/packageName parameters were dead on the
+///     Flog.init path and have been removed; app-identity now flows
+///     exclusively through updateAppInfo.
 ///
 /// Note: These tests touch the FlogServer singleton. Since FlogServer is a
 /// process-wide singleton with no reset, tests that start the server
@@ -94,23 +96,14 @@ void main() {
   // DART-022: FlogServer.start's app-info params are dead on Flog.init path
   // ═══════════════════════════════════════════════════════════════
 
-  group('DART-022 start() app-info params accepted but dead on Flog.init path',
-      () {
-    test('start() accepts appName/appVersion/packageName without error', () {
-      // Calling start() with explicit app info does not throw. Under a
-      // fresh isolate this would set _appName/_appVersion/_packageName,
-      // but FlogServer.instance is a singleton — if already started by a
-      // previous test or production code, this is a no-op (_started guard).
-      //
-      // The important contract DART-022 locks: `Flog.init` does NOT
-      // forward these params. See the flog_library_test.dart test.
+  group('DART-022 start() app-info params removed; updateAppInfo is the only '
+      'channel', () {
+    test('start() accepts only a port parameter', () {
+      // The appName/appVersion/packageName params were removed (DART-022
+      // FIXED Phase 3 Step 3.4); they were dead because Flog.init never
+      // forwarded them. Calling start() with just a port must still work.
       expect(
-        () => FlogServer.instance.start(
-          port: 49999,
-          appName: 'test-app',
-          appVersion: '9.9.9',
-          packageName: 'com.test.flog',
-        ),
+        () => FlogServer.instance.start(port: 49999),
         returnsNormally,
       );
     });
