@@ -125,11 +125,25 @@ where
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<String>();
 
-    // Read first message — should be Hello from the app (3s timeout)
-    let client_info = match tokio::time::timeout(std::time::Duration::from_secs(3), ws_read.next())
-        .await
+    // Read first message — should be Hello from the app (3s timeout).
+    //
+    // Error surfaces (TRANS-005):
+    //   - Timeout fires → "Hello handshake timed out after 3s (port may
+    //     not be a flog server)".
+    //   - First frame is binary / ping / close → "Expected text frame,
+    //     got binary" (binary/other non-text).
+    //   - First frame is text but doesn't deserialize to ClientMessage,
+    //     or deserializes to a non-Hello variant → "Expected Hello, got
+    //     <variant>".
+    let first = match tokio::time::timeout(std::time::Duration::from_secs(3), ws_read.next()).await
     {
-        Ok(Some(Ok(Message::Text(text)))) => match serde_json::from_str::<ClientMessage>(&text) {
+        Ok(first) => first,
+        Err(_) => {
+            return Err("Hello handshake timed out after 3s (port may not be a flog server)".into())
+        }
+    };
+    let client_info = match first {
+        Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
             Ok(ClientMessage::Hello {
                 app,
                 app_version,
@@ -148,10 +162,20 @@ where
                 build_mode: build_mode.unwrap_or_default(),
                 connected_at: std::time::Instant::now(),
             },
-            _ => return Err("First message was not Hello".into()),
+            Ok(other) => {
+                let variant = match other {
+                    ClientMessage::Log { .. } => "Log",
+                    ClientMessage::Net { .. } => "Net",
+                    ClientMessage::Hello { .. } => unreachable!("matched above"),
+                };
+                return Err(format!("Expected Hello, got {variant}").into());
+            }
+            Err(_) => return Err("Expected Hello, got unrecognized JSON".into()),
         },
-        Ok(_) => return Err("No Hello received".into()),
-        Err(_) => return Err("Hello timeout (not a flog server?)".into()),
+        Some(Ok(Message::Binary(_))) => return Err("Expected text frame, got binary".into()),
+        Some(Ok(_)) => return Err("Expected text frame, got non-text control frame".into()),
+        Some(Err(e)) => return Err(format!("Read error before Hello: {e}").into()),
+        None => return Err("Stream closed before Hello".into()),
     };
 
     let _ = event_tx.send(ConnectorEvent::Connected(client_info));

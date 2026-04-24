@@ -75,9 +75,14 @@ async fn conn_202_times_out_when_server_silent() {
         let result = connect(&ws_url(&server)).await;
         let err = result.err().expect("silent server must produce Err");
         let msg = err.to_string();
-        // Locks TRANS-005: current phrasing contains "Hello timeout".
+        // TRANS-005: clearer phrasing that names the timeout duration
+        // and the real failure mode.
         assert!(
-            msg.contains("Hello timeout"),
+            msg.contains("Hello handshake timed out after 3s"),
+            "unexpected error message: {msg}"
+        );
+        assert!(
+            msg.contains("port may not be a flog server"),
             "unexpected error message: {msg}"
         );
     })
@@ -86,7 +91,8 @@ async fn conn_202_times_out_when_server_silent() {
 }
 
 // -----------------------------------------------------------------
-// CONN-203: binary frame where Hello expected → "No Hello received".
+// CONN-203: binary frame where Hello expected → "Expected text frame, got
+// binary" (TRANS-005 — separates binary from "no message at all").
 // -----------------------------------------------------------------
 
 #[tokio::test]
@@ -98,7 +104,7 @@ async fn conn_203_rejects_binary_frame() {
         let err = result.err().expect("binary frame must produce Err");
         let msg = err.to_string();
         assert!(
-            msg.contains("No Hello received"),
+            msg.contains("Expected text frame, got binary"),
             "unexpected error message: {msg}"
         );
     })
@@ -107,7 +113,8 @@ async fn conn_203_rejects_binary_frame() {
 }
 
 // -----------------------------------------------------------------
-// CONN-204: malformed JSON text → "First message was not Hello".
+// CONN-204: malformed JSON text → "Expected Hello, got unrecognized JSON"
+// (TRANS-005 — preserves that the frame was text but unparseable).
 // -----------------------------------------------------------------
 
 #[tokio::test]
@@ -119,7 +126,7 @@ async fn conn_204_rejects_malformed_json() {
         let err = result.err().expect("malformed json must produce Err");
         let msg = err.to_string();
         assert!(
-            msg.contains("First message was not Hello"),
+            msg.contains("Expected Hello, got unrecognized JSON"),
             "unexpected error message: {msg}"
         );
     })
@@ -267,8 +274,94 @@ async fn conn_208_rejects_hello_with_bad_type() {
         let result = connect(&ws_url(&server)).await;
         let err = result.err().expect("bad-type hello must produce Err");
         let msg = err.to_string();
+        // TRANS-005: unrecognized variant tag → deserialize fails → the
+        // "unrecognized JSON" branch (not the "other variant" branch).
         assert!(
-            msg.contains("First message was not Hello"),
+            msg.contains("Expected Hello, got unrecognized JSON"),
+            "unexpected error message: {msg}"
+        );
+    })
+    .await
+    .expect("test completed within budget");
+}
+
+// -----------------------------------------------------------------
+// CONN-213: first frame is a valid non-Hello ClientMessage (e.g. Log) →
+// error string names the offending variant per TRANS-005.
+// -----------------------------------------------------------------
+
+#[tokio::test]
+async fn conn_213_first_frame_log_variant_names_variant() {
+    use futures_util::SinkExt;
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::accept_async;
+    use tokio_tungstenite::tungstenite::Message;
+
+    timeout(TEST_BUDGET, async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                if let Ok(mut ws) = accept_async(stream).await {
+                    // Send a valid Log ClientMessage as the first frame —
+                    // the connector should treat this as a protocol
+                    // violation and surface the variant name.
+                    let json = r#"{"type":"log","message":"early"}"#;
+                    let _ = ws.send(Message::Text(json.into())).await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        });
+
+        let result = connect(&format!("ws://{addr}")).await;
+        let err = result.err().expect("non-Hello variant must produce Err");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Expected Hello, got Log"),
+            "unexpected error message: {msg}"
+        );
+    })
+    .await
+    .expect("test completed within budget");
+}
+
+// -----------------------------------------------------------------
+// CONN-214: ping-only first frame → surfaces "non-text control frame"
+// error (TRANS-005 extra catch-all beyond binary).
+// -----------------------------------------------------------------
+
+#[tokio::test]
+async fn conn_214_rejects_ping_before_hello() {
+    use futures_util::SinkExt;
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::accept_async;
+    use tokio_tungstenite::tungstenite::Message;
+
+    timeout(TEST_BUDGET, async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                if let Ok(mut ws) = accept_async(stream).await {
+                    // Direct Ping frame, then sleep so the client has time
+                    // to observe it before the peer goes away.
+                    let _ = ws.send(Message::Ping(vec![1u8, 2, 3].into())).await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        });
+
+        let result = connect(&format!("ws://{addr}")).await;
+        let err = result.err().expect("ping before hello must produce Err");
+        let msg = err.to_string();
+        // tokio-tungstenite auto-answers pings before the client sees
+        // them, so the client typically observes either the empty
+        // stream close OR the timeout, not the raw ping. Either
+        // branch still proves the handshake path doesn't misclassify.
+        assert!(
+            msg.contains("Hello handshake timed out")
+                || msg.contains("Stream closed before Hello")
+                || msg.contains("Expected text frame"),
             "unexpected error message: {msg}"
         );
     })
