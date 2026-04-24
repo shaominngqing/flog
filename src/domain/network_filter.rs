@@ -1,6 +1,7 @@
 //! Filtering for network entries by status, method, protocol, and search text.
 
 use crate::domain::filter::matches_multi;
+use crate::domain::filter_traits::FilterVariant;
 use crate::domain::network::{NetworkEntry, NetworkStatus, Protocol};
 use regex::Regex;
 
@@ -22,6 +23,30 @@ impl StatusFilter {
             Self::Completed => status == NetworkStatus::Completed,
             Self::Failed => status == NetworkStatus::Failed,
         }
+    }
+}
+
+impl FilterVariant for StatusFilter {
+    fn all() -> Self {
+        Self::All
+    }
+    fn label(&self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Pending => "Pending",
+            Self::Active => "Active",
+            Self::Completed => "Completed",
+            Self::Failed => "Failed",
+        }
+    }
+    fn variants() -> &'static [Self] {
+        &[
+            Self::All,
+            Self::Pending,
+            Self::Active,
+            Self::Completed,
+            Self::Failed,
+        ]
     }
 }
 
@@ -48,6 +73,32 @@ impl MethodFilter {
     }
 }
 
+impl FilterVariant for MethodFilter {
+    fn all() -> Self {
+        Self::All
+    }
+    fn label(&self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Get => "GET",
+            Self::Post => "POST",
+            Self::Put => "PUT",
+            Self::Delete => "DEL",
+            Self::Patch => "PATCH",
+        }
+    }
+    fn variants() -> &'static [Self] {
+        &[
+            Self::All,
+            Self::Get,
+            Self::Post,
+            Self::Put,
+            Self::Delete,
+            Self::Patch,
+        ]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProtocolFilter {
     All,
@@ -64,6 +115,23 @@ impl ProtocolFilter {
             Self::Sse => protocol == Protocol::Sse,
             Self::Ws => protocol == Protocol::Ws,
         }
+    }
+}
+
+impl FilterVariant for ProtocolFilter {
+    fn all() -> Self {
+        Self::All
+    }
+    fn label(&self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Http => "HTTP",
+            Self::Sse => "SSE",
+            Self::Ws => "WS",
+        }
+    }
+    fn variants() -> &'static [Self] {
+        &[Self::All, Self::Http, Self::Sse, Self::Ws]
     }
 }
 
@@ -237,6 +305,73 @@ mod tests {
 
     fn ws_entry(url: &str) -> NetworkEntry {
         NetworkEntry::new_ws(1, url.into(), String::new())
+    }
+
+    // ---- DOM-001: FilterVariant trait shared by all three enums ------
+
+    fn cycle_full<V: FilterVariant + std::fmt::Debug>() -> Vec<V> {
+        let start = V::all();
+        let mut seen: Vec<V> = vec![start];
+        let mut cur = start.next();
+        while cur != start {
+            seen.push(cur);
+            cur = cur.next();
+        }
+        seen
+    }
+
+    #[test]
+    fn dom_001_status_filter_variant_cycles_in_order() {
+        let v = cycle_full::<StatusFilter>();
+        assert_eq!(
+            v,
+            vec![
+                StatusFilter::All,
+                StatusFilter::Pending,
+                StatusFilter::Active,
+                StatusFilter::Completed,
+                StatusFilter::Failed,
+            ]
+        );
+        // next() wraps: last → all
+        assert_eq!(StatusFilter::Failed.next(), StatusFilter::All);
+        // labels
+        assert_eq!(StatusFilter::All.label(), "All");
+        assert_eq!(StatusFilter::Completed.label(), "Completed");
+    }
+
+    #[test]
+    fn dom_001_method_filter_variant_cycles_in_order() {
+        let v = cycle_full::<MethodFilter>();
+        assert_eq!(
+            v,
+            vec![
+                MethodFilter::All,
+                MethodFilter::Get,
+                MethodFilter::Post,
+                MethodFilter::Put,
+                MethodFilter::Delete,
+                MethodFilter::Patch,
+            ]
+        );
+        assert_eq!(MethodFilter::Patch.next(), MethodFilter::All);
+        assert_eq!(MethodFilter::Delete.label(), "DEL");
+    }
+
+    #[test]
+    fn dom_001_protocol_filter_variant_cycles_in_order() {
+        let v = cycle_full::<ProtocolFilter>();
+        assert_eq!(
+            v,
+            vec![
+                ProtocolFilter::All,
+                ProtocolFilter::Http,
+                ProtocolFilter::Sse,
+                ProtocolFilter::Ws,
+            ]
+        );
+        assert_eq!(ProtocolFilter::Ws.next(), ProtocolFilter::All);
+        assert_eq!(ProtocolFilter::Http.label(), "HTTP");
     }
 
     // ---- DOM-001: three parallel filter enums -------------------------
