@@ -15,6 +15,10 @@ pub enum NetworkStatus {
     Active,
     Completed,
     Failed,
+    /// A response arrived whose id has no matching request entry.
+    /// Phase 3 DOM-003 fix: orphan responses are now surfaced instead of
+    /// silently dropped, so the user sees data loss in the inspector.
+    Orphan,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +163,42 @@ impl NetworkEntry {
         }
     }
 
+    /// Create a placeholder entry for a `Response` whose id has no matching
+    /// `Request` — surfaces the orphan in the inspector instead of silently
+    /// dropping it. Phase 3 DOM-003.
+    pub fn new_orphan_response(
+        id: u64,
+        status_code: Option<u16>,
+        res_body: Option<String>,
+        duration: Option<u64>,
+    ) -> Self {
+        let size = res_body.as_ref().map(|b| b.len() as u64);
+        Self {
+            id,
+            protocol: Protocol::Http,
+            timestamp: String::new(),
+            method: "?".into(),
+            url: "<orphan response>".into(),
+            path: "<orphan>".into(),
+            status: NetworkStatus::Orphan,
+            http_status: status_code,
+            duration,
+            request_size: None,
+            response_size: size,
+            request_headers: None,
+            response_headers: None,
+            request_body: None,
+            response_body: res_body,
+            error: None,
+            sse_chunks: Vec::new(),
+            sse_total_size: 0,
+            ws_messages: Vec::new(),
+            ws_close_code: None,
+            ws_close_reason: None,
+            source: EntrySource::App,
+        }
+    }
+
     pub fn display_size(&self) -> u64 {
         match self.protocol {
             Protocol::Http => self.response_size.unwrap_or(0),
@@ -287,6 +327,21 @@ mod tests {
     }
 
     // ---- DOM-024: factory boilerplate ---------------------------------
+
+    // ---- DOM-003: orphan response factory ----------------------------
+
+    #[test]
+    fn dom_003_new_orphan_response_sets_orphan_status() {
+        let e = NetworkEntry::new_orphan_response(7, Some(404), Some("nope".into()), Some(12));
+        assert_eq!(e.id, 7);
+        assert_eq!(e.status, NetworkStatus::Orphan);
+        assert_eq!(e.http_status, Some(404));
+        assert_eq!(e.response_body.as_deref(), Some("nope"));
+        assert_eq!(e.response_size, Some(4));
+        assert_eq!(e.duration, Some(12));
+        assert_eq!(e.method, "?");
+        assert_eq!(e.protocol, Protocol::Http);
+    }
 
     #[test]
     fn dom_024_new_http_defaults() {

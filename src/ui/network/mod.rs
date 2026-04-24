@@ -73,6 +73,9 @@ pub fn status_color(status: NetworkStatus, http_status: Option<u16>) -> Color {
         NetworkStatus::Pending => OVERLAY0,
         NetworkStatus::Active => PEACH,
         NetworkStatus::Failed => RED,
+        // DOM-003: orphan responses are highlighted in yellow to distinguish
+        // them from normal completed entries.
+        NetworkStatus::Orphan => YELLOW,
         NetworkStatus::Completed => {
             if let Some(code) = http_status {
                 if code >= 500 {
@@ -355,6 +358,7 @@ fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
                 NetworkStatus::Pending => "...".to_string(),
                 NetworkStatus::Active => "active".to_string(),
                 NetworkStatus::Failed => "failed".to_string(),
+                NetworkStatus::Orphan => "orphan".to_string(),
                 NetworkStatus::Completed => entry
                     .http_status
                     .map(|c| c.to_string())

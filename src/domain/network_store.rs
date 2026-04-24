@@ -123,6 +123,14 @@ impl NetworkStore {
             if let Some(size) = msg.size {
                 entry.response_size = Some(size);
             }
+        } else {
+            // DOM-003 fix: a Response arrived with no matching Request — don't
+            // drop it silently. Surface as an Orphan entry so the user can see
+            // that data was received without context.
+            self.ensure_capacity();
+            let entry =
+                NetworkEntry::new_orphan_response(msg.id, msg.status, msg.body, msg.duration);
+            self.entries.push_back(entry);
         }
     }
 
@@ -293,13 +301,20 @@ mod tests {
     // specific "bad transition" outcome so Phase 3 changes are visible.
 
     #[test]
-    fn dom_002_res_without_req_drops_silently_a() {
-        // res with no matching req: current behavior is to do nothing.
+    fn dom_002_res_without_req_surfaces_orphan_entry_a() {
+        // Phase 3 DOM-003: an orphan Response is no longer silently dropped;
+        // it is pushed as a placeholder entry with NetworkStatus::Orphan.
         let mut store = NetworkStore::new();
         let mut m = msg(42, "res");
         m.status = Some(200);
+        m.body = Some("orphan".into());
         store.process_message(m);
-        assert!(store.is_empty());
+        assert_eq!(store.len(), 1);
+        let e = store.get(0).unwrap();
+        assert_eq!(e.id, 42);
+        assert_eq!(e.status, NetworkStatus::Orphan);
+        assert_eq!(e.http_status, Some(200));
+        assert_eq!(e.response_body.as_deref(), Some("orphan"));
     }
 
     #[test]

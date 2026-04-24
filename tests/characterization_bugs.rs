@@ -67,7 +67,6 @@ fn make_net_msg(id: u64, t: &str) -> FlogNetMessage {
 /// sentinel entry is created, an error is surfaced, or a log is emitted is
 /// a Phase 3 decision; this test locks the contract "not silently dropped"
 /// by asserting the store grows (observable signal).
-#[ignore = "bug: DOM-003, fix in Phase 3"]
 #[test]
 fn dom_003_response_without_request_should_not_drop_silently() {
     let mut store = NetworkStore::new();

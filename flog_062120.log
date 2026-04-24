@@ -1,0 +1,24 @@
+05:34:04.920 | ERROR   | Bootstrap      | [ZoneError] FileSystemException: lock failed, path = '/Users/shaomingqing/Library/Developer/CoreSimulator/Devices/0E256EF2-E975-4884-9803-9CDF95CB0AD8/data/Containers/Data/Application/0EBBED94-6590-4F76-B40B-E6E21780EEAB/Documents/user_info.lock' (OS Error: Resource temporarily unavailable, errno = 35)
+  Error: FileSystemException: lock failed, path = '/Users/shaomingqing/Library/Developer/CoreSimulator/Devices/0E256EF2-E975-4884-9803-9CDF95CB0AD8/data/Containers/Data/Application/0EBBED94-6590-4F76-B40B-E6E21780EEAB/Documents/user_info.lock' (OS Error: Resource temporarily unavailable, errno = 35)
+
+── Stack Trace ──
+
+#0      _checkForErrorResponse (dart:io/common.dart:58:9)
+#1      _RandomAccessFile.lock.<anonymous closure> (dart:io/file_impl.dart:1116:7)
+#2      _rootRunUnary (dart:async/zone_root.dart:48:47)
+#3      _CustomZone.runUnary (dart:async/zone.dart:733:19)
+<asynchronous suspension>
+#4      StorageBackendVm.initialize (package:hive/src/backend/vm/storage_backend_vm.dart:81:5)
+<asynchronous suspension>
+#5      HiveImpl._openBox (package:hive/src/hive_impl.dart:111:9)
+<asynchronous suspension>
+#6      HiveImpl.openBox (package:hive/src/hive_impl.dart:142:12)
+<asynchronous suspension>
+#7      _initStorage (package:aura_lang_flutter/bootstrap.dart:44:3)
+<asynchronous suspension>
+#8      Future.wait.<anonymous closure> (dart:async/future.dart:546:21)
+<asynchronous suspension>
+#9      bootstrap.<anonymous closure> (package:aura_lang_flutter/bootstrap.dart:23:7)
+<asynchronous suspension>
+#10     bootstrap (package:aura_lang_flutter/bootstrap.dart:18:3)
+<asynchronous suspension>

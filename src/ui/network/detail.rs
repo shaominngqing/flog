@@ -173,6 +173,11 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                 format!("{} {}", s, http_status_text(s))
             }),
             NetworkStatus::Failed => entry.error.clone().unwrap_or_else(|| "Failed".to_string()),
+            NetworkStatus::Orphan => entry
+                .http_status
+                .map_or("Orphan (no matching request)".to_string(), |s| {
+                    format!("Orphan {} {}", s, http_status_text(s))
+                }),
         };
         let sc = status_color(entry.status, entry.http_status);
         all_lines.push(Line::from(vec![

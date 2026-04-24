@@ -151,6 +151,11 @@ pub fn draw_network_stats(f: &mut Frame, app: &mut App) {
             NetworkStatus::Pending => {
                 in_progress += 1;
             }
+            NetworkStatus::Orphan => {
+                // DOM-003: orphan responses count as failed for stats purposes.
+                failed += 1;
+                dm.2 += 1;
+            }
         }
 
         if let Some(dur) = entry.duration {
