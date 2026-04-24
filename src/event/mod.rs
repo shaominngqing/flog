@@ -6,6 +6,7 @@ use crate::app::{App, AppMode, ViewTab};
 use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 use crate::domain::LogLevel;
 
+mod click_region;
 mod pills;
 
 use pills::{PILL_PADDING, SSE_EVENTS_PILL, SSE_MERGED_PILL, WS_CHAT_PILL, WS_LIST_PILL};
