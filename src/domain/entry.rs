@@ -73,6 +73,18 @@ impl LogEntry {
         }
     }
 
+    /// True when `self` and `other` would collapse into a single folded
+    /// entry by [`crate::domain::store::LogStore::add_entry`]. Signature
+    /// is (level, tag, message) plus both sides having no extra_lines.
+    /// Phase 3 DOM-011.
+    pub fn same_signature(&self, other: &Self) -> bool {
+        self.tag == other.tag
+            && self.level == other.level
+            && self.message == other.message
+            && self.extra_lines.is_empty()
+            && other.extra_lines.is_empty()
+    }
+
     /// Complete message including continuation lines, error, and collapsed stacktrace.
     pub fn full_message(&self) -> String {
         let mut s = self.message.clone();
