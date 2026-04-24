@@ -74,88 +74,28 @@ pub struct NetworkEntry {
 }
 
 impl NetworkEntry {
+    /// Start a builder. Phase 3 DOM-024. Prefer this over the
+    /// `new_http` / `new_sse` / `new_ws` factories for new call sites.
+    pub fn builder(id: u64, url: impl Into<String>) -> NetworkEntryBuilder {
+        NetworkEntryBuilder::new(id, url.into())
+    }
+
     pub fn new_http(id: u64, method: String, url: String, timestamp: String) -> Self {
-        let path = extract_path(&url);
-        Self {
-            id,
-            protocol: Protocol::Http,
-            timestamp,
-            method,
-            url,
-            path,
-            status: NetworkStatus::Pending,
-            http_status: None,
-            duration: None,
-            request_size: None,
-            response_size: None,
-            request_headers: None,
-            response_headers: None,
-            request_body: None,
-            response_body: None,
-            error: None,
-            sse_chunks: Vec::new(),
-            sse_total_size: 0,
-            ws_messages: Vec::new(),
-            ws_close_code: None,
-            ws_close_reason: None,
-            source: EntrySource::App,
-        }
+        Self::builder(id, url)
+            .http(method)
+            .timestamp(timestamp)
+            .build()
     }
 
     pub fn new_sse(id: u64, method: String, url: String, timestamp: String) -> Self {
-        let path = extract_path(&url);
-        Self {
-            id,
-            protocol: Protocol::Sse,
-            timestamp,
-            method,
-            url,
-            path,
-            status: NetworkStatus::Active,
-            http_status: None,
-            duration: None,
-            request_size: None,
-            response_size: None,
-            request_headers: None,
-            response_headers: None,
-            request_body: None,
-            response_body: None,
-            error: None,
-            sse_chunks: Vec::new(),
-            sse_total_size: 0,
-            ws_messages: Vec::new(),
-            ws_close_code: None,
-            ws_close_reason: None,
-            source: EntrySource::App,
-        }
+        Self::builder(id, url)
+            .sse(method)
+            .timestamp(timestamp)
+            .build()
     }
 
     pub fn new_ws(id: u64, url: String, timestamp: String) -> Self {
-        let path = extract_path(&url);
-        Self {
-            id,
-            protocol: Protocol::Ws,
-            timestamp,
-            method: String::new(),
-            url,
-            path,
-            status: NetworkStatus::Active,
-            http_status: None,
-            duration: None,
-            request_size: None,
-            response_size: None,
-            request_headers: None,
-            response_headers: None,
-            request_body: None,
-            response_body: None,
-            error: None,
-            sse_chunks: Vec::new(),
-            sse_total_size: 0,
-            ws_messages: Vec::new(),
-            ws_close_code: None,
-            ws_close_reason: None,
-            source: EntrySource::App,
-        }
+        Self::builder(id, url).ws().timestamp(timestamp).build()
     }
 
     /// Create a placeholder entry for a `Response` whose id has no matching
@@ -211,6 +151,92 @@ fn extract_path(url: &str) -> String {
         }
     }
     url.to_string()
+}
+
+/// Builder for [`NetworkEntry`]. Phase 3 DOM-024.
+///
+/// Replaces the three near-identical `new_http` / `new_sse` / `new_ws`
+/// factories. The only fields that differ between protocols are
+/// `protocol`, initial `status`, and `method` (empty for WS). Everything
+/// else is default — the builder centralises that shape.
+pub struct NetworkEntryBuilder {
+    entry: NetworkEntry,
+}
+
+impl NetworkEntryBuilder {
+    /// Start a builder with defaults for an HTTP `Pending` request.
+    /// Callers immediately override with [`Self::http`], [`Self::sse`],
+    /// or [`Self::ws`] to pin the protocol + initial status.
+    pub fn new(id: u64, url: String) -> Self {
+        let path = extract_path(&url);
+        Self {
+            entry: NetworkEntry {
+                id,
+                protocol: Protocol::Http,
+                timestamp: String::new(),
+                method: String::new(),
+                url,
+                path,
+                status: NetworkStatus::Pending,
+                http_status: None,
+                duration: None,
+                request_size: None,
+                response_size: None,
+                request_headers: None,
+                response_headers: None,
+                request_body: None,
+                response_body: None,
+                error: None,
+                sse_chunks: Vec::new(),
+                sse_total_size: 0,
+                ws_messages: Vec::new(),
+                ws_close_code: None,
+                ws_close_reason: None,
+                source: EntrySource::App,
+            },
+        }
+    }
+
+    /// HTTP request with the given method; initial status is `Pending`.
+    pub fn http(mut self, method: impl Into<String>) -> Self {
+        self.entry.protocol = Protocol::Http;
+        self.entry.method = method.into();
+        self.entry.status = NetworkStatus::Pending;
+        self
+    }
+
+    /// SSE stream with the given HTTP method; initial status is `Active`
+    /// because the stream begins on connect.
+    pub fn sse(mut self, method: impl Into<String>) -> Self {
+        self.entry.protocol = Protocol::Sse;
+        self.entry.method = method.into();
+        self.entry.status = NetworkStatus::Active;
+        self
+    }
+
+    /// WebSocket; method is empty (WS has no HTTP method) and initial
+    /// status is `Active`.
+    pub fn ws(mut self) -> Self {
+        self.entry.protocol = Protocol::Ws;
+        self.entry.method = String::new();
+        self.entry.status = NetworkStatus::Active;
+        self
+    }
+
+    pub fn timestamp(mut self, ts: impl Into<String>) -> Self {
+        self.entry.timestamp = ts.into();
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn source(mut self, source: EntrySource) -> Self {
+        self.entry.source = source;
+        self
+    }
+
+    pub fn build(self) -> NetworkEntry {
+        self.entry
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -322,6 +348,70 @@ mod tests {
     }
 
     // ---- DOM-024: factory boilerplate ---------------------------------
+
+    // ---- DOM-024: builder ---------------------------------------------
+
+    #[test]
+    fn dom_024_builder_http_sets_protocol_method_and_pending() {
+        let e = NetworkEntry::builder(1, "https://x.com/api")
+            .http("GET")
+            .build();
+        assert_eq!(e.id, 1);
+        assert_eq!(e.protocol, Protocol::Http);
+        assert_eq!(e.method, "GET");
+        assert_eq!(e.status, NetworkStatus::Pending);
+        assert_eq!(e.path, "/api");
+        assert_eq!(e.source, EntrySource::App);
+        assert!(e.timestamp.is_empty());
+    }
+
+    #[test]
+    fn dom_024_builder_sse_sets_protocol_method_and_active() {
+        let e = NetworkEntry::builder(2, "https://x.com/stream")
+            .sse("GET")
+            .build();
+        assert_eq!(e.protocol, Protocol::Sse);
+        assert_eq!(e.method, "GET");
+        assert_eq!(e.status, NetworkStatus::Active);
+    }
+
+    #[test]
+    fn dom_024_builder_ws_has_empty_method_and_active() {
+        let e = NetworkEntry::builder(3, "wss://x.com/ws").ws().build();
+        assert_eq!(e.protocol, Protocol::Ws);
+        assert_eq!(e.method, "");
+        assert_eq!(e.status, NetworkStatus::Active);
+    }
+
+    #[test]
+    fn dom_024_builder_timestamp_and_source_chainable() {
+        let e = NetworkEntry::builder(4, "https://x.com/a")
+            .http("POST")
+            .timestamp("12:00:00.000")
+            .source(EntrySource::Replay)
+            .build();
+        assert_eq!(e.timestamp, "12:00:00.000");
+        assert_eq!(e.source, EntrySource::Replay);
+    }
+
+    #[test]
+    fn dom_024_legacy_factories_still_delegate_to_builder() {
+        // Regression lock: new_http / new_sse / new_ws keep their exact
+        // shape after Phase 3 DOM-024 (they now wrap the builder).
+        let a = NetworkEntry::new_http(1, "GET".into(), "https://x.com/a".into(), "t".into());
+        let b = NetworkEntry::builder(1, "https://x.com/a")
+            .http("GET")
+            .timestamp("t")
+            .build();
+        // Compare by all fields that should match.
+        assert_eq!(a.id, b.id);
+        assert_eq!(a.protocol, b.protocol);
+        assert_eq!(a.method, b.method);
+        assert_eq!(a.url, b.url);
+        assert_eq!(a.path, b.path);
+        assert_eq!(a.status, b.status);
+        assert_eq!(a.timestamp, b.timestamp);
+    }
 
     // ---- DOM-003: orphan response factory ----------------------------
 
