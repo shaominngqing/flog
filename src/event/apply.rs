@@ -454,4 +454,48 @@ mod tests {
         );
         assert_eq!(app.network.filter.protocol, ProtocolFilter::Http);
     }
+
+    // ── apply_sse_field_selection ─────────────────────────────────────
+
+    fn seed_sse_entry(app: &mut App) {
+        use crate::domain::network::{NetworkEntry, Protocol, SseChunk};
+
+        let mut entry =
+            NetworkEntry::new_http(1, "GET".into(), "https://x.test/sse".into(), "t".into());
+        entry.protocol = Protocol::Sse;
+        entry.sse_chunks.push(SseChunk {
+            data: "{\"alpha\": \"one\", \"beta\": \"two\"}".into(),
+        });
+        entry.sse_chunks.push(SseChunk {
+            data: "{\"alpha\": \"three\", \"beta\": \"four\"}".into(),
+        });
+        app.network_store.push_entry(entry);
+        app.network.invalidate_filter();
+        let _ = app.network.filtered_count(&app.network_store);
+        app.network.selected = 0;
+    }
+
+    #[test]
+    fn apply_sse_field_selection_updates_field_idx() {
+        let mut app = App::default();
+        seed_sse_entry(&mut app);
+        apply_sse_field_selection(&mut app, 1);
+        assert_eq!(app.network.sse_merged_field_idx, 1);
+    }
+
+    #[test]
+    fn apply_sse_field_selection_rebuilds_merge_rule() {
+        let mut app = App::default();
+        seed_sse_entry(&mut app);
+        apply_sse_field_selection(&mut app, 0);
+        // Rule should now exist for the "/sse" URL path key.
+        assert!(
+            app.network
+                .sse_merge_rules
+                .keys()
+                .any(|k| k.ends_with("/sse")),
+            "expected merge rule for /sse after selection; got keys: {:?}",
+            app.network.sse_merge_rules.keys().collect::<Vec<_>>()
+        );
+    }
 }

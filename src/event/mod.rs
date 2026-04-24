@@ -17,6 +17,7 @@ mod detect;
 mod detect_net;
 mod keys;
 mod pills;
+mod sse_nav;
 
 use click_region::ScrollDir;
 use keys::{

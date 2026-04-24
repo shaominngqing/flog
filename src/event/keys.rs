@@ -62,84 +62,31 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.should_quit = true
             }
-            // SSE Merged mode: j/k switch fields
+            // SSE Merged mode: j/k cycle through fields (UI-008).
             KeyCode::Char('j') | KeyCode::Down
                 if app.network.sse_merged_mode && app.network.show_detail =>
             {
-                let sel = app.network.selected;
-                let indices = app.network.filtered_indices(&app.network_store).to_vec();
-                if let Some(&idx) = indices.get(sel) {
-                    if let Some(entry) = app.network_store.get(idx) {
-                        if entry.protocol == crate::domain::network::Protocol::Sse {
-                            let chunks_data: Vec<&str> =
-                                entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
-                            let candidates =
-                                crate::domain::sse_merge::extract_field_paths(&chunks_data);
-                            let count = candidates.len();
-                            if count > 0 {
-                                let new_idx = handle_sse_field_navigation(
-                                    app.network.sse_merged_field_idx,
-                                    count,
-                                    SseNavDir::Down,
-                                );
-                                app.network.sse_merged_field_idx = new_idx;
-                                let rule_key = entry
-                                    .path
-                                    .split('?')
-                                    .next()
-                                    .unwrap_or(&entry.path)
-                                    .to_string();
-                                if let Some((path, display)) = candidates.into_iter().nth(new_idx) {
-                                    app.network.sse_merge_rules.insert(
-                                        rule_key,
-                                        crate::app::SseMergeRule {
-                                            field_path: path,
-                                            field_display: display,
-                                        },
-                                    );
-                                }
-                            }
-                        }
-                    }
+                let count = app.sse_merged_field_count();
+                if count > 0 {
+                    let new_idx = super::sse_nav::sse_navigate_fields(
+                        app.network.sse_merged_field_idx,
+                        count,
+                        super::click_region::ScrollDir::Down,
+                    );
+                    super::apply::apply_sse_field_selection(app, new_idx);
                 }
             }
             KeyCode::Char('k') | KeyCode::Up
                 if app.network.sse_merged_mode && app.network.show_detail =>
             {
-                let new_idx = handle_sse_field_navigation(
-                    app.network.sse_merged_field_idx,
-                    usize::MAX,
-                    SseNavDir::Up,
-                );
-                app.network.sse_merged_field_idx = new_idx;
-                let sel = app.network.selected;
-                let indices = app.network.filtered_indices(&app.network_store).to_vec();
-                if let Some(&idx) = indices.get(sel) {
-                    if let Some(entry) = app.network_store.get(idx) {
-                        if entry.protocol == crate::domain::network::Protocol::Sse {
-                            let rule_key = entry
-                                .path
-                                .split('?')
-                                .next()
-                                .unwrap_or(&entry.path)
-                                .to_string();
-                            let chunks_data: Vec<&str> =
-                                entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
-                            let candidates =
-                                crate::domain::sse_merge::extract_field_paths(&chunks_data);
-                            if let Some((path, display)) =
-                                candidates.into_iter().nth(app.network.sse_merged_field_idx)
-                            {
-                                app.network.sse_merge_rules.insert(
-                                    rule_key,
-                                    crate::app::SseMergeRule {
-                                        field_path: path,
-                                        field_display: display,
-                                    },
-                                );
-                            }
-                        }
-                    }
+                let count = app.sse_merged_field_count();
+                if count > 0 {
+                    let new_idx = super::sse_nav::sse_navigate_fields(
+                        app.network.sse_merged_field_idx,
+                        count,
+                        super::click_region::ScrollDir::Up,
+                    );
+                    super::apply::apply_sse_field_selection(app, new_idx);
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -409,48 +356,7 @@ pub(super) fn handle_mock_edit_mouse(app: &mut App, mouse: MouseEvent) {
     }
 }
 
-/// Phase 2.5A — extracted from UI-008.
-/// Direction for SSE merged field navigation.
-enum SseNavDir {
-    Up,
-    Down,
-}
-
-/// Pure: given current field index and total count, return the new index
-/// after one navigation step. Saturates at 0 and count-1. If count is 0,
-/// returns current_idx unchanged (caller is responsible for not calling
-/// when no fields exist).
-fn handle_sse_field_navigation(current_idx: usize, count: usize, dir: SseNavDir) -> usize {
-    if count == 0 {
-        return current_idx;
-    }
-    match dir {
-        SseNavDir::Up => current_idx.saturating_sub(1),
-        SseNavDir::Down => (current_idx + 1).min(count - 1),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sse_nav_down_increments_up_to_bound() {
-        assert_eq!(handle_sse_field_navigation(0, 3, SseNavDir::Down), 1);
-        assert_eq!(handle_sse_field_navigation(1, 3, SseNavDir::Down), 2);
-        assert_eq!(handle_sse_field_navigation(2, 3, SseNavDir::Down), 2); // saturate
-    }
-
-    #[test]
-    fn sse_nav_up_saturates_at_zero() {
-        assert_eq!(handle_sse_field_navigation(2, 3, SseNavDir::Up), 1);
-        assert_eq!(handle_sse_field_navigation(1, 3, SseNavDir::Up), 0);
-        assert_eq!(handle_sse_field_navigation(0, 3, SseNavDir::Up), 0); // saturate
-    }
-
-    #[test]
-    fn sse_nav_empty_is_noop() {
-        assert_eq!(handle_sse_field_navigation(0, 0, SseNavDir::Up), 0);
-        assert_eq!(handle_sse_field_navigation(5, 0, SseNavDir::Down), 5);
-    }
-}
+// SseNavDir + handle_sse_field_navigation were retired in Phase 3 Task
+// 6. Their replacement is `sse_nav::sse_navigate_fields` with proper
+// wrap semantics (UI-008). The old saturating helper and its three
+// unit tests were deleted along with it.

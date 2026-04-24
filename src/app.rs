@@ -1105,6 +1105,25 @@ impl App {
         self.filtered_indices.get(self.selected).copied()
     }
 
+    /// Count of candidate fields available in SSE merged mode for the
+    /// currently selected entry, or 0 when no entry is selected or it
+    /// is not SSE. Used by the j/k navigation call-site (UI-008).
+    pub fn sse_merged_field_count(&mut self) -> usize {
+        let sel = self.network.selected;
+        let indices = self.network.filtered_indices(&self.network_store).to_vec();
+        let Some(&idx) = indices.get(sel) else {
+            return 0;
+        };
+        let Some(entry) = self.network_store.get(idx) else {
+            return 0;
+        };
+        if entry.protocol != crate::domain::network::Protocol::Sse {
+            return 0;
+        }
+        let chunks_data: Vec<&str> = entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
+        crate::domain::sse_merge::extract_field_paths(&chunks_data).len()
+    }
+
     // ── Stats ──
 
     fn compute_stats(&mut self) -> StatsSnapshot {
