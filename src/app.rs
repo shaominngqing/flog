@@ -1207,6 +1207,35 @@ impl App {
         self.stats_snapshot = None;
     }
 
+    // ── Mock rule state machine (audit UI-028) ──────────────────────────
+    //
+    //   Normal ──enter_mock_rules()─► Normal  (side-panel toggle only)
+    //          │
+    //          └─enter_mock_edit(id)─► MockRuleEdit
+    //                                     │ save_mock_edit()    ─► Normal (rule updated)
+    //                                     │ cancel_mock_edit()  ─► Normal (no change)
+    //
+    // `enter_mock_rules` is a NAME HOLDOVER (audit UI-022): it neither
+    // enters MockRuleEdit mode nor opens an editor — it toggles the mock
+    // rules list panel in the right sidebar. Renaming is deferred so this
+    // step keeps to app-internal scope.
+    //
+    // `enter_mock_edit(id)` is the only path INTO MockRuleEdit. It loads
+    // the existing rule via `MockEditState::from_rule(rule)` and sets
+    // `mode = AppMode::MockRuleEdit`. If `id` doesn't exist it is a no-op.
+    //
+    // From MockRuleEdit:
+    //   - `save_mock_edit()` writes back to `mock_rules`, clears rule_id,
+    //     returns to Normal. The caller (event.rs Ctrl-S / Ctrl-Enter, and
+    //     the mouse handler for the Save button) is responsible for then
+    //     broadcasting via `ConnectorHandle::send_mock_sync`.
+    //   - `cancel_mock_edit()` is the Esc / Cancel-button path — resets
+    //     rule_id and drops back to Normal without touching `mock_rules`.
+
+    /// Toggles the mock-rules list side panel on the Network tab.
+    ///
+    /// Despite the name (audit UI-022 ack — rename deferred), this does
+    /// NOT enter `AppMode::MockRuleEdit`. No-op if no app is connected.
     pub fn enter_mock_rules(&mut self) {
         if !self.has_connected_client() {
             self.show_status("Mock unavailable — no client connected".to_string());
@@ -1219,14 +1248,21 @@ impl App {
         }
     }
 
+    /// Enters `MockRuleEdit` with fields populated from the given rule.
+    ///
+    /// No-op if `rule_id` is not present in `mock_rules`. Flattened via
+    /// [`MockEditState::from_rule`] per audit UI-034.
     pub fn enter_mock_edit(&mut self, rule_id: usize) {
-        // Flattened via MockEditState::from_rule (audit UI-034).
         if let Some(rule) = self.mock_rules.rules().iter().find(|r| r.id == rule_id) {
             self.mock_edit = MockEditState::from_rule(rule);
             self.mode = AppMode::MockRuleEdit;
         }
     }
 
+    /// Commits `mock_edit` back to `mock_rules` and returns to `Normal`.
+    ///
+    /// The caller is responsible for broadcasting the updated rules via
+    /// `ConnectorHandle::send_mock_sync`.
     pub fn save_mock_edit(&mut self) {
         if let Some(id) = self.mock_edit.rule_id {
             if let Some(rule) = self.mock_rules.get_mut(id) {
@@ -1245,6 +1281,8 @@ impl App {
         self.mode = AppMode::Normal;
     }
 
+    /// Discards in-progress edits and returns to `Normal`. `mock_rules`
+    /// stays unchanged.
     pub fn cancel_mock_edit(&mut self) {
         self.mock_edit.rule_id = None;
         self.mode = AppMode::Normal;
