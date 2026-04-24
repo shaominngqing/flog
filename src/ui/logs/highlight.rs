@@ -3,6 +3,8 @@ use ratatui::text::Span;
 use regex::Regex;
 use std::sync::LazyLock;
 
+use super::{MANTLE, YELLOW};
+
 /// 自动模式识别高亮规则
 struct HighlightRule {
     regex: Regex,
@@ -128,5 +130,44 @@ pub fn auto_highlight(text: &str, base_style: Style) -> Vec<Span<'static>> {
         spans.push(Span::styled(text[pos..].to_string(), base_style));
     }
 
+    spans
+}
+
+/// Highlight filter search-term matches in `text`, painting hits with a bold
+/// yellow-on-mantle pill. Ranges come from the compiled filter's
+/// `search_positions` (supports plain substring, `a|b|c` OR, and `/regex/`).
+pub(super) fn highlight_with_filter(
+    text: &str,
+    filter: &crate::domain::FilterState,
+    base: Style,
+) -> Vec<Span<'static>> {
+    let positions = filter.search_positions(text);
+    if positions.is_empty() {
+        return vec![Span::styled(text.to_string(), base)];
+    }
+
+    let hl = Style::default()
+        .fg(MANTLE)
+        .bg(YELLOW)
+        .add_modifier(Modifier::BOLD);
+    let mut spans = Vec::new();
+    let mut last = 0;
+    for r in &positions {
+        let s = r.start.min(text.len());
+        let e = r.end.min(text.len());
+        if s > last {
+            spans.push(Span::styled(text[last..s].to_string(), base));
+        }
+        if s < e {
+            spans.push(Span::styled(text[s..e].to_string(), hl));
+        }
+        last = e;
+    }
+    if last < text.len() {
+        spans.push(Span::styled(text[last..].to_string(), base));
+    }
+    if spans.is_empty() {
+        spans.push(Span::styled(text.to_string(), base));
+    }
     spans
 }

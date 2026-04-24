@@ -17,7 +17,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::app::App;
 use crate::domain::LogLevel;
 
-use super::highlight::auto_highlight;
+use super::highlight::{auto_highlight, highlight_with_filter};
 use super::toolbar::level_pill;
 use super::{
     compute_visible_entry_start, draw_no_matching_logs, draw_not_connected, draw_waiting_for_logs,
@@ -471,40 +471,4 @@ pub(super) fn entry_row_count_from_store(
         None => return 1,
     };
     entry_row_count(entry, full_width)
-}
-
-pub(super) fn highlight_with_filter(
-    text: &str,
-    filter: &crate::domain::FilterState,
-    base: Style,
-) -> Vec<Span<'static>> {
-    let positions = filter.search_positions(text);
-    if positions.is_empty() {
-        return vec![Span::styled(text.to_string(), base)];
-    }
-
-    let hl = Style::default()
-        .fg(super::MANTLE)
-        .bg(YELLOW)
-        .add_modifier(Modifier::BOLD);
-    let mut spans = Vec::new();
-    let mut last = 0;
-    for r in &positions {
-        let s = r.start.min(text.len());
-        let e = r.end.min(text.len());
-        if s > last {
-            spans.push(Span::styled(text[last..s].to_string(), base));
-        }
-        if s < e {
-            spans.push(Span::styled(text[s..e].to_string(), hl));
-        }
-        last = e;
-    }
-    if last < text.len() {
-        spans.push(Span::styled(text[last..].to_string(), base));
-    }
-    if spans.is_empty() {
-        spans.push(Span::styled(text.to_string(), base));
-    }
-    spans
 }
