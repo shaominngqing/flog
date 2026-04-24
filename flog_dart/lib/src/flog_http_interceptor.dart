@@ -118,38 +118,17 @@ class FlogHttpInterceptor extends Interceptor {
     // Handle mocked responses — FlogMockInterceptor runs first, resolves,
     // and stamps `kFlogMockedExtrasKey` on options.extra. Our onRequest is
     // therefore skipped, so no `_flog_id` is present on the response path.
-    final isMocked = response.requestOptions.extra[kFlogMockedExtrasKey] == true;
+    final isMocked =
+        response.requestOptions.extra[kFlogMockedExtrasKey] == true;
     if (isMocked) {
       final id = nextNetId();
-      final url = response.requestOptions.uri.toString();
-
-      // Emit req
-      final reqData = <String, dynamic>{
-        'id': id,
-        't': 'req',
-        'p': 'http',
-        'method': response.requestOptions.method,
-        'url': url,
-      };
-      if (includeRequestHeaders) {
-        reqData['headers'] = response.requestOptions.headers;
-      }
-      emitNet(reqData);
-
-      // Emit res with mocked flag
-      final resData = <String, dynamic>{
-        'id': id,
-        't': 'res',
-        'p': 'http',
-        'status': response.statusCode,
-        'duration': 0,
-        'mocked': true,
-      };
-      if (includeResponseBody && response.data != null) {
-        resData['body'] = _truncate(_encodeBody(response.data));
-      }
-      emitNet(resData);
-
+      _emitReq(id, response.requestOptions);
+      _emitHttpCompletion(
+        id: id,
+        response: response,
+        duration: 0,
+        mocked: true,
+      );
       handler.next(response);
       return;
     }
@@ -166,28 +145,66 @@ class FlogHttpInterceptor extends Interceptor {
     final duration = startMs != null
         ? DateTime.now().millisecondsSinceEpoch - startMs
         : null;
+    _emitHttpCompletion(
+      id: id,
+      response: response,
+      duration: duration,
+      mocked: false,
+    );
+    handler.next(response);
+  }
 
+  /// Emit a `req` frame for a mocked request (normal requests already had
+  /// their `req` emitted by [onRequest]).
+  void _emitReq(int id, RequestOptions options) {
+    final data = <String, dynamic>{
+      'id': id,
+      't': 'req',
+      'p': 'http',
+      'method': options.method,
+      'url': options.uri.toString(),
+    };
+    if (includeRequestHeaders) {
+      data['headers'] = options.headers;
+    }
+    if (includeRequestBody && options.data != null) {
+      data['body'] = _truncate(_encodeBody(options.data));
+    }
+    emitNet(data);
+  }
+
+  /// Emit the terminal `res` frame for a completed HTTP request.
+  ///
+  /// Single place to decide which fields ride on the response envelope
+  /// (DART-027). Both the happy path (onResponse) and the mocked path
+  /// share this helper so future additions (e.g. query-string policy,
+  /// new truncation rules) cannot drift between the two.
+  void _emitHttpCompletion({
+    required int id,
+    required Response<dynamic> response,
+    required int? duration,
+    required bool mocked,
+  }) {
     final data = <String, dynamic>{
       'id': id,
       't': 'res',
       'p': 'http',
       'status': response.statusCode,
     };
-
     if (duration != null) {
       data['duration'] = duration;
     }
-
-    if (includeResponseHeaders) {
+    if (includeResponseHeaders && !mocked) {
+      // Mocked responses don't have real headers to expose.
       data['headers'] = response.headers.map;
     }
-
     if (includeResponseBody && response.data != null) {
       data['body'] = _truncate(_encodeBody(response.data));
     }
-
+    if (mocked) {
+      data['mocked'] = true;
+    }
     emitNet(data);
-    handler.next(response);
   }
 
   @override
