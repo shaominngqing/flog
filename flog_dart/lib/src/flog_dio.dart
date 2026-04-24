@@ -4,7 +4,11 @@ import 'flog_server.dart';
 import 'flog_http_interceptor.dart';
 import 'flog_mock_interceptor.dart';
 import 'flog_net.dart' show flogEnabled;
-import 'flog_sse_parser.dart';
+import 'flog_dio_sse.dart';
+
+// Re-export so `package:flog_dart/src/flog_dio.dart` remains a stable
+// entry point for SseResponse.
+export 'flog_dio_sse.dart' show SseResponse;
 
 /// Configuration for [FlogDio]'s automatic HTTP interception.
 class FlogHttpConfig {
@@ -35,26 +39,6 @@ class FlogHttpConfig {
     this.includeResponseBody = true,
     this.maxBodySize = 10 * 1024 * 1024,
     this.filter,
-  });
-}
-
-/// Response object returned by [FlogDio.sse].
-class SseResponse {
-  /// The response headers.
-  final Headers headers;
-
-  /// The HTTP status code, if available.
-  final int? statusCode;
-
-  /// A stream of parsed SSE data payloads, automatically instrumented for
-  /// flog's Network Inspector.
-  final Stream<String> stream;
-
-  /// Creates an [SseResponse].
-  const SseResponse({
-    required this.headers,
-    required this.statusCode,
-    required this.stream,
   });
 }
 
@@ -140,30 +124,17 @@ class FlogDio implements Dio {
     dynamic data,
     Options? options,
     Map<String, dynamic>? queryParameters,
-  }) async {
-    final mergedOptions = (options ?? Options()).copyWith(
-      method: method,
-      responseType: ResponseType.stream,
-    );
-
-    final response = await _inner.request<ResponseBody>(
+  }) {
+    // Delegates to flog_dio_sse.dart to keep this file under the §5.5
+    // line budget (DART-010). The inner Dio already carries the flog
+    // interceptors, so the SSE wrapping logic is pure plumbing.
+    return flogSse(
+      _inner,
       path,
-      data: data,
-      queryParameters: queryParameters,
-      options: mergedOptions,
-    );
-
-    final url = response.requestOptions.uri.toString();
-    final wrappedStream = FlogSseParser.wrap(
-      response.data!.stream,
-      url: url,
       method: method,
-    );
-
-    return SseResponse(
-      headers: response.headers,
-      statusCode: response.statusCode,
-      stream: wrappedStream,
+      data: data,
+      options: options,
+      queryParameters: queryParameters,
     );
   }
 
