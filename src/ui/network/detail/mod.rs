@@ -3,6 +3,8 @@
 mod general;
 mod http_body;
 mod shared;
+mod sse;
+mod ws;
 
 use ratatui::{
     layout::Rect,
@@ -13,20 +15,14 @@ use ratatui::{
     },
     Frame,
 };
-use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
-use crate::domain::network::{Protocol, WsDirection};
-use crate::domain::sse_merge;
-use crate::domain::ws_chat;
+use crate::domain::network::Protocol;
 
-use super::super::{
-    wrap_text, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, RED, SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1,
-    TEXT,
-};
+use super::super::{wrap_text, GREEN, MANTLE, MAUVE, OVERLAY0, RED, SAPPHIRE, SURFACE0, TEXT};
 use super::method_color;
 
-use shared::{path_without_query, push_section_header, render_json_section};
+use shared::push_section_header;
 
 pub(super) const KEY_COLOR: ratatui::style::Color = MAUVE;
 pub(super) const STR_COLOR: ratatui::style::Color = GREEN;
@@ -210,452 +206,26 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     // ── SSE Stream Events ──
     if entry.protocol == Protocol::Sse && !entry.sse_chunks.is_empty() {
-        let rule_key = path_without_query(&entry.path).to_string();
-        let has_rule = app.network.sse_merge_rules.contains_key(&rule_key);
-
-        // Check if chunks contain JSON (merged mode is available)
-        let has_json_chunks = entry
-            .sse_chunks
-            .first()
-            .map(|c| serde_json::from_str::<serde_json::Value>(&c.data).is_ok())
-            .unwrap_or(false);
-
-        if has_rule && app.network.sse_merged_mode {
-            // ── Merged mode ──
-            let sec_key = "SSE Events";
-            let is_collapsed = app.network.collapsed_sections.contains(sec_key);
-
-            // Section header with pill toggle + clear button
-            {
-                let events_pill =
-                    Span::styled(" Events ", Style::default().fg(OVERLAY0).bg(SURFACE0));
-                let merged_pill = Span::styled(
-                    " Merged ",
-                    Style::default()
-                        .fg(MANTLE)
-                        .bg(SAPPHIRE)
-                        .add_modifier(Modifier::BOLD),
-                );
-                let clear_pill = Span::styled(" \u{00d7} ", Style::default().fg(RED).bg(SURFACE0));
-                let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
-                let header_text = format!(" {} SSE Events ({})  ", icon, entry.sse_chunks.len());
-                all_lines.push(Line::from(vec![
-                    Span::styled(
-                        header_text.clone(),
-                        Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
-                    ),
-                    events_pill,
-                    Span::raw(" "),
-                    merged_pill,
-                    Span::raw(" "),
-                    clear_pill,
-                ]));
-                app.layout.sse_pill_line = Some((all_lines.len() - 1, header_text.width()));
-                section_line_map.push(Some(sec_key.to_string()));
-                json_click_map.push(None);
-            }
-
-            if !is_collapsed {
-                let rule = app.network.sse_merge_rules.get(&rule_key).cloned();
-                if let Some(rule) = rule {
-                    // Collect all chunk data refs
-                    let chunks_data: Vec<&str> =
-                        entry.sse_chunks.iter().map(|c| c.data.as_str()).collect();
-
-                    // Build candidate field list (scan multiple chunks)
-                    let candidates = sse_merge::extract_field_paths(&chunks_data);
-
-                    // Render field selector
-                    let selected_idx = app
-                        .network
-                        .sse_merged_field_idx
-                        .min(candidates.len().saturating_sub(1));
-                    for (fi, (_, display)) in candidates.iter().enumerate() {
-                        let is_active = fi == selected_idx;
-                        let marker = if is_active { "\u{2023} " } else { "  " };
-                        let style = if is_active {
-                            Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::default().fg(OVERLAY0)
-                        };
-                        all_lines.push(Line::from(Span::styled(
-                            format!("  {}{}", marker, display),
-                            style,
-                        )));
-                        section_line_map.push(Some(format!("SSE_FIELD#{}", fi)));
-                        json_click_map.push(None);
-                    }
-
-                    // Divider
-                    let divider_w = inner_w.saturating_sub(2);
-                    all_lines.push(Line::from(Span::styled(
-                        format!("  {}", "\u{2500}".repeat(divider_w)),
-                        Style::default().fg(SURFACE0),
-                    )));
-                    section_line_map.push(None);
-                    json_click_map.push(None);
-
-                    // Merge and render concatenated text
-                    let merged_text = sse_merge::merge_field(&chunks_data, &rule.field_path);
-                    if merged_text.is_empty() {
-                        all_lines.push(Line::from(Span::styled(
-                            "   (no data for this field)",
-                            Style::default().fg(OVERLAY0),
-                        )));
-                        section_line_map.push(None);
-                        json_click_map.push(None);
-                    } else {
-                        for wl in wrap_text(&merged_text, inner_w.saturating_sub(3), 500) {
-                            all_lines.push(Line::from(Span::styled(
-                                format!("   {}", wl),
-                                Style::default().fg(TEXT),
-                            )));
-                            section_line_map.push(None);
-                            json_click_map.push(None);
-                        }
-                    }
-
-                    // Clear rule is now handled by the × pill in the header line
-                }
-            }
-            all_lines.push(Line::raw(""));
-            section_line_map.push(None);
-            json_click_map.push(None);
-        } else {
-            // ── Events mode (original + pill toggle if JSON chunks exist) ──
-            let sec_name = format!("SSE Events ({})", entry.sse_chunks.len());
-            let sec_key = "SSE Events";
-            let is_collapsed = app.network.collapsed_sections.contains(sec_key);
-
-            if has_json_chunks {
-                // Show pills when chunks are JSON (merged mode available)
-                let events_pill = Span::styled(
-                    " Events ",
-                    Style::default()
-                        .fg(MANTLE)
-                        .bg(SAPPHIRE)
-                        .add_modifier(Modifier::BOLD),
-                );
-                let merged_pill =
-                    Span::styled(" Merged ", Style::default().fg(OVERLAY0).bg(SURFACE0));
-                let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
-                let header_text = format!(" {} {}  ", icon, sec_name);
-                all_lines.push(Line::from(vec![
-                    Span::styled(
-                        header_text.clone(),
-                        Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
-                    ),
-                    events_pill,
-                    Span::raw(" "),
-                    merged_pill,
-                ]));
-                app.layout.sse_pill_line = Some((all_lines.len() - 1, header_text.width()));
-                section_line_map.push(Some(sec_key.to_string()));
-                json_click_map.push(None);
-            } else {
-                push_section_header(
-                    &mut all_lines,
-                    &mut section_line_map,
-                    &mut json_click_map,
-                    &sec_name,
-                    is_collapsed,
-                );
-                // Override map entry to use fixed key (strip count)
-                if let Some(last) = section_line_map.last_mut() {
-                    *last = Some(sec_key.to_string());
-                }
-            }
-
-            if !is_collapsed {
-                // Pre-collapse SSE chunks by default on FIRST render only.
-                let init_key = "_sse_init";
-                if !app.network.collapsed_sections.contains(init_key) {
-                    app.network.collapsed_sections.insert(init_key.to_string());
-                    for i in 0..entry.sse_chunks.len() {
-                        app.network.collapsed_sections.insert(format!("SSE#{}", i));
-                    }
-                }
-
-                for (i, chunk) in entry.sse_chunks.iter().enumerate() {
-                    let chunk_key = format!("SSE#{}", i);
-                    let chunk_collapsed = app.network.collapsed_sections.contains(&chunk_key);
-                    let prefix = if chunk_collapsed {
-                        "  \u{25b6}"
-                    } else {
-                        "  \u{25bc}"
-                    };
-                    let prefix_text = format!("{} #{} ", prefix, i);
-                    let preview_w = inner_w.saturating_sub(prefix_text.len() + 1);
-                    all_lines.push(Line::from(vec![
-                        Span::styled(prefix_text, Style::default().fg(OVERLAY0)),
-                        Span::styled(
-                            if chunk_collapsed {
-                                if chunk.data.len() > preview_w {
-                                    format!("{}...", &chunk.data[..preview_w.saturating_sub(3)])
-                                } else {
-                                    chunk.data.clone()
-                                }
-                            } else {
-                                String::new()
-                            },
-                            Style::default().fg(SUBTEXT0),
-                        ),
-                    ]));
-                    section_line_map.push(Some(chunk_key.clone()));
-                    json_click_map.push(None);
-                    if !chunk_collapsed {
-                        render_json_section(
-                            &mut all_lines,
-                            &mut section_line_map,
-                            &mut json_click_map,
-                            &chunk.data,
-                            &format!("sse_{}", i),
-                            &mut app.network.json_viewer_states,
-                            inner_w,
-                        );
-                    }
-                }
-            }
-            all_lines.push(Line::raw(""));
-            section_line_map.push(None);
-            json_click_map.push(None);
-        }
+        sse::render_sse(
+            &mut all_lines,
+            &mut section_line_map,
+            &mut json_click_map,
+            app,
+            &entry,
+            inner_w,
+        );
     }
 
     // ── WebSocket Messages ──
     if entry.protocol == Protocol::Ws && !entry.ws_messages.is_empty() {
-        let sent = entry
-            .ws_messages
-            .iter()
-            .filter(|m| m.direction == WsDirection::Send)
-            .count();
-        let recv = entry
-            .ws_messages
-            .iter()
-            .filter(|m| m.direction == WsDirection::Recv)
-            .count();
-        let sec_name = format!("Messages ({}\u{2191} {}\u{2193})", sent, recv);
-        let sec_key = "WS Messages";
-        let is_collapsed = app.network.collapsed_sections.contains(sec_key);
-
-        // Header with Chat/Raw pills
-        {
-            let chat_pill = if app.network.ws_chat_mode {
-                Span::styled(
-                    " Chat ",
-                    Style::default()
-                        .fg(MANTLE)
-                        .bg(SAPPHIRE)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::styled(" Chat ", Style::default().fg(OVERLAY0).bg(SURFACE0))
-            };
-            let raw_pill = if !app.network.ws_chat_mode {
-                Span::styled(
-                    " Raw ",
-                    Style::default()
-                        .fg(MANTLE)
-                        .bg(SAPPHIRE)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::styled(" Raw ", Style::default().fg(OVERLAY0).bg(SURFACE0))
-            };
-            let icon = if is_collapsed { "\u{25b6}" } else { "\u{25bc}" };
-            let header_text = format!(" {} {}  ", icon, sec_name);
-            all_lines.push(Line::from(vec![
-                Span::styled(
-                    header_text.clone(),
-                    Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
-                ),
-                chat_pill,
-                Span::raw(" "),
-                raw_pill,
-            ]));
-            app.layout.ws_pill_line = Some((all_lines.len() - 1, header_text.width()));
-            section_line_map.push(Some(sec_key.to_string()));
-            json_click_map.push(None);
-        }
-
-        if !is_collapsed {
-            if app.network.ws_chat_mode {
-                // ── Chat mode: compact timeline with direction pills ──
-                let msgs: Vec<(crate::domain::network::WsDirection, &str, u64)> = entry
-                    .ws_messages
-                    .iter()
-                    .map(|m| (m.direction, m.data.as_str(), m.size))
-                    .collect();
-                let groups = ws_chat::group_messages(&msgs);
-
-                for (gi, group) in groups.iter().enumerate() {
-                    let group_key = format!("WS_GROUP#{}", gi);
-                    let group_collapsed = !app.network.collapsed_sections.contains(&group_key);
-                    // In Chat mode: collapsed = default (not in set), expanded = in set
-
-                    let (pill_text, pill_style, row_bg) = match group.direction {
-                        WsDirection::Send => (
-                            " \u{2192} SEND ",
-                            Style::default()
-                                .fg(MANTLE)
-                                .bg(GREEN)
-                                .add_modifier(Modifier::BOLD),
-                            SURFACE0,
-                        ),
-                        WsDirection::Recv => (
-                            " \u{2190} RECV ",
-                            Style::default()
-                                .fg(MANTLE)
-                                .bg(BLUE)
-                                .add_modifier(Modifier::BOLD),
-                            SURFACE1,
-                        ),
-                    };
-                    let count = group.msg_indices.len();
-                    let count_str = if count > 1 {
-                        format!(" (\u{00d7}{})", count)
-                    } else {
-                        String::new()
-                    };
-
-                    // Track start of this group's lines so we can apply bg
-                    let lines_start = all_lines.len();
-
-                    if group.is_binary {
-                        // Binary group: pill + type + binary size, not expandable
-                        let total_size = ws_chat::format_binary_size(group.total_size as usize);
-                        all_lines.push(Line::from(vec![
-                            Span::styled(pill_text, pill_style),
-                            Span::styled(
-                                format!(
-                                    " {}{} [binary {}]",
-                                    group.type_label, count_str, total_size
-                                ),
-                                Style::default().fg(OVERLAY0),
-                            ),
-                        ]));
-                        section_line_map.push(Some(group_key.clone()));
-                        json_click_map.push(None);
-                    } else if group.merged_delta.is_some() {
-                        // Delta group: pill + type + count, merged text below
-                        all_lines.push(Line::from(vec![
-                            Span::styled(pill_text, pill_style),
-                            Span::styled(
-                                format!(" {}{}", group.type_label, count_str),
-                                Style::default().fg(TEXT),
-                            ),
-                        ]));
-                        section_line_map.push(Some(group_key.clone()));
-                        json_click_map.push(None);
-
-                        // Always show merged text for delta groups
-                        if let Some(ref merged) = group.merged_delta {
-                            if !merged.is_empty() {
-                                let wrap_w = inner_w.saturating_sub(3);
-                                for wl in wrap_text(merged, wrap_w, 200) {
-                                    all_lines.push(Line::from(Span::styled(
-                                        format!("   {}", wl),
-                                        Style::default().fg(TEXT),
-                                    )));
-                                    section_line_map.push(None);
-                                    json_click_map.push(None);
-                                }
-                            }
-                        }
-                    } else {
-                        // Regular group: pill + type, click to expand individual messages
-                        all_lines.push(Line::from(vec![
-                            Span::styled(pill_text, pill_style),
-                            Span::styled(
-                                format!(" {}{}", group.type_label, count_str),
-                                Style::default().fg(TEXT),
-                            ),
-                        ]));
-                        section_line_map.push(Some(group_key.clone()));
-                        json_click_map.push(None);
-
-                        // Expanded: show individual messages with JSON
-                        if !group_collapsed {
-                            for &mi in &group.msg_indices {
-                                if let Some(msg) = entry.ws_messages.get(mi) {
-                                    let display_data = if ws_chat::has_binary_content(&msg.data) {
-                                        ws_chat::preview_message(&msg.data, 0)
-                                    } else {
-                                        msg.data.clone()
-                                    };
-                                    render_json_section(
-                                        &mut all_lines,
-                                        &mut section_line_map,
-                                        &mut json_click_map,
-                                        &display_data,
-                                        &format!("ws_{}", mi),
-                                        &mut app.network.json_viewer_states,
-                                        inner_w,
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    // Apply background color to ALL lines in this group (including JSON)
-                    for line in &mut all_lines[lines_start..] {
-                        for span in &mut line.spans {
-                            if span.style.bg.is_none() {
-                                span.style.bg = Some(row_bg);
-                            }
-                        }
-                    }
-                }
-            } else {
-                // ── Raw mode (original behavior) ──
-                for (i, msg) in entry.ws_messages.iter().enumerate() {
-                    let (arrow, color) = match msg.direction {
-                        WsDirection::Send => ("\u{2192}", GREEN),
-                        WsDirection::Recv => ("\u{2190}", BLUE),
-                    };
-                    let msg_key = format!("WS#{}", i);
-                    let msg_collapsed = app.network.collapsed_sections.contains(&msg_key);
-                    let prefix = if msg_collapsed {
-                        "\u{25b6}"
-                    } else {
-                        "\u{25bc}"
-                    };
-                    let ws_prefix_text = format!("  {} {} ", prefix, arrow);
-                    let ws_preview_w = inner_w.saturating_sub(ws_prefix_text.len() + 1);
-                    all_lines.push(Line::from(vec![
-                        Span::styled(ws_prefix_text, Style::default().fg(color)),
-                        Span::styled(
-                            if msg_collapsed {
-                                if msg.data.len() > ws_preview_w {
-                                    format!("{}...", &msg.data[..ws_preview_w.saturating_sub(3)])
-                                } else {
-                                    msg.data.clone()
-                                }
-                            } else {
-                                format!("({} bytes)", msg.size)
-                            },
-                            Style::default().fg(SUBTEXT0),
-                        ),
-                    ]));
-                    section_line_map.push(Some(msg_key.clone()));
-                    json_click_map.push(None);
-                    if !msg_collapsed {
-                        render_json_section(
-                            &mut all_lines,
-                            &mut section_line_map,
-                            &mut json_click_map,
-                            &msg.data,
-                            &format!("ws_{}", i),
-                            &mut app.network.json_viewer_states,
-                            inner_w,
-                        );
-                    }
-                }
-            }
-            all_lines.push(Line::raw(""));
-            section_line_map.push(None);
-            json_click_map.push(None);
-        }
+        ws::render_ws(
+            &mut all_lines,
+            &mut section_line_map,
+            &mut json_click_map,
+            app,
+            &entry,
+            inner_w,
+        );
     }
 
     // ── Error ──
