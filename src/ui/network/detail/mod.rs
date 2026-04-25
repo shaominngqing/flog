@@ -1,5 +1,6 @@
 //! Network detail panel — Flipper-style collapsible sections with JSON viewer.
 
+mod error;
 mod general;
 mod http_body;
 mod shared;
@@ -19,10 +20,8 @@ use ratatui::{
 use crate::app::App;
 use crate::domain::network::Protocol;
 
-use super::super::{wrap_text, GREEN, MANTLE, MAUVE, OVERLAY0, RED, SAPPHIRE, SURFACE0, TEXT};
+use super::super::{wrap_text, GREEN, MANTLE, MAUVE, OVERLAY0, SAPPHIRE, SURFACE0, TEXT};
 use super::method_color;
-
-use shared::push_section_header;
 
 pub(super) const KEY_COLOR: ratatui::style::Color = MAUVE;
 pub(super) const STR_COLOR: ratatui::style::Color = GREEN;
@@ -229,28 +228,14 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // ── Error ──
-    if let Some(ref error) = entry.error {
-        let sec = "Error";
-        let is_collapsed = app.network.collapsed_sections.contains(sec);
-        push_section_header(
-            &mut all_lines,
-            &mut section_line_map,
-            &mut json_click_map,
-            sec,
-            is_collapsed,
-        );
-        if !is_collapsed {
-            let wrapped = wrap_text(error, inner_w.saturating_sub(3), 20);
-            for wl in &wrapped {
-                all_lines.push(Line::from(Span::styled(
-                    format!("   {}", wl),
-                    Style::default().fg(RED),
-                )));
-                section_line_map.push(None);
-                json_click_map.push(None);
-            }
-        }
-    }
+    error::render_error(
+        &mut all_lines,
+        &mut section_line_map,
+        &mut json_click_map,
+        entry.error.as_ref(),
+        &app.network.collapsed_sections,
+        inner_w,
+    );
 
     // Store maps for click handling
     app.network.detail_section_map = section_line_map;
