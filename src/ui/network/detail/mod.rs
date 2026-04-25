@@ -1,6 +1,6 @@
 //! Network detail panel — Flipper-style collapsible sections with JSON viewer.
 
-use std::collections::HashMap;
+mod shared;
 
 use ratatui::{
     layout::Rect,
@@ -17,7 +17,6 @@ use crate::app::App;
 use crate::domain::network::{NetworkStatus, Protocol, WsDirection};
 use crate::domain::sse_merge;
 use crate::domain::ws_chat;
-use crate::ui::json_viewer::{self, JsonViewerState};
 
 use super::super::{
     wrap_text, BLUE, GREEN, MANTLE, MAUVE, OVERLAY0, RED, SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1,
@@ -25,8 +24,13 @@ use super::super::{
 };
 use super::{format_duration, format_size, method_color, status_color};
 
-const KEY_COLOR: ratatui::style::Color = MAUVE;
-const STR_COLOR: ratatui::style::Color = GREEN;
+use shared::{
+    http_status_text, parse_query_params, path_without_query, push_kv_single, push_kv_wrapped,
+    push_section_header, render_json_section, render_json_section_with_depth,
+};
+
+pub(super) const KEY_COLOR: ratatui::style::Color = MAUVE;
+pub(super) const STR_COLOR: ratatui::style::Color = GREEN;
 
 pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let indices = app.network.filtered_indices(&app.network_store).to_vec();
@@ -879,238 +883,4 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         let mut state = ScrollbarState::new(max_scroll).position(scroll.min(max_scroll));
         f.render_stateful_widget(scrollbar, area, &mut state);
     }
-}
-
-// ══════════════════════════════════════
-//  Section helpers
-// ══════════════════════════════════════
-
-fn push_section_header(
-    lines: &mut Vec<Line<'static>>,
-    section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
-    title: &str,
-    collapsed: bool,
-) {
-    let icon = if collapsed { "\u{25b6}" } else { "\u{25bc}" }; // ▶ ▼
-    lines.push(Line::from(Span::styled(
-        format!(" {} {}", icon, title),
-        Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
-    )));
-    section_map.push(Some(title.to_string()));
-    json_click_map.push(None);
-}
-
-fn push_kv_single(
-    lines: &mut Vec<Line<'static>>,
-    section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
-    key: &str,
-    value: &str,
-) {
-    lines.push(Line::from(vec![
-        Span::styled(format!("   {}: ", key), Style::default().fg(KEY_COLOR)),
-        Span::styled(value.to_string(), Style::default().fg(STR_COLOR)),
-    ]));
-    section_map.push(None);
-    json_click_map.push(None);
-}
-
-fn push_kv_wrapped(
-    lines: &mut Vec<Line<'static>>,
-    section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
-    key: &str,
-    value: &str,
-    max_w: usize,
-) {
-    let prefix = format!("   {}: ", key);
-    let first_line_w = max_w.saturating_sub(prefix.len());
-    let cont_indent = "   ";
-    let _cont_w = max_w.saturating_sub(cont_indent.len());
-
-    if value.width() <= first_line_w {
-        lines.push(Line::from(vec![
-            Span::styled(prefix, Style::default().fg(KEY_COLOR)),
-            Span::styled(value.to_string(), Style::default().fg(STR_COLOR)),
-        ]));
-        section_map.push(None);
-        json_click_map.push(None);
-    } else {
-        // First line with key
-        let wrapped = wrap_text(value, first_line_w, 20);
-        if let Some(first) = wrapped.first() {
-            lines.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(KEY_COLOR)),
-                Span::styled(first.to_string(), Style::default().fg(STR_COLOR)),
-            ]));
-            section_map.push(None);
-            json_click_map.push(None);
-        }
-        // Continuation lines
-        for wl in wrapped.iter().skip(1) {
-            lines.push(Line::from(Span::styled(
-                format!("{}{}", cont_indent, wl),
-                Style::default().fg(STR_COLOR),
-            )));
-            section_map.push(None);
-            json_click_map.push(None);
-        }
-    }
-}
-
-// ══════════════════════════════════════
-//  JSON rendering using json_viewer
-// ══════════════════════════════════════
-
-/// Default initial expansion depth for JSON sections (DevTools style:
-/// root + its direct children expanded, grandchildren folded).
-const DEFAULT_JSON_EXPAND_DEPTH: u32 = 1;
-
-/// Render a JSON/Dart-Map section with the default expansion depth.
-/// Callers that need a different depth use [`render_json_section_with_depth`].
-fn render_json_section(
-    lines: &mut Vec<Line<'static>>,
-    section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
-    json_text: &str,
-    section_key: &str,
-    viewer_states: &mut HashMap<String, JsonViewerState>,
-    max_w: usize,
-) {
-    render_json_section_with_depth(
-        lines,
-        section_map,
-        json_click_map,
-        json_text,
-        section_key,
-        viewer_states,
-        max_w,
-        DEFAULT_JSON_EXPAND_DEPTH,
-    );
-}
-
-/// Like [`render_json_section`] but overrides the initial expansion depth.
-/// Use `0` to show only the root expanded (e.g. for headers where metadata
-/// is usually collapsed by default).
-// Phase 3 redesign — see Audit UI-037: extract parameter struct.
-#[allow(clippy::too_many_arguments)]
-fn render_json_section_with_depth(
-    lines: &mut Vec<Line<'static>>,
-    section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
-    json_text: &str,
-    section_key: &str,
-    viewer_states: &mut HashMap<String, JsonViewerState>,
-    max_w: usize,
-    expand_depth: u32,
-) {
-    match crate::domain::structured_parser::parse_whole(json_text) {
-        Some(value) => {
-            let tree = json_viewer::Tree::from_value(&value);
-            let state = viewer_states
-                .entry(section_key.to_string())
-                .or_insert_with(|| json_viewer::init_state(&tree, expand_depth));
-            let base = lines.len();
-            json_viewer::append_render(
-                lines,
-                json_click_map,
-                &tree,
-                state,
-                section_key,
-                "   ",
-                max_w.saturating_sub(3),
-            );
-            // Keep section_map in sync with lines.
-            for _ in base..lines.len() {
-                section_map.push(None);
-            }
-        }
-        None => {
-            for wl in wrap_text(json_text, max_w.saturating_sub(3), 100) {
-                lines.push(Line::from(Span::styled(
-                    format!("   {}", wl),
-                    Style::default().fg(SUBTEXT0),
-                )));
-                section_map.push(None);
-                json_click_map.push(None);
-            }
-        }
-    }
-}
-
-// ══════════════════════════════════════
-//  Query parameters parsing
-// ══════════════════════════════════════
-
-fn parse_query_params(url: &str) -> Vec<(String, String)> {
-    let mut params = Vec::new();
-    if let Some(query_start) = url.find('?') {
-        let query = &url[query_start + 1..];
-        // Strip fragment if present
-        let query = query.split('#').next().unwrap_or(query);
-        for pair in query.split('&') {
-            if pair.is_empty() {
-                continue;
-            }
-            if let Some(eq_pos) = pair.find('=') {
-                let key = url_decode(&pair[..eq_pos]);
-                let value = url_decode(&pair[eq_pos + 1..]);
-                params.push((key, value));
-            } else {
-                params.push((url_decode(pair), String::new()));
-            }
-        }
-    }
-    params
-}
-
-fn url_decode(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '%' {
-            let hex: String = chars.by_ref().take(2).collect();
-            if hex.len() == 2 {
-                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                    result.push(byte as char);
-                    continue;
-                }
-            }
-            result.push('%');
-            result.push_str(&hex);
-        } else if c == '+' {
-            result.push(' ');
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
-fn http_status_text(code: u16) -> &'static str {
-    match code {
-        200 => "OK",
-        201 => "Created",
-        204 => "No Content",
-        301 => "Moved Permanently",
-        302 => "Found",
-        304 => "Not Modified",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        408 => "Request Timeout",
-        429 => "Too Many Requests",
-        500 => "Internal Server Error",
-        502 => "Bad Gateway",
-        503 => "Service Unavailable",
-        504 => "Gateway Timeout",
-        _ => "",
-    }
-}
-
-/// Strip query params from URL path for merge rule matching.
-fn path_without_query(path: &str) -> &str {
-    path.split('?').next().unwrap_or(path)
 }
