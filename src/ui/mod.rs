@@ -9,12 +9,12 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+pub mod device_picker;
 pub mod help;
 pub mod input_field;
 pub mod json_viewer;
 pub mod logs;
 pub mod network;
-pub mod source_select;
 mod tab_bar;
 pub mod text_editor;
 

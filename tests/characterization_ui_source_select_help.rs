@@ -1,5 +1,6 @@
 //! Phase 2.5B Task 10a — characterization tests for
-//! `src/ui/source_select.rs` (device picker modal) and `src/ui/help.rs`.
+//! `src/ui/device_picker.rs` (device picker modal) and `src/ui/help.rs`.
+//! (Renamed from `source_select` in Phase 3 Step 3.9 UI-012.)
 //!
 //! Uses TestBackend to drive the real render path and asserts OBSERVABLE
 //! features (text presence, cell backgrounds, layout cache state) rather
@@ -7,7 +8,7 @@
 //! variations per Rule 10.
 //!
 //! Audit coverage:
-//!   - source_select.rs: draw_device_picker (0 devices, 1 device, many
+//!   - device_picker.rs: draw_device_picker (0 devices, 1 device, many
 //!     devices, multiple apps per device, active app, selection, scroll,
 //!     narrow/tall viewports).
 //!   - help.rs: draw_help static content (banner, tabs, Logs section,
@@ -47,7 +48,7 @@ use support::ui_inspect::{
     count_cells_with_bg, count_rows_with_text, find_text_row, full_text, row_to_string,
 };
 
-// ---- Palette constants (mirror src/ui/source_select.rs & help.rs) ----
+// ---- Palette constants (mirror src/ui/device_picker.rs & help.rs) ----
 const BASE: Color = Color::Rgb(36, 39, 58);
 const MANTLE: Color = Color::Rgb(30, 32, 48);
 #[allow(dead_code)]
@@ -69,7 +70,7 @@ fn render_picker(app: &mut App, width: u16, height: u16) -> Buffer {
     let mut term = Terminal::new(backend).unwrap();
     term.draw(|f| {
         let area = Rect::new(0, 0, width, height);
-        flog::ui::source_select::draw_device_picker(f, app, area);
+        flog::ui::device_picker::draw_device_picker(f, app, area);
     })
     .unwrap();
     term.backend().buffer().clone()
@@ -145,7 +146,7 @@ fn add_device(app: &mut App, dev: Device) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-//  source_select / device picker — empty state
+//  device_picker — empty state
 // ══════════════════════════════════════════════════════════════════════
 
 #[test]

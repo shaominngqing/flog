@@ -535,7 +535,7 @@ async fn run_loop(
                 }
                 // Device picker overlay
                 if app_guard.show_device_picker {
-                    ui::source_select::draw_device_picker(f, &mut app_guard, f.area());
+                    ui::device_picker::draw_device_picker(f, &mut app_guard, f.area());
                 }
             })?;
             if app_guard.should_quit {
