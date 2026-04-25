@@ -200,13 +200,12 @@ fn ws_app_with_msgs() -> App {
 }
 
 #[test]
-#[ignore = "bug: UI-042 WS chat→raw toggle leaves stale collapsed_sections entries"]
 fn ui_042_a_chat_to_raw_toggle_clears_mode_specific_collapse_keys() {
     let mut app = ws_app_with_msgs();
     // Put us in Chat mode and mark group 0 as expanded (collapsed_sections
     // in chat mode semantics = "expanded" per the render code's inverted
-    // convention; see detail.rs WS_GROUP handling).
-    app.network.ws_chat_mode = true;
+    // convention; see detail/ws.rs WS_GROUP handling).
+    app.network.set_ws_chat_mode(true);
     app.network
         .collapsed_sections
         .insert("WS_GROUP#0".to_string());
@@ -214,7 +213,7 @@ fn ui_042_a_chat_to_raw_toggle_clears_mode_specific_collapse_keys() {
     app.network.collapsed_sections.insert("WS#3".to_string());
 
     // Toggle Chat → Raw (what the user does via pill click).
-    app.network.ws_chat_mode = false;
+    app.network.set_ws_chat_mode(false);
 
     // Invariant: after a mode toggle, any keys belonging to the OLD mode
     // should be purged. Chat uses WS_GROUP#*, Raw uses WS#*.
@@ -228,6 +227,59 @@ fn ui_042_a_chat_to_raw_toggle_clears_mode_specific_collapse_keys() {
         "Chat→Raw toggle left stale WS_GROUP#* keys in collapsed_sections: {:?}",
         app.network.collapsed_sections
     );
+}
+
+// ── UI-042 additional invariants (Phase 3 Step 3.8 Task 5) ─────────────
+
+/// Toggle twice returns a clean state: neither mode's stale keys should
+/// leak across a round trip.
+#[test]
+fn ui_042_b_round_trip_toggle_clears_both_modes() {
+    let mut app = ws_app_with_msgs();
+    app.network.set_ws_chat_mode(true);
+    app.network
+        .collapsed_sections
+        .insert("WS_GROUP#0".to_string());
+
+    app.network.set_ws_chat_mode(false);
+    app.network.collapsed_sections.insert("WS#2".to_string());
+
+    // Back to Chat — Raw's WS#2 key must go.
+    app.network.set_ws_chat_mode(true);
+
+    let has_raw = app
+        .network
+        .collapsed_sections
+        .iter()
+        .any(|k| k.starts_with("WS#"));
+    assert!(
+        !has_raw,
+        "Raw→Chat toggle left stale WS#* keys: {:?}",
+        app.network.collapsed_sections
+    );
+}
+
+/// Toggling with unrelated collapsed-section keys present must preserve
+/// them (only the OTHER mode's WS-prefix keys should be purged).
+#[test]
+fn ui_042_c_unrelated_keys_survive_toggle() {
+    let mut app = ws_app_with_msgs();
+    app.network.set_ws_chat_mode(true);
+    app.network
+        .collapsed_sections
+        .insert("Request Body".to_string());
+    app.network
+        .collapsed_sections
+        .insert("Response Headers".to_string());
+    app.network
+        .collapsed_sections
+        .insert("WS_GROUP#4".to_string());
+
+    app.network.set_ws_chat_mode(false);
+
+    assert!(app.network.collapsed_sections.contains("Request Body"));
+    assert!(app.network.collapsed_sections.contains("Response Headers"));
+    assert!(!app.network.collapsed_sections.contains("WS_GROUP#4"));
 }
 
 // Note: a secondary "round-trip render idempotence" invariant was drafted

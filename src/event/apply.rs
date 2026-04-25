@@ -118,7 +118,7 @@ pub(crate) fn apply_click_region(
         ClickRegion::NetworkDetailSseMergedPill => apply_enter_sse_merged_mode(app),
         ClickRegion::NetworkDetailSseFieldPill { idx } => apply_sse_field_selection(app, idx),
         ClickRegion::NetworkDetailWsChatPill => {
-            app.network.ws_chat_mode = true;
+            app.network.set_ws_chat_mode(true);
         }
         ClickRegion::NetworkDetailSectionToggle { section_key } => {
             apply_network_detail_section_toggle(app, &section_key);
@@ -328,7 +328,7 @@ fn apply_network_detail_section_toggle(app: &mut App, section_key: &str) {
             }
         }
         "WS_RAW_EXIT" => {
-            app.network.ws_chat_mode = false;
+            app.network.set_ws_chat_mode(false);
         }
         key if key.starts_with("JSON#") => {
             // Synthetic encoding from detect: JSON#<section_key>#<node_id>.

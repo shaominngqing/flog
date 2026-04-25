@@ -243,6 +243,40 @@ impl NetworkState {
         self.json_viewer_states.clear();
     }
 
+    /// Set WS Chat/Raw mode and purge stale collapse keys + viewer states
+    /// that belonged to the OTHER mode.
+    ///
+    /// ## UI-042 (Phase 3 Step 3.8)
+    ///
+    /// Chat mode records expanded groups with keys `WS_GROUP#<n>`; Raw
+    /// mode records collapsed messages with keys `WS#<n>`. Leaving the
+    /// opposite mode's keys in `collapsed_sections` corrupts the next
+    /// render (an old `WS_GROUP#0` from a previous Chat session reads as
+    /// "group 0 expanded" the instant the user flips back to Chat on a
+    /// different entry). Additionally, `json_viewer_states` entries keyed
+    /// on `ws_*` ids point at AST node IDs for a specific message at a
+    /// specific index; toggling modes can change which messages are
+    /// rendered, so we drop those states too (they rebuild on next
+    /// render with fresh node IDs).
+    pub fn set_ws_chat_mode(&mut self, chat: bool) {
+        // No-op if mode is unchanged — avoid stomping on genuine chat
+        // state when the caller re-asserts the current mode.
+        if self.ws_chat_mode == chat {
+            return;
+        }
+        self.ws_chat_mode = chat;
+        // Purge the OLD mode's collapse keys. When switching to Chat
+        // (chat=true) we drop Raw's WS#* keys; switching to Raw drops
+        // Chat's WS_GROUP#* keys.
+        let stale_prefix = if chat { "WS#" } else { "WS_GROUP#" };
+        self.collapsed_sections
+            .retain(|k| !k.starts_with(stale_prefix));
+        // Drop all ws_* viewer states; they reference a specific message
+        // index + AST node id that may no longer be valid after the
+        // toggle. They'll be rebuilt lazily on next render.
+        self.json_viewer_states.retain(|k, _| !k.starts_with("ws_"));
+    }
+
     pub fn new() -> Self {
         Self {
             selected: 0,

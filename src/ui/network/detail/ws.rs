@@ -1,7 +1,7 @@
 //! WebSocket Messages renderer — Chat and Raw modes.
 //!
 //! Phase 3 Step 3.8 (UI-037): extracted from `detail/mod.rs`. The
-//! UI-042 collapse-key purge lives on `App::toggle_ws_chat_mode`; this
+//! UI-042 collapse-key purge lives on `NetworkState::set_ws_chat_mode`; this
 //! module is the consumer of those keys and must stay in sync with the
 //! `WS#*` (raw) / `WS_GROUP#*` (chat) key conventions used below.
 
