@@ -164,6 +164,34 @@ pub struct SseMergeRule {
     pub field_display: String,
 }
 
+/// Logs tab view state.
+///
+/// Phase 3 Step 3.10 (audit UI-003) — introduced for symmetry with
+/// [`NetworkState`]. The authoritative storage for `selected`,
+/// `scroll_offset`, and `auto_scroll` still lives as direct fields on
+/// [`App`] to keep the 180+ existing call sites stable; this struct is
+/// projected from those fields via [`App::logs`]. Phase 4 will flip the
+/// direction, making `App.logs` the single source of truth and dropping
+/// the top-level fields.
+#[allow(dead_code)] // Phase 3 additive; Phase 4 migrates call sites.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogsViewState {
+    pub selected: usize,
+    pub scroll_offset: usize,
+    /// Auto-scroll to bottom when new logs arrive.
+    pub auto_scroll: bool,
+}
+
+impl Default for LogsViewState {
+    fn default() -> Self {
+        Self {
+            selected: 0,
+            scroll_offset: 0,
+            auto_scroll: true,
+        }
+    }
+}
+
 /// Network tab view state.
 pub struct NetworkState {
     pub selected: usize,
@@ -698,6 +726,19 @@ impl App {
     /// Check if there is at least one connected client.
     pub fn has_connected_client(&self) -> bool {
         !self.connected_apps.is_empty()
+    }
+
+    /// Returns a [`LogsViewState`] snapshot projected from the current
+    /// top-level fields. Phase 3 Step 3.10 (audit UI-003) adds this as a
+    /// symmetry accessor with [`App::network`]; Phase 4 will invert the
+    /// ownership so this reads the struct directly instead of projecting.
+    #[allow(dead_code)] // Phase 3 additive; Phase 4 migrates call sites.
+    pub fn logs(&self) -> LogsViewState {
+        LogsViewState {
+            selected: self.selected,
+            scroll_offset: self.scroll_offset,
+            auto_scroll: self.auto_scroll,
+        }
     }
 
     /// Reset all data and UI state to a clean slate.
@@ -1445,6 +1486,10 @@ impl Default for App {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "app_tests.rs"]
+mod tests;
 
 fn timestamp_for_filename() -> String {
     use std::time::SystemTime;
