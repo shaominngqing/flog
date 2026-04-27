@@ -33,7 +33,7 @@ its subagents produced.
 | 3     | Redesign (per step, serial, test-guarded)        | `plans/2026-04-23-phase3-step*.md`, `journal/phase3-step*.md`            |
 | 4     | Why-comments + residual splits                   | `plans/2026-04-24-phase4-comments.md`, `journal/phase4.md`               |
 | 5     | Docs                                             | `plans/2026-04-24-phase5-docs.md`, `journal/phase5.md`                   |
-| 6     | Retrospective + methodology case study (pending) | `retrospectives/` + `methodology/` (not yet populated)                   |
+| 6     | Retrospective + methodology case study           | `retrospective-flog.md` + `ai-long-workflow-methodology.md` + `journal/phase6.md` |
 
 ## The audit taxonomy
 
@@ -117,15 +117,22 @@ can be traced back to a specific audit entry in 2-3 hops.
   the exit state: HEAD at start, HEAD at exit, test count delta,
   line-count delta, audit-id movement.
 
-## Where to find Phase 6 (retrospective + methodology)
+## Outcome (Phase 6)
 
-Not yet produced. When it lands it will add:
+The campaign closed 2026-04-24 with two standalone documents and a
+journal. Final landing point was the `docs/superpowers/` top level
+(not the hypothetical `retrospectives/` + `methodology/`
+subdirectories mentioned in the original design — one file per
+deliverable proved sufficient for two documents).
 
-- `docs/superpowers/retrospectives/2026-04-22-flog-cleanup-retrospective.md`
-  — flog-specific retrospective.
-- `docs/superpowers/methodology/ai-long-workflow-case-study.md` —
-  generalised case study of running a multi-phase refactoring campaign
-  with AI subagents.
+| File                                               | Purpose                                                                                                                         |
+|----------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `retrospective-flog.md`                            | flog-specific retrospective — starting state, ending state, the 14 B-class bugs, architecture reshapes, deferred items, honest surprises, 162 total commits. |
+| `ai-long-workflow-methodology.md`                  | Generalised case study — how to run the same six-phase cleanup on any codebase. Includes a Monday-start checklist and an honest "what didn't work" section (worktree cosmetic, subagent truncations, Phase 4 Task 2 over-split from 5 → 11 files). |
+| `journal/phase6.md`                                | Campaign close journal.                                                                                                          |
 
-See `specs/2026-04-22-project-cleanup-design.md §7` for the intended
-scope.
+See `specs/2026-04-22-project-cleanup-design.md §7` for the original
+Phase 6 scope definition — the delivered docs extend that scope
+(honest-failures + Monday-start checklist) but do not contradict it.
+
+The campaign is closed. Any further work on flog is a new spec.
