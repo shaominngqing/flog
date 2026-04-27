@@ -66,6 +66,14 @@ impl Default for FilterState {
 // minimal non-overlapping cover. Used by `FilterState::search_positions` so
 // the UI highlighter never double-renders the same character span.
 // Phase 3 DOM-018.
+//
+// WHY plain-mode OR-terms can overlap: a query like `abc|bc` matches twice
+// on "abcd" at ranges 0..3 and 1..3, and user input has no structure to
+// prevent that. The UI highlighter relies on a sorted-then-merged,
+// non-overlapping cover — emitting the raw hits would render some
+// characters in the highlight style twice over, producing flickery
+// ratatui spans at range boundaries. Sort-by-start + merge-on-touch is
+// the contract this function honours for its caller.
 pub(crate) fn merge_overlapping_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     if ranges.len() <= 1 {
         return ranges;

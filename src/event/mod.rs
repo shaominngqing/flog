@@ -45,6 +45,14 @@
 //! 4. Wheel scroll routes through `handle_scroll` which branches by
 //!    (picker open? logs detail panel? network detail? tab?).
 //!
+//! **Why split detect from apply:** the detect phase takes `&App` and
+//! is exhaustively unit-tested without any event loop wiring; the apply
+//! phase takes `&mut App` and mutates state. Keeping them separate lets
+//! characterization tests reason about "did the click land on the
+//! Network tab label?" without also having to reason about every
+//! downstream mutation `apply` performs. See audit UI-041 for the
+//! concrete bug fixed by this factoring.
+//!
 //! `click_region::ClickRegion` is the semantic enum mapping a clicked
 //! pixel to a UI concept (tabs, pills, list rows, detail panels,
 //! status-bar buttons, mock rule rows).

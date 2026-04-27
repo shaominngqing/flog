@@ -50,6 +50,14 @@ impl GenericParser {
     /// is stored as a System-level message tagged `flutter`.
     ///
     /// Phase 3 Step 3.1 — see Audit DOM-016.
+    //
+    // WHY this order (prefixed → structured, not the reverse):
+    // `I/flutter (PID): [WARN][Net] slow` is ALSO a valid [LEVEL][Tag]
+    // pattern if you only look at the embedded content, so we must
+    // first strip the `I/flutter (PID):` wrapper; otherwise
+    // try_parse_flutter_structured would match on the raw logcat line
+    // and mis-tag the whole thing as tag=`Net`, losing the flutter
+    // wrapper signal entirely.
     fn try_parse_flutter_prefixed(line: &str) -> Option<LogEntry> {
         let caps = FLUTTER_PLAIN_RE.captures(line)?;
         let raw = caps.get(1).map(|m| m.as_str()).unwrap_or("");

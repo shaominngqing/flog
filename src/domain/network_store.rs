@@ -6,6 +6,13 @@ use crate::domain::network::{
     FlogNetKind, NetworkEntry, NetworkStatus, Protocol, SseChunk, WsDirection, WsMessage,
 };
 
+// WHY 10_000: Flipper defaults its network plugin buffer to 5K. We
+// chose double that because a single LLM streaming session can burn
+// 1-2K SSE chunk entries in a minute, and a typical debug session
+// keeps multiple conversations in history. 10K at ~1KB per entry = 10MB
+// worst-case resident — still well under any reasonable RSS budget for
+// a TUI dev tool, and the ring-buffer drops oldest-first so long-lived
+// sessions stay bounded.
 const MAX_ENTRIES: usize = 10_000;
 
 pub struct NetworkStore {

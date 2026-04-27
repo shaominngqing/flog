@@ -19,6 +19,17 @@ impl LogStore {
     }
 
     /// Add a pre-parsed log entry. Returns the number of drained (evicted) entries.
+    //
+    // WHY folding runs on push AND on drain but not as a bulk sweep:
+    // push-time fold catches the common case (a log-spam loop printing
+    // the same line every tick) cheaply and preserves each entry's
+    // real timestamp for entries that DON'T match. A periodic bulk
+    // fold over all 100K entries would repeatedly re-scan data that
+    // already folded on arrival and would not expose further
+    // compression until an intermediate entry ages out. Drain-time
+    // fold (see `fold_consecutive_duplicates`) handles the only case
+    // push-time fold can miss — A,B,A where B evicts between the two
+    // A's.
     pub fn add_entry(&mut self, entry: LogEntry) -> usize {
         // Smart folding: consecutive identical entries collapse into one.
         if let Some(last) = self.entries.back_mut() {

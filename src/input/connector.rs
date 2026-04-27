@@ -127,6 +127,15 @@ where
 
     // Read first message — should be Hello from the app (3s timeout).
     //
+    // WHY 3 seconds: flog_dart emits its Hello synchronously the instant
+    // it accepts a WS upgrade, so on macOS/Linux the handshake typically
+    // completes in <50ms. The slowest observed case is an iOS simulator
+    // that's still booting its app process at the moment we connect —
+    // 2.5s in the worst run we've measured. 3s captures that without
+    // making port-scanner false matches (landing on a random HTTP server
+    // that WILL complete the WS upgrade but never speaks our protocol)
+    // wait noticeably longer than they need to before erroring out.
+    //
     // Error surfaces (TRANS-005):
     //   - Timeout fires → "Hello handshake timed out after 3s (port may
     //     not be a flog server)".

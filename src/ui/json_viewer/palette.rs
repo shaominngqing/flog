@@ -17,6 +17,15 @@ pub(super) const NULL_COLOR: Color = OVERLAY0;
 pub(super) const COMMA_COLOR: Color = SURFACE0;
 pub(super) const FOLD_COLOR: Color = OVERLAY0;
 
+// WHY 6 colors and cycling at depth 6: Catppuccin Macchiato ships 5
+// distinct accent hues with enough contrast against Base/Mantle to
+// remain legible for syntax highlighting; the sixth slot (LAVENDER) is
+// close enough to BLUE to close the cycle without a jarring jump.
+// Going deeper than 6 with new accents exhausts the contrast budget —
+// hues start repeating visually even if they're nominally distinct. At
+// the rare JSON depth >5 we prefer a stable cyclic pattern over
+// invented colors that would look nearly identical to ones already in
+// use.
 pub(super) const DEPTH_COLORS: [Color; 6] = [MAUVE, BLUE, TEAL, YELLOW, SAPPHIRE, LAVENDER];
 pub(super) const DEPTH_BRACE: [Color; 6] = [
     Color::Rgb(110, 115, 141),

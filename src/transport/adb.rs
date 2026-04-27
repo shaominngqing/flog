@@ -13,6 +13,13 @@ static PORT_COUNTER: AtomicU16 = AtomicU16::new(0);
 /// by most kernels (typical Linux/macOS start at 32768). `0x4d09` is also
 /// free of well-known collisions.
 /// Audit ref: TRANS-002.
+//
+// WHY 19753 specifically: the explicit dev-port blocklist is 80 (http),
+// 3000 (Node/React dev servers), 8080 (alt http / Flutter DevTools),
+// 9000 (PHP-FPM, SonarQube). The 19.7K band is empty of well-known
+// services and the pool fits entirely below the ephemeral floor, so no
+// adb forward collides with either user services or randomly-assigned
+// sockets from other long-lived tools.
 const ADB_LOCAL_PORT_POOL_BASE: u16 = 19753;
 
 /// Size of the adb-forward local-port pool — the allocator cycles through
