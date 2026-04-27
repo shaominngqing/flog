@@ -10,6 +10,14 @@
 //!
 //! Not the tree viewer — that one lives in `tree.rs` / `render.rs`, requires
 //! valid JSON, and supports folding. Use it for display-only JSON.
+//!
+//! Split across submodules (Phase 3 UI-031 mirror):
+//! * [`lexer`] — low-level token scanners (strings, numbers, keyword match,
+//!   multi-line continuation)
+//! * `mod.rs`  — top-level state machine that walks the scanners and emits
+//!   styled spans with depth-cycling brace/key colors.
+
+mod lexer;
 
 use ratatui::{
     style::{Modifier, Style},
@@ -20,6 +28,8 @@ use super::super::TEXT;
 use super::palette::{
     brace_color, key_color, BOOL_COLOR, COMMA_COLOR, NULL_COLOR, NUM_COLOR, STR_COLOR,
 };
+
+use lexer::{is_key_after, match_keyword, scan_number, scan_string, scan_string_continuation};
 
 /// Colorize raw text (typically JSON) with syntax highlighting.
 pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
@@ -50,31 +60,16 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
         }
 
         if in_string {
-            buf_style = Style::default().fg(STR_COLOR);
-            while i < len {
-                let c = chars[i];
-                if c == '\\' && i + 1 < len {
-                    buf.push(c);
-                    buf.push(chars[i + 1]);
-                    i += 2;
-                    continue;
-                }
-                if c == '"' {
-                    buf.push(c);
-                    i += 1;
-                    in_string = false;
-                    flush!();
-                    buf_style = default_style;
-                    break;
-                }
-                buf.push(c);
-                i += 1;
+            let (consumed, new_i, terminated) = scan_string_continuation(&chars);
+            if !consumed.is_empty() {
+                spans.push(Span::styled(consumed, Style::default().fg(STR_COLOR)));
             }
-            if in_string {
-                flush!();
+            i = new_i;
+            if !terminated {
                 result.push(Line::from(spans));
                 continue;
             }
+            in_string = false;
         }
 
         while i < len {
@@ -82,43 +77,20 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
             match c {
                 '"' => {
                     flush!();
-                    let mut s = String::new();
-                    s.push('"');
-                    let mut j = i + 1;
-                    let mut terminated = false;
-                    while j < len {
-                        let sc = chars[j];
-                        if sc == '\\' && j + 1 < len {
-                            s.push(sc);
-                            s.push(chars[j + 1]);
-                            j += 2;
-                            continue;
-                        }
-                        if sc == '"' {
-                            s.push('"');
-                            j += 1;
-                            terminated = true;
-                            break;
-                        }
-                        s.push(sc);
-                        j += 1;
-                    }
-                    if !terminated {
-                        spans.push(Span::styled(s, Style::default().fg(STR_COLOR)));
+                    let scanned = scan_string(&chars, i);
+                    if !scanned.terminated {
+                        spans.push(Span::styled(
+                            scanned.literal,
+                            Style::default().fg(STR_COLOR),
+                        ));
                         in_string = true;
                         i = len;
                         continue;
                     }
-                    let is_key = {
-                        let mut k = j;
-                        while k < len && chars[k].is_ascii_whitespace() {
-                            k += 1;
-                        }
-                        k < len && chars[k] == ':'
-                    };
+                    let is_key = is_key_after(&chars, scanned.end);
                     let color = if is_key { key_color(depth) } else { STR_COLOR };
-                    spans.push(Span::styled(s, Style::default().fg(color)));
-                    i = j;
+                    spans.push(Span::styled(scanned.literal, Style::default().fg(color)));
+                    i = scanned.end;
                 }
                 '{' | '[' => {
                     flush!();
@@ -146,46 +118,25 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
                     ));
                     i += 1;
                 }
-                't' if matches!(chars.get(i..i + 4), Some(&['t', 'r', 'u', 'e'])) => {
-                    let after = chars.get(i + 4).copied().unwrap_or(' ');
-                    if !after.is_alphanumeric() && after != '_' {
-                        flush!();
-                        spans.push(Span::styled("true", Style::default().fg(BOOL_COLOR)));
-                        i += 4;
-                    } else {
-                        buf.push(c);
-                        buf_style = default_style;
-                        i += 1;
-                    }
+                't' if match_keyword(&chars, i, "true") => {
+                    flush!();
+                    spans.push(Span::styled("true", Style::default().fg(BOOL_COLOR)));
+                    i += 4;
                 }
-                'f' if matches!(chars.get(i..i + 5), Some(&['f', 'a', 'l', 's', 'e'])) => {
-                    let after = chars.get(i + 5).copied().unwrap_or(' ');
-                    if !after.is_alphanumeric() && after != '_' {
-                        flush!();
-                        spans.push(Span::styled("false", Style::default().fg(BOOL_COLOR)));
-                        i += 5;
-                    } else {
-                        buf.push(c);
-                        buf_style = default_style;
-                        i += 1;
-                    }
+                'f' if match_keyword(&chars, i, "false") => {
+                    flush!();
+                    spans.push(Span::styled("false", Style::default().fg(BOOL_COLOR)));
+                    i += 5;
                 }
-                'n' if matches!(chars.get(i..i + 4), Some(&['n', 'u', 'l', 'l'])) => {
-                    let after = chars.get(i + 4).copied().unwrap_or(' ');
-                    if !after.is_alphanumeric() && after != '_' {
-                        flush!();
-                        spans.push(Span::styled(
-                            "null",
-                            Style::default()
-                                .fg(NULL_COLOR)
-                                .add_modifier(Modifier::ITALIC),
-                        ));
-                        i += 4;
-                    } else {
-                        buf.push(c);
-                        buf_style = default_style;
-                        i += 1;
-                    }
+                'n' if match_keyword(&chars, i, "null") => {
+                    flush!();
+                    spans.push(Span::styled(
+                        "null",
+                        Style::default()
+                            .fg(NULL_COLOR)
+                            .add_modifier(Modifier::ITALIC),
+                    ));
+                    i += 4;
                 }
                 '0'..='9' | '-'
                     if {
@@ -194,22 +145,9 @@ pub fn colorize_json_text(text: &str) -> Vec<Line<'static>> {
                     } =>
                 {
                     flush!();
-                    let mut num = String::new();
-                    num.push(c);
-                    let mut j = i + 1;
-                    while j < len
-                        && (chars[j].is_ascii_digit()
-                            || chars[j] == '.'
-                            || chars[j] == 'e'
-                            || chars[j] == 'E'
-                            || chars[j] == '+'
-                            || chars[j] == '-')
-                    {
-                        num.push(chars[j]);
-                        j += 1;
-                    }
+                    let (num, new_i) = scan_number(&chars, i);
                     spans.push(Span::styled(num, Style::default().fg(NUM_COLOR)));
-                    i = j;
+                    i = new_i;
                 }
                 ' ' | '\t' | '\r' => {
                     if buf_style != default_style {
@@ -250,7 +188,7 @@ mod tests {
     //!   - Exact palette colors are constants; tests reference them via the
     //!     private `palette` module (available because tests live in the
     //!     same crate).
-    use super::super::palette::{
+    use super::super::super::json_viewer::palette::{
         brace_color, key_color, BOOL_COLOR, COMMA_COLOR, NULL_COLOR, NUM_COLOR, STR_COLOR,
     };
     use super::*;
