@@ -225,12 +225,12 @@ fn compute_list_target(app: &App, y: u16) -> Option<usize> {
 
 fn handle_list_click(app: &mut App, y: u16, _is_double: bool) {
     if let Some(target) = compute_list_target(app, y) {
-        if app.selected == target {
+        if app.logs.selected == target {
             // Click same row → toggle panel open/close
             app.show_detail_panel = !app.show_detail_panel;
         } else {
             // Click different row → open panel with new selection
-            app.selected = target;
+            app.logs.selected = target;
             app.show_detail_panel = true;
             app.reset_detail_for_selection();
         }
@@ -244,7 +244,7 @@ pub(super) fn handle_list_click_public(app: &mut App, y: u16) {
 
 fn handle_list_right_click(app: &mut App, y: u16) {
     if let Some(target) = compute_list_target(app, y) {
-        app.selected = target;
+        app.logs.selected = target;
         app.toggle_bookmark();
         // Feedback
         if let Some(idx) = app.selected_store_index() {
@@ -428,9 +428,9 @@ mod tests {
         let mut app = App::default();
         seed_layout(&mut app);
         // Seed scroll_offset so move_up has something to decrement.
-        app.scroll_offset = 10;
+        app.logs.scroll_offset = 10;
         handle_mouse(&mut app, scroll_up(5, 9));
-        assert!(app.scroll_offset < 10);
+        assert!(app.logs.scroll_offset < 10);
     }
 
     #[test]

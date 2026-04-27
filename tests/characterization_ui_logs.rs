@@ -260,9 +260,9 @@ fn ui_010_colors_error_row_with_dark_red_bg() {
         ],
     );
     // Select a non-error row so error row uses ERROR_ROW_BG (not SURFACE1).
-    app.auto_scroll = false;
-    app.scroll_offset = 0;
-    app.selected = 0;
+    app.logs.auto_scroll = false;
+    app.logs.scroll_offset = 0;
+    app.logs.selected = 0;
     let buf = render_logs(&mut app, 100, 30);
     assert!(
         count_cells_with_bg(&buf, ERROR_ROW_BG) > 0,
@@ -281,9 +281,9 @@ fn ui_010_colors_warning_row_with_dark_yellow_bg() {
             fixtures::info("A", "line3"),
         ],
     );
-    app.auto_scroll = false;
-    app.scroll_offset = 0;
-    app.selected = 0;
+    app.logs.auto_scroll = false;
+    app.logs.scroll_offset = 0;
+    app.logs.selected = 0;
     let buf = render_logs(&mut app, 100, 30);
     assert!(
         count_cells_with_bg(&buf, WARNING_ROW_BG) > 0,
@@ -321,9 +321,9 @@ fn ui_010_selected_row_uses_surface1_bg() {
             fixtures::info("A", "three"),
         ],
     );
-    app.selected = 1;
-    app.scroll_offset = 0;
-    app.auto_scroll = false;
+    app.logs.selected = 1;
+    app.logs.scroll_offset = 0;
+    app.logs.auto_scroll = false;
     let buf = render_logs(&mut app, 120, 30);
     // SURFACE1 is the selection bg and also used as level-pill bg in the
     // level toolbar row, so assert we have MORE SURFACE1 cells than a
@@ -337,7 +337,7 @@ fn ui_010_selected_row_uses_surface1_bg() {
             fixtures::info("A", "three"),
         ],
     );
-    app2.auto_scroll = true;
+    app2.logs.auto_scroll = true;
     // force draw
     let _ = render_logs(&mut app2, 120, 30);
     assert!(count_cells_with_bg(&buf, SURFACE1) > 0);
@@ -370,9 +370,9 @@ fn ui_010_scroll_offset_shifts_visible_window() {
         entries.push(fixtures::info("A", &format!("entry-{i:02}")));
     }
     seed_logs(&mut app, entries);
-    app.auto_scroll = false;
-    app.scroll_offset = 0;
-    app.selected = 0;
+    app.logs.auto_scroll = false;
+    app.logs.scroll_offset = 0;
+    app.logs.selected = 0;
     let buf = render_logs(&mut app, 120, 20);
     // First entry should appear when scrolled to top.
     assert!(find_text_row(&buf, "entry-00").is_some());
@@ -386,9 +386,9 @@ fn ui_010_middle_offset_omits_both_ends() {
         entries.push(fixtures::info("A", &format!("entry-{i:02}")));
     }
     seed_logs(&mut app, entries);
-    app.auto_scroll = false;
-    app.scroll_offset = 15;
-    app.selected = 15;
+    app.logs.auto_scroll = false;
+    app.logs.scroll_offset = 15;
+    app.logs.selected = 15;
     let buf = render_logs(&mut app, 120, 20);
     assert!(find_text_row(&buf, "entry-15").is_some());
     assert!(find_text_row(&buf, "entry-00").is_none());
@@ -776,7 +776,7 @@ fn ui_010_toolbar_shows_filtered_count() {
 fn ui_010_status_bar_shows_live_pill_when_auto_scroll() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "x")]);
-    app.auto_scroll = true;
+    app.logs.auto_scroll = true;
     let buf = render_logs(&mut app, 120, 30);
     assert!(full_text(&buf).contains("LIVE"));
 }
@@ -785,7 +785,7 @@ fn ui_010_status_bar_shows_live_pill_when_auto_scroll() {
 fn ui_010_status_bar_shows_new_pill_when_paused_with_new_logs() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "orig")]);
-    app.auto_scroll = false;
+    app.logs.auto_scroll = false;
     // Add more entries post-pause.
     app.add_entry(fixtures::info("T", "new1"));
     app.add_entry(fixtures::info("T", "new2"));
@@ -815,8 +815,8 @@ fn ui_010_status_bar_shows_buttons() {
 fn ui_010_bookmark_shows_yellow_dot() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "mark me")]);
-    app.selected = 0;
-    app.auto_scroll = false;
+    app.logs.selected = 0;
+    app.logs.auto_scroll = false;
     app.toggle_bookmark();
     let buf = render_logs(&mut app, 120, 30);
     // Bookmark uses yellow fg for "●". Check presence.
@@ -853,7 +853,7 @@ fn ui_010_detail_open_shows_details_block() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "detail-msg")]);
     app.show_detail_panel = true;
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_logs(&mut app, 140, 30);
     let text = full_text(&buf);
     assert!(text.contains("Details"));
@@ -876,7 +876,7 @@ fn ui_detail_no_selection_shows_placeholder() {
 fn ui_detail_renders_level_and_tag() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::error("netcore", "oops")]);
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 80, 20);
     let text = full_text(&buf);
     assert!(text.contains("ERROR"));
@@ -887,7 +887,7 @@ fn ui_detail_renders_level_and_tag() {
 fn ui_detail_renders_timestamp() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "m")]);
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 80, 20);
     assert!(full_text(&buf).contains("12:00:00"));
 }
@@ -896,7 +896,7 @@ fn ui_detail_renders_timestamp() {
 fn ui_detail_renders_length_label() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "hello")]);
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 80, 20);
     assert!(full_text(&buf).contains("Length:"));
 }
@@ -905,7 +905,7 @@ fn ui_detail_renders_length_label() {
 fn ui_detail_length_shows_bytes_for_small_msg() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "hi")]);
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 80, 20);
     // "hi" is 2 bytes.
     assert!(full_text(&buf).contains("2 B"));
@@ -915,7 +915,7 @@ fn ui_detail_length_shows_bytes_for_small_msg() {
 fn ui_detail_length_shows_kb_for_medium_msg() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", &"x".repeat(2048))]);
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 80, 20);
     assert!(full_text(&buf).contains("KB"));
 }
@@ -924,7 +924,7 @@ fn ui_detail_length_shows_kb_for_medium_msg() {
 fn ui_detail_copy_pill_appears() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "x")]);
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 80, 20);
     assert!(full_text(&buf).contains("Copy"));
 }
@@ -936,7 +936,7 @@ fn ui_detail_renders_message_body() {
         &mut app,
         vec![fixtures::info("T", "unique-body-marker-1729")],
     );
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 80, 20);
     assert!(full_text(&buf).contains("unique-body-marker-1729"));
 }
@@ -950,7 +950,7 @@ fn ui_detail_renders_stack_trace_section() {
         &mut app,
         vec![fixtures::with_stack("T", "msg", "boom", stack)],
     );
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 80, 30);
     let text = full_text(&buf);
     assert!(text.contains("Stack Trace"));
@@ -964,7 +964,7 @@ fn ui_detail_json_message_renders_braces() {
         &mut app,
         vec![fixtures::info("T", r#"prefix {"key":"val","n":42} suffix"#)],
     );
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf = render_detail(&mut app, 100, 30);
     let text = full_text(&buf);
     // JsonRenderer should contribute "key" / "val" / "42" tokens.
@@ -981,7 +981,7 @@ fn ui_detail_scroll_moves_content_up() {
         .collect::<Vec<_>>()
         .join("\n");
     seed_logs(&mut app, vec![fixtures::info("T", &msg)]);
-    app.selected = 0;
+    app.logs.selected = 0;
     let buf0 = render_detail(&mut app, 80, 10);
     app.detail.scroll = 20;
     let buf1 = render_detail(&mut app, 80, 10);
@@ -1216,7 +1216,7 @@ fn ui_010_select_last_entry_survives_autoscroll() {
         entries.push(fixtures::info("T", &format!("e-{i:02}")));
     }
     seed_logs(&mut app, entries);
-    app.auto_scroll = true;
+    app.logs.auto_scroll = true;
     let buf = render_logs(&mut app, 120, 15);
     // Latest entry visible under auto_scroll.
     assert!(find_text_row(&buf, "e-29").is_some());
@@ -1253,7 +1253,7 @@ fn ui_010_varied_levels_produce_multiple_row_bgs() {
 fn ui_jump_hidden_when_auto_scroll() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "x")]);
-    app.auto_scroll = true;
+    app.logs.auto_scroll = true;
     let buf = render_logs(&mut app, 120, 30);
     assert!(!full_text(&buf).contains("Jump to bottom"));
 }
@@ -1264,7 +1264,7 @@ fn ui_jump_hidden_when_filtered_count_zero() {
     seed_logs(&mut app, vec![fixtures::info("T", "x")]);
     app.filter.set_search("__no_match__");
     app.invalidate_filter();
-    app.auto_scroll = false;
+    app.logs.auto_scroll = false;
     let buf = render_logs(&mut app, 120, 30);
     assert!(!full_text(&buf).contains("Jump to bottom"));
 }

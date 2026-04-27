@@ -167,13 +167,10 @@ pub struct SseMergeRule {
 /// Logs tab view state.
 ///
 /// Phase 3 Step 3.10 (audit UI-003) — introduced for symmetry with
-/// [`NetworkState`]. The authoritative storage for `selected`,
-/// `scroll_offset`, and `auto_scroll` still lives as direct fields on
-/// [`App`] to keep the 180+ existing call sites stable; this struct is
-/// projected from those fields via [`App::logs`]. Phase 4 will flip the
-/// direction, making `App.logs` the single source of truth and dropping
-/// the top-level fields.
-#[allow(dead_code)] // Phase 3 additive; Phase 4 migrates call sites.
+/// [`NetworkState`]. Phase 4 completed UI-003 by making this struct the
+/// single source of truth for the Logs tab's viewport; the Logs-side
+/// scroll methods on [`App`] are thin dispatchers that mutate these
+/// fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogsViewState {
     pub selected: usize,
@@ -622,8 +619,9 @@ pub struct App {
     pub mode: AppMode,
     pub should_quit: bool,
     pub select_mode: bool,
-    pub selected: usize,
-    pub scroll_offset: usize,
+    /// Logs tab viewport state (selected row, scroll offset, auto-scroll flag).
+    /// Mirrors `network: NetworkState` on the Network side (audit UI-003).
+    pub logs: LogsViewState,
     pub show_detail_panel: bool,
     pub detail_panel_pct: u16,
 
@@ -665,7 +663,6 @@ pub struct App {
     pub active_stats_tab: ViewTab,
 
     // Scroll
-    pub auto_scroll: bool,
     pub new_logs_since_pause: usize,
 
     // Internal
@@ -691,8 +688,7 @@ impl App {
             mode: AppMode::Normal,
             should_quit: false,
             select_mode: false,
-            selected: 0,
-            scroll_offset: 0,
+            logs: LogsViewState::default(),
             show_detail_panel: false,
             detail_panel_pct: 35,
             search: SearchState::default(),
@@ -716,7 +712,6 @@ impl App {
             tick: 0,
             stats_snapshot: None,
             active_stats_tab: ViewTab::Logs,
-            auto_scroll: true,
             new_logs_since_pause: 0,
             filtered_indices: Vec::new(),
             filter_dirty: true,
@@ -728,19 +723,6 @@ impl App {
         !self.connected_apps.is_empty()
     }
 
-    /// Returns a [`LogsViewState`] snapshot projected from the current
-    /// top-level fields. Phase 3 Step 3.10 (audit UI-003) adds this as a
-    /// symmetry accessor with [`App::network`]; Phase 4 will invert the
-    /// ownership so this reads the struct directly instead of projecting.
-    #[allow(dead_code)] // Phase 3 additive; Phase 4 migrates call sites.
-    pub fn logs(&self) -> LogsViewState {
-        LogsViewState {
-            selected: self.selected,
-            scroll_offset: self.scroll_offset,
-            auto_scroll: self.auto_scroll,
-        }
-    }
-
     /// Reset all data and UI state to a clean slate.
     ///
     /// Used when switching apps or when the active app disconnects.
@@ -750,12 +732,12 @@ impl App {
         self.network_store = crate::domain::NetworkStore::new();
         self.network = NetworkState::new();
         self.filter = FilterState::default();
-        self.selected = 0;
-        self.scroll_offset = 0;
+        self.logs.selected = 0;
+        self.logs.scroll_offset = 0;
         self.detail = DetailState::default();
         self.search = SearchState::default();
         self.bookmarks.clear();
-        self.auto_scroll = true;
+        self.logs.auto_scroll = true;
         self.filter_dirty = true;
     }
 
@@ -884,14 +866,14 @@ impl App {
                 .collect();
             self.bookmarks = new;
             // Index-space shift, not viewport computation — indices moved, so offset must follow.
-            self.scroll_offset = self.scroll_offset.saturating_sub(drained);
-            self.selected = self.selected.saturating_sub(drained);
+            self.logs.scroll_offset = self.logs.scroll_offset.saturating_sub(drained);
+            self.logs.selected = self.logs.selected.saturating_sub(drained);
         }
         self.filter_dirty = true;
 
         // Don't compute scroll positions here — the renderer will handle it.
         // Just track whether we should auto-scroll or count missed entries.
-        if !self.auto_scroll {
+        if !self.logs.auto_scroll {
             self.new_logs_since_pause += 1;
         }
     }
@@ -924,10 +906,10 @@ impl App {
         // Clamp selected to valid range (scroll_offset is clamped by the renderer)
         let len = self.filtered_indices.len();
         if len == 0 {
-            self.selected = 0;
-            self.scroll_offset = 0;
-        } else if !self.auto_scroll {
-            self.selected = self.selected.min(len - 1);
+            self.logs.selected = 0;
+            self.logs.scroll_offset = 0;
+        } else if !self.logs.auto_scroll {
+            self.logs.selected = self.logs.selected.min(len - 1);
         }
         // When auto_scroll is true, the renderer will set selected & scroll_offset.
 
@@ -966,9 +948,9 @@ impl App {
 
     /// Scroll viewport up by n entries.
     pub fn move_up(&mut self, n: usize) {
-        self.auto_scroll = false;
-        self.scroll_offset = self.scroll_offset.saturating_sub(n);
-        self.selected = self.selected.saturating_sub(n);
+        self.logs.auto_scroll = false;
+        self.logs.scroll_offset = self.logs.scroll_offset.saturating_sub(n);
+        self.logs.selected = self.logs.selected.saturating_sub(n);
     }
 
     /// Scroll viewport down by n entries.
@@ -977,17 +959,17 @@ impl App {
         if len == 0 {
             return;
         }
-        self.scroll_offset = (self.scroll_offset + n).min(len.saturating_sub(1));
-        self.selected = (self.selected + n).min(len - 1);
+        self.logs.scroll_offset = (self.logs.scroll_offset + n).min(len.saturating_sub(1));
+        self.logs.selected = (self.logs.selected + n).min(len - 1);
         // The renderer will fine-tune scroll_offset and detect if we hit bottom.
     }
 
     /// Move selection up (keyboard k/Up), viewport follows if needed.
     pub fn select_up(&mut self, n: usize) {
-        self.auto_scroll = false;
-        self.selected = self.selected.saturating_sub(n);
-        if self.selected < self.scroll_offset {
-            self.scroll_offset = self.selected;
+        self.logs.auto_scroll = false;
+        self.logs.selected = self.logs.selected.saturating_sub(n);
+        if self.logs.selected < self.logs.scroll_offset {
+            self.logs.scroll_offset = self.logs.selected;
         }
         self.reset_detail_for_selection();
     }
@@ -998,20 +980,20 @@ impl App {
         if len == 0 {
             return;
         }
-        self.selected = (self.selected + n).min(len - 1);
+        self.logs.selected = (self.logs.selected + n).min(len - 1);
         // Viewport adjustment is done by the renderer (it knows the real capacity).
         self.reset_detail_for_selection();
     }
 
     pub fn go_top(&mut self) {
-        self.auto_scroll = false;
-        self.selected = 0;
-        self.scroll_offset = 0;
+        self.logs.auto_scroll = false;
+        self.logs.selected = 0;
+        self.logs.scroll_offset = 0;
         self.reset_detail_for_selection();
     }
 
     pub fn go_bottom(&mut self) {
-        self.auto_scroll = true;
+        self.logs.auto_scroll = true;
         self.new_logs_since_pause = 0;
         // The renderer will snap to bottom on next frame.
         self.reset_detail_for_selection();
@@ -1110,13 +1092,18 @@ impl App {
         if self.search.matches.is_empty() {
             return;
         }
-        if let Some(pos) = self.search.matches.iter().position(|&m| m > self.selected) {
+        if let Some(pos) = self
+            .search
+            .matches
+            .iter()
+            .position(|&m| m > self.logs.selected)
+        {
             self.search.match_idx = pos;
         } else {
             self.search.match_idx = 0;
         }
-        self.selected = self.search.matches[self.search.match_idx];
-        self.auto_scroll = false;
+        self.logs.selected = self.search.matches[self.search.match_idx];
+        self.logs.auto_scroll = false;
         // Renderer will ensure selected is visible.
     }
 
@@ -1124,13 +1111,18 @@ impl App {
         if self.search.matches.is_empty() {
             return;
         }
-        if let Some(pos) = self.search.matches.iter().rposition(|&m| m < self.selected) {
+        if let Some(pos) = self
+            .search
+            .matches
+            .iter()
+            .rposition(|&m| m < self.logs.selected)
+        {
             self.search.match_idx = pos;
         } else {
             self.search.match_idx = self.search.matches.len() - 1;
         }
-        self.selected = self.search.matches[self.search.match_idx];
-        self.auto_scroll = false;
+        self.logs.selected = self.search.matches[self.search.match_idx];
+        self.logs.auto_scroll = false;
         // Renderer will ensure selected is visible.
     }
 
@@ -1177,7 +1169,7 @@ impl App {
         if self.filter_dirty {
             self.rebuild_filter();
         }
-        self.filtered_indices.get(self.selected).copied()
+        self.filtered_indices.get(self.logs.selected).copied()
     }
 
     /// Count of candidate fields available in SSE merged mode for the
@@ -1275,7 +1267,7 @@ impl App {
     #[allow(dead_code)]
     pub fn auto_scroll_for_tab(&self, tab: ViewTab) -> bool {
         match tab {
-            ViewTab::Logs => self.auto_scroll,
+            ViewTab::Logs => self.logs.auto_scroll,
             ViewTab::Network => self.network.auto_scroll,
         }
     }
@@ -1403,9 +1395,9 @@ impl App {
     pub fn clear_logs(&mut self) {
         self.store = LogStore::new();
         self.bookmarks.clear();
-        self.selected = 0;
-        self.scroll_offset = 0;
-        self.auto_scroll = true;
+        self.logs.selected = 0;
+        self.logs.scroll_offset = 0;
+        self.logs.auto_scroll = true;
         self.new_logs_since_pause = 0;
         self.filter_dirty = true;
         self.show_status("Cleared".to_string());

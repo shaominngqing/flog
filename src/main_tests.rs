@@ -20,7 +20,8 @@ fn split_stacktrace_no_frames() {
 
 #[test]
 fn split_stacktrace_empty_body() {
-    let input = "#0      foo.bar (package:app/foo.dart:1:1)\n#1      baz.qux (package:app/baz.dart:2:2)";
+    let input =
+        "#0      foo.bar (package:app/foo.dart:1:1)\n#1      baz.qux (package:app/baz.dart:2:2)";
     let (body, stack) = split_stacktrace(input);
     assert_eq!(body, "");
     assert!(stack.is_some());

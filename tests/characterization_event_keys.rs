@@ -102,83 +102,83 @@ fn app_with_n_network(n: usize) -> App {
 #[test]
 fn ui_007_logs_j_selects_next() {
     let mut app = app_with_n_logs(5);
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
     event::handle_key(&mut app, key('j'));
-    assert_eq!(app.selected, 1);
+    assert_eq!(app.logs.selected, 1);
 }
 
 #[test]
 fn ui_007_logs_k_selects_prev() {
     let mut app = app_with_n_logs(5);
-    app.selected = 3;
+    app.logs.selected = 3;
     event::handle_key(&mut app, key('k'));
-    assert_eq!(app.selected, 2);
+    assert_eq!(app.logs.selected, 2);
 }
 
 #[test]
 fn ui_007_logs_down_arrow_selects_next() {
     let mut app = app_with_n_logs(3);
     event::handle_key(&mut app, key_code(KeyCode::Down));
-    assert_eq!(app.selected, 1);
+    assert_eq!(app.logs.selected, 1);
 }
 
 #[test]
 fn ui_007_logs_up_arrow_selects_prev() {
     let mut app = app_with_n_logs(3);
-    app.selected = 2;
+    app.logs.selected = 2;
     event::handle_key(&mut app, key_code(KeyCode::Up));
-    assert_eq!(app.selected, 1);
+    assert_eq!(app.logs.selected, 1);
 }
 
 #[test]
 fn ui_007_logs_k_at_top_stays() {
     let mut app = app_with_n_logs(3);
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
     event::handle_key(&mut app, key('k'));
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
 }
 
 #[test]
 fn ui_007_logs_j_at_bottom_stays() {
     let mut app = app_with_n_logs(3);
-    app.selected = 2;
+    app.logs.selected = 2;
     event::handle_key(&mut app, key('j'));
-    assert_eq!(app.selected, 2);
+    assert_eq!(app.logs.selected, 2);
 }
 
 #[test]
 fn ui_024_logs_pagedown_advances_by_20() {
     let mut app = app_with_n_logs(50);
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
     event::handle_key(&mut app, key_code(KeyCode::PageDown));
-    assert_eq!(app.selected, 20);
+    assert_eq!(app.logs.selected, 20);
 }
 
 #[test]
 fn ui_024_logs_pageup_retreats_by_20() {
     let mut app = app_with_n_logs(50);
-    app.selected = 30;
-    app.scroll_offset = 30;
+    app.logs.selected = 30;
+    app.logs.scroll_offset = 30;
     event::handle_key(&mut app, key_code(KeyCode::PageUp));
-    assert_eq!(app.selected, 10);
+    assert_eq!(app.logs.selected, 10);
 }
 
 #[test]
 fn ui_024_logs_home_jumps_to_top() {
     let mut app = app_with_n_logs(10);
-    app.selected = 7;
-    app.scroll_offset = 3;
+    app.logs.selected = 7;
+    app.logs.scroll_offset = 3;
     event::handle_key(&mut app, key_code(KeyCode::Home));
-    assert_eq!(app.selected, 0);
-    assert_eq!(app.scroll_offset, 0);
+    assert_eq!(app.logs.selected, 0);
+    assert_eq!(app.logs.scroll_offset, 0);
 }
 
 #[test]
 fn ui_024_logs_end_enables_autoscroll() {
     let mut app = app_with_n_logs(10);
-    app.auto_scroll = false;
+    app.logs.auto_scroll = false;
     event::handle_key(&mut app, key_code(KeyCode::End));
-    assert!(app.auto_scroll);
+    assert!(app.logs.auto_scroll);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn ui_007_logs_select_mode_any_key_exits() {
     event::handle_key(&mut app, key('j'));
     assert!(!app.select_mode);
     // Next j should still be swallowed by select-mode exit, not move selection.
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
 }
 
 #[test]
@@ -288,10 +288,10 @@ fn ui_007_logs_c_copy_current_log() {
     // Clipboard dispatch is best-effort; we just ensure the handler doesn't panic
     // and that the status_message gets set (either success or a soft failure note).
     let mut app = app_with_n_logs(3);
-    app.selected = 1;
+    app.logs.selected = 1;
     event::handle_key(&mut app, key('c'));
     // Any observable effect: selected unchanged, mode unchanged.
-    assert_eq!(app.selected, 1);
+    assert_eq!(app.logs.selected, 1);
     assert_eq!(app.mode, AppMode::Normal);
 }
 
@@ -314,24 +314,24 @@ fn ui_007_logs_e_export_logs() {
 #[test]
 fn ui_007_logs_n_next_match_noop_when_empty() {
     let mut app = app_with_n_logs(3);
-    let before = app.selected;
+    let before = app.logs.selected;
     event::handle_key(&mut app, key('n'));
-    assert_eq!(app.selected, before);
+    assert_eq!(app.logs.selected, before);
 }
 
 #[test]
 fn ui_007_logs_shift_n_prev_match_noop_when_empty() {
     let mut app = app_with_n_logs(3);
-    let before = app.selected;
+    let before = app.logs.selected;
     event::handle_key(&mut app, key('N'));
-    assert_eq!(app.selected, before);
+    assert_eq!(app.logs.selected, before);
 }
 
 #[test]
 fn ui_007_logs_unbound_key_is_noop() {
     let mut app = app_with_n_logs(3);
     event::handle_key(&mut app, key('z'));
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
     assert_eq!(app.mode, AppMode::Normal);
     assert!(!app.should_quit);
 }

@@ -11,33 +11,22 @@ fn logs_view_state_default_matches_initial_app_state() {
 }
 
 #[test]
-fn app_logs_accessor_reads_top_level_fields() {
-    // Phase 3 Step 3.10: `app.logs()` projects the top-level fields into
-    // a LogsViewState snapshot. Verify projection is identity.
+fn app_logs_field_reflects_direct_mutations() {
+    // Phase 4 UI-003 completion: `app.logs` is the direct owner of the
+    // Logs-tab viewport fields. Verify round-trip.
     let mut app = App::new();
-    app.selected = 7;
-    app.scroll_offset = 3;
-    app.auto_scroll = false;
+    app.logs.selected = 7;
+    app.logs.scroll_offset = 3;
+    app.logs.auto_scroll = false;
 
-    let s = app.logs();
-    assert_eq!(s.selected, 7);
-    assert_eq!(s.scroll_offset, 3);
-    assert!(!s.auto_scroll);
+    assert_eq!(app.logs.selected, 7);
+    assert_eq!(app.logs.scroll_offset, 3);
+    assert!(!app.logs.auto_scroll);
 }
 
 #[test]
-fn app_logs_reflects_mutations_to_top_level_fields() {
-    // Mutation via the top-level App fields (the existing API) must
-    // flow into the projected LogsViewState snapshot.
-    let mut app = App::new();
-    assert_eq!(app.logs(), LogsViewState::default());
-
-    app.selected = 42;
-    assert_eq!(app.logs().selected, 42);
-
-    app.scroll_offset = 100;
-    assert_eq!(app.logs().scroll_offset, 100);
-
-    app.auto_scroll = false;
-    assert!(!app.logs().auto_scroll);
+fn app_logs_starts_at_default() {
+    // App::new initializes `logs` to LogsViewState::default().
+    let app = App::new();
+    assert_eq!(app.logs, LogsViewState::default());
 }

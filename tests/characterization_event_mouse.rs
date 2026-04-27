@@ -278,17 +278,17 @@ fn ui_016_tab_bar_click_second_row_still_tab() {
 fn ui_jump_to_bottom_click_enables_auto_scroll() {
     let mut app = app_with_n_logs(10);
     seed_logs_layout(&mut app);
-    app.auto_scroll = false;
+    app.logs.auto_scroll = false;
     app.layout.jump_to_bottom_rect = Some((50, 10, 6, 1));
     event::handle_mouse(&mut app, click(52, 10));
-    assert!(app.auto_scroll);
+    assert!(app.logs.auto_scroll);
 }
 
 #[test]
 fn ui_jump_to_bottom_click_outside_rect_ignored() {
     let mut app = app_with_n_logs(10);
     seed_logs_layout(&mut app);
-    app.auto_scroll = false;
+    app.logs.auto_scroll = false;
     app.layout.jump_to_bottom_rect = Some((50, 10, 6, 1));
     // Click above the rect → pill branch does not fire (row 9 < py=10).
     // The click then falls through the normal handler without panicking.
@@ -305,19 +305,19 @@ fn ui_jump_to_bottom_click_outside_rect_ignored() {
 fn ui_scroll_down_in_logs_advances_selected() {
     let mut app = app_with_n_logs(20);
     seed_logs_layout(&mut app);
-    let before = app.selected;
+    let before = app.logs.selected;
     event::handle_mouse(&mut app, scroll_down(10, 10));
-    assert!(app.selected > before);
+    assert!(app.logs.selected > before);
 }
 
 #[test]
 fn ui_scroll_up_in_logs_retreats_selected() {
     let mut app = app_with_n_logs(20);
     seed_logs_layout(&mut app);
-    app.selected = 10;
-    app.scroll_offset = 10;
+    app.logs.selected = 10;
+    app.logs.scroll_offset = 10;
     event::handle_mouse(&mut app, scroll_up(10, 10));
-    assert!(app.selected < 10);
+    assert!(app.logs.selected < 10);
 }
 
 #[test]
@@ -372,11 +372,11 @@ fn ui_toolbar_op2_click_left_of_levels_noop() {
 fn ui_list_click_opens_detail_on_different_row() {
     let mut app = app_with_n_logs(5);
     seed_logs_layout(&mut app);
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
     assert!(!app.show_detail_panel);
     // click row 2 inside list (list_y=7, so y=9 → row_in_list=2)
     event::handle_mouse(&mut app, click(5, 9));
-    assert_eq!(app.selected, 2);
+    assert_eq!(app.logs.selected, 2);
     assert!(app.show_detail_panel);
 }
 
@@ -384,7 +384,7 @@ fn ui_list_click_opens_detail_on_different_row() {
 fn ui_list_click_same_row_toggles_detail_panel() {
     let mut app = app_with_n_logs(5);
     seed_logs_layout(&mut app);
-    app.selected = 1;
+    app.logs.selected = 1;
     app.show_detail_panel = false;
     // click row 1 (y=8)
     event::handle_mouse(&mut app, click(5, 8));
@@ -403,7 +403,7 @@ fn ui_list_click_out_of_range_row_is_noop() {
     // still runs. Clear the mapping to simulate empty list.
     app.layout.row_to_filtered_idx.clear();
     event::handle_mouse(&mut app, click(5, 9));
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
     assert!(!app.show_detail_panel);
 }
 
@@ -414,7 +414,7 @@ fn ui_list_right_click_bookmarks_entry() {
     assert!(app.bookmarks.is_empty());
     // right-click row 1 → selects + bookmarks
     event::handle_mouse(&mut app, right_click(5, 8));
-    assert_eq!(app.selected, 1);
+    assert_eq!(app.logs.selected, 1);
     assert!(!app.bookmarks.is_empty());
     // status message set
     assert!(app.status_message.is_some());
@@ -438,9 +438,9 @@ fn ui_list_right_click_twice_removes_bookmark() {
 fn ui_bottom_click_left_of_source_jumps_to_bottom() {
     let mut app = app_with_n_logs(10);
     seed_logs_layout(&mut app);
-    app.auto_scroll = false;
+    app.logs.auto_scroll = false;
     event::handle_mouse(&mut app, click(5, 15));
-    assert!(app.auto_scroll);
+    assert!(app.logs.auto_scroll);
 }
 
 #[test]
@@ -943,9 +943,9 @@ fn ui_input_scroll_down_in_logs_scrolls_list() {
     let mut app = app_with_n_logs(30);
     seed_logs_layout(&mut app);
     app.enter_input_field(InputField::LogSearch);
-    let before = app.selected;
+    let before = app.logs.selected;
     event::handle_mouse(&mut app, scroll_down(10, 10));
-    assert!(app.selected > before);
+    assert!(app.logs.selected > before);
     // Still in input mode
     assert!(matches!(app.mode, AppMode::InputActive(_)));
 }
@@ -955,10 +955,10 @@ fn ui_input_scroll_up_in_logs_scrolls_list() {
     let mut app = app_with_n_logs(30);
     seed_logs_layout(&mut app);
     app.enter_input_field(InputField::LogSearch);
-    app.selected = 10;
-    app.scroll_offset = 10;
+    app.logs.selected = 10;
+    app.logs.scroll_offset = 10;
     event::handle_mouse(&mut app, scroll_up(10, 10));
-    assert!(app.selected < 10);
+    assert!(app.logs.selected < 10);
 }
 
 #[test]

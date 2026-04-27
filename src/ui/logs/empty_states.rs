@@ -61,7 +61,7 @@ fn logo_lines() -> Vec<Line<'static>> {
 }
 
 pub(super) fn draw_jump_to_bottom(f: &mut Frame, app: &mut App, area: Rect) {
-    if !jump::should_show(app.auto_scroll) {
+    if !jump::should_show(app.logs.auto_scroll) {
         app.layout.jump_to_bottom_rect = None;
         return;
     }

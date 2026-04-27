@@ -45,8 +45,8 @@ pub(super) fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
         app.layout.row_to_filtered_idx.clear();
         app.layout.rendered_to_end = true;
         app.layout.visible_entry_count = 0;
-        app.scroll_offset = 0;
-        app.selected = 0;
+        app.logs.scroll_offset = 0;
+        app.logs.selected = 0;
         return;
     }
 
@@ -57,7 +57,7 @@ pub(super) fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
     //  PHASE 1: Resolve scroll position (the renderer is the authority)
     // ════════════════════════════════════════════════════════════════
 
-    if app.auto_scroll {
+    if app.logs.auto_scroll {
         // Walk backwards from the last entry to find where the viewport starts.
         let mut rows_used = 0usize;
         let mut start_fi = filtered_count;
@@ -74,26 +74,26 @@ pub(super) fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 break;
             }
         }
-        app.scroll_offset = start_fi;
+        app.logs.scroll_offset = start_fi;
         // Keep selected within visible range but don't force it to the last entry,
         // so users can click to select while auto_scroll is active.
-        if app.selected < start_fi || app.selected >= filtered_count {
-            app.selected = filtered_count - 1;
+        if app.logs.selected < start_fi || app.logs.selected >= filtered_count {
+            app.logs.selected = filtered_count - 1;
         }
     } else {
         // Clamp
-        app.scroll_offset = app.scroll_offset.min(filtered_count.saturating_sub(1));
-        app.selected = app.selected.min(filtered_count.saturating_sub(1));
+        app.logs.scroll_offset = app.logs.scroll_offset.min(filtered_count.saturating_sub(1));
+        app.logs.selected = app.logs.selected.min(filtered_count.saturating_sub(1));
 
         // If selected is above viewport, scroll up to it
-        if app.selected < app.scroll_offset {
-            app.scroll_offset = app.selected;
+        if app.logs.selected < app.logs.scroll_offset {
+            app.logs.scroll_offset = app.logs.selected;
         }
 
         // Forward scan to find which entries are visible from scroll_offset
         let mut rows_used = 0usize;
-        let mut last_visible_fi = app.scroll_offset;
-        let mut fi = app.scroll_offset;
+        let mut last_visible_fi = app.logs.scroll_offset;
+        let mut fi = app.logs.scroll_offset;
         while fi < filtered_count && rows_used < height {
             let rows = entry_row_count_from_store(&app.store, fi_vec[fi], full_width);
             if rows_used + rows > height && rows_used > 0 {
@@ -105,10 +105,10 @@ pub(super) fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
         }
 
         // If selected is below the visible range, scroll down to show it
-        if app.selected > last_visible_fi {
+        if app.logs.selected > last_visible_fi {
             let mut rows_back = 0usize;
-            let mut new_start = app.selected;
-            let mut si = app.selected;
+            let mut new_start = app.logs.selected;
+            let mut si = app.logs.selected;
             loop {
                 let rows = entry_row_count_from_store(&app.store, fi_vec[si], full_width);
                 if rows_back + rows > height && rows_back > 0 {
@@ -121,7 +121,7 @@ pub(super) fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
                 }
                 si -= 1;
             }
-            app.scroll_offset = new_start;
+            app.logs.scroll_offset = new_start;
         }
     }
 
@@ -129,9 +129,9 @@ pub(super) fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
     //  PHASE 2: Render entries from scroll_offset until viewport is full
     // ════════════════════════════════════════════════════════════════
 
-    let start = compute_visible_entry_start(filtered_count, app.scroll_offset);
+    let start = compute_visible_entry_start(filtered_count, app.logs.scroll_offset);
     let _ = height; // kept in scope; row-walker below uses it directly
-    let selected = app.selected;
+    let selected = app.logs.selected;
     let indices: Vec<usize> = fi_vec[start..filtered_count].to_vec();
 
     let mut row_map: Vec<usize> = Vec::new();
@@ -432,8 +432,8 @@ pub(super) fn draw_log_list(f: &mut Frame, app: &mut App, area: Rect) {
     app.layout.row_to_filtered_idx = row_map;
 
     // Detect if move_down scrolled to the very bottom → re-enable auto_scroll
-    if !app.auto_scroll && app.layout.rendered_to_end {
-        app.auto_scroll = true;
+    if !app.logs.auto_scroll && app.layout.rendered_to_end {
+        app.logs.auto_scroll = true;
         app.new_logs_since_pause = 0;
     }
 

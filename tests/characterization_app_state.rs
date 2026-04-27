@@ -123,9 +123,9 @@ fn app_new_has_clean_defaults() {
     assert_eq!(app.active_tab, ViewTab::Logs);
     assert_eq!(app.mode, AppMode::Normal);
     assert!(!app.should_quit);
-    assert_eq!(app.selected, 0);
-    assert_eq!(app.scroll_offset, 0);
-    assert!(app.auto_scroll);
+    assert_eq!(app.logs.selected, 0);
+    assert_eq!(app.logs.scroll_offset, 0);
+    assert!(app.logs.auto_scroll);
     assert!(!app.show_detail_panel);
     assert_eq!(app.detail_panel_pct, 35);
     assert_eq!(app.server_port, 9753);
@@ -246,7 +246,7 @@ fn add_entry_many_within_cap_does_not_drain() {
 fn add_entry_with_paused_auto_scroll_increments_new_logs() {
     let mut app = app_with_n_logs(3);
     app.select_up(1); // auto_scroll = false
-    assert!(!app.auto_scroll);
+    assert!(!app.logs.auto_scroll);
     let before = app.new_logs_since_pause;
     app.add_entry(log_at(99, "T", LogLevel::Info));
     assert_eq!(app.new_logs_since_pause, before + 1);
@@ -342,14 +342,14 @@ fn filter_clamps_selected_when_filter_reduces_len() {
     // disable auto_scroll (clamp only runs when auto_scroll is false).
     app.select_down(4); // selected = 4
     app.select_up(1); // selected = 3, auto_scroll = false
-    assert_eq!(app.selected, 3);
-    assert!(!app.auto_scroll);
+    assert_eq!(app.logs.selected, 3);
+    assert!(!app.logs.auto_scroll);
     // Restrict filter to one match.
     app.filter.set_search("msg-0");
     app.invalidate_filter();
     let len = app.filtered_count();
     assert_eq!(len, 1);
-    assert!(app.selected < len);
+    assert!(app.logs.selected < len);
 }
 
 #[test]
@@ -359,8 +359,8 @@ fn filter_zero_match_resets_selected_and_offset() {
     app.filter.set_search("no-such-term-xxxxx");
     app.invalidate_filter();
     assert_eq!(app.filtered_count(), 0);
-    assert_eq!(app.selected, 0);
-    assert_eq!(app.scroll_offset, 0);
+    assert_eq!(app.logs.selected, 0);
+    assert_eq!(app.logs.scroll_offset, 0);
 }
 
 // =====================================================================
@@ -371,105 +371,105 @@ fn filter_zero_match_resets_selected_and_offset() {
 fn move_up_empty_is_no_op() {
     let mut app = App::new();
     app.move_up(5);
-    assert_eq!(app.selected, 0);
-    assert_eq!(app.scroll_offset, 0);
+    assert_eq!(app.logs.selected, 0);
+    assert_eq!(app.logs.scroll_offset, 0);
 }
 
 #[test]
 fn move_up_from_bottom_disables_auto_scroll() {
     let mut app = app_with_n_logs(5);
     // Simulate renderer pushing selected forward.
-    app.selected = 4;
-    app.scroll_offset = 3;
+    app.logs.selected = 4;
+    app.logs.scroll_offset = 3;
     app.move_up(2);
-    assert_eq!(app.selected, 2);
-    assert_eq!(app.scroll_offset, 1);
-    assert!(!app.auto_scroll);
+    assert_eq!(app.logs.selected, 2);
+    assert_eq!(app.logs.scroll_offset, 1);
+    assert!(!app.logs.auto_scroll);
 }
 
 #[test]
 fn move_up_at_top_saturates_at_zero() {
     let mut app = app_with_n_logs(3);
     app.move_up(10);
-    assert_eq!(app.selected, 0);
-    assert_eq!(app.scroll_offset, 0);
+    assert_eq!(app.logs.selected, 0);
+    assert_eq!(app.logs.scroll_offset, 0);
 }
 
 #[test]
 fn move_down_empty_is_no_op() {
     let mut app = App::new();
     app.move_down(3);
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
 }
 
 #[test]
 fn move_down_clamps_to_len_minus_one() {
     let mut app = app_with_n_logs(4);
     app.move_down(100);
-    assert_eq!(app.selected, 3);
+    assert_eq!(app.logs.selected, 3);
 }
 
 #[test]
 fn select_up_empty_still_zero() {
     let mut app = App::new();
     app.select_up(3);
-    assert_eq!(app.selected, 0);
-    assert!(!app.auto_scroll);
+    assert_eq!(app.logs.selected, 0);
+    assert!(!app.logs.auto_scroll);
 }
 
 #[test]
 fn select_up_follows_viewport_if_above() {
     let mut app = app_with_n_logs(10);
-    app.selected = 8;
-    app.scroll_offset = 6;
+    app.logs.selected = 8;
+    app.logs.scroll_offset = 6;
     app.select_up(5); // new selected = 3 < offset 6, so offset follows
-    assert_eq!(app.selected, 3);
-    assert_eq!(app.scroll_offset, 3);
+    assert_eq!(app.logs.selected, 3);
+    assert_eq!(app.logs.scroll_offset, 3);
 }
 
 #[test]
 fn select_up_stays_when_still_in_viewport() {
     let mut app = app_with_n_logs(10);
-    app.selected = 5;
-    app.scroll_offset = 2;
+    app.logs.selected = 5;
+    app.logs.scroll_offset = 2;
     app.select_up(1);
-    assert_eq!(app.selected, 4);
-    assert_eq!(app.scroll_offset, 2);
+    assert_eq!(app.logs.selected, 4);
+    assert_eq!(app.logs.scroll_offset, 2);
 }
 
 #[test]
 fn select_down_empty_is_no_op() {
     let mut app = App::new();
     app.select_down(3);
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
 }
 
 #[test]
 fn select_down_clamps_at_end() {
     let mut app = app_with_n_logs(3);
     app.select_down(100);
-    assert_eq!(app.selected, 2);
+    assert_eq!(app.logs.selected, 2);
 }
 
 #[test]
 fn go_top_resets_and_disables_auto_scroll() {
     let mut app = app_with_n_logs(5);
-    app.auto_scroll = true;
-    app.selected = 3;
-    app.scroll_offset = 2;
+    app.logs.auto_scroll = true;
+    app.logs.selected = 3;
+    app.logs.scroll_offset = 2;
     app.go_top();
-    assert_eq!(app.selected, 0);
-    assert_eq!(app.scroll_offset, 0);
-    assert!(!app.auto_scroll);
+    assert_eq!(app.logs.selected, 0);
+    assert_eq!(app.logs.scroll_offset, 0);
+    assert!(!app.logs.auto_scroll);
 }
 
 #[test]
 fn go_bottom_enables_auto_scroll() {
     let mut app = app_with_n_logs(5);
-    app.auto_scroll = false;
+    app.logs.auto_scroll = false;
     app.new_logs_since_pause = 9;
     app.go_bottom();
-    assert!(app.auto_scroll);
+    assert!(app.logs.auto_scroll);
     assert_eq!(app.new_logs_since_pause, 0);
 }
 
@@ -477,11 +477,11 @@ fn go_bottom_enables_auto_scroll() {
 fn go_bottom_then_go_top_then_go_bottom_round_trip() {
     let mut app = app_with_n_logs(5);
     app.go_bottom();
-    assert!(app.auto_scroll);
+    assert!(app.logs.auto_scroll);
     app.go_top();
-    assert!(!app.auto_scroll);
+    assert!(!app.logs.auto_scroll);
     app.go_bottom();
-    assert!(app.auto_scroll);
+    assert!(app.logs.auto_scroll);
 }
 
 // =====================================================================
@@ -646,7 +646,7 @@ fn apply_input_field_net_exclude_updates_network_filter() {
 fn next_match_empty_matches_is_noop() {
     let mut app = app_with_n_logs(3);
     app.next_match();
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
 }
 
 #[test]
@@ -657,10 +657,10 @@ fn next_match_advances_to_next_after_selected() {
     app.invalidate_filter();
     let _ = app.filtered_count();
     assert!(!app.search.matches.is_empty());
-    app.selected = 1;
+    app.logs.selected = 1;
     app.next_match();
-    assert!(app.selected > 1);
-    assert!(!app.auto_scroll);
+    assert!(app.logs.selected > 1);
+    assert!(!app.logs.auto_scroll);
 }
 
 #[test]
@@ -670,7 +670,7 @@ fn next_match_wraps_to_zero_after_last() {
     app.invalidate_filter();
     let _ = app.filtered_count();
     // selected >= last match → wrap.
-    app.selected = 100;
+    app.logs.selected = 100;
     app.next_match();
     assert_eq!(app.search.match_idx, 0);
 }
@@ -679,7 +679,7 @@ fn next_match_wraps_to_zero_after_last() {
 fn prev_match_empty_is_noop() {
     let mut app = app_with_n_logs(3);
     app.prev_match();
-    assert_eq!(app.selected, 0);
+    assert_eq!(app.logs.selected, 0);
 }
 
 #[test]
@@ -688,9 +688,9 @@ fn prev_match_moves_to_previous() {
     app.filter.set_search("msg");
     app.invalidate_filter();
     let _ = app.filtered_count();
-    app.selected = 3;
+    app.logs.selected = 3;
     app.prev_match();
-    assert!(app.selected < 3);
+    assert!(app.logs.selected < 3);
 }
 
 #[test]
@@ -699,7 +699,7 @@ fn prev_match_wraps_when_at_start() {
     app.filter.set_search("msg");
     app.invalidate_filter();
     let _ = app.filtered_count();
-    app.selected = 0;
+    app.logs.selected = 0;
     app.prev_match();
     // Wraps to last match.
     assert_eq!(app.search.match_idx, app.search.matches.len() - 1);
@@ -806,14 +806,14 @@ fn selected_store_index_empty_returns_none() {
 #[test]
 fn selected_store_index_points_to_filtered_entry() {
     let mut app = app_with_n_logs(3);
-    app.selected = 1;
+    app.logs.selected = 1;
     assert_eq!(app.selected_store_index(), Some(1));
 }
 
 #[test]
 fn selected_store_index_out_of_range_returns_none() {
     let mut app = app_with_n_logs(3);
-    app.selected = 99;
+    app.logs.selected = 99;
     assert!(app.selected_store_index().is_none());
 }
 
@@ -824,7 +824,7 @@ fn selected_store_index_out_of_range_returns_none() {
 #[test]
 fn toggle_bookmark_adds_then_removes() {
     let mut app = app_with_n_logs(3);
-    app.selected = 0;
+    app.logs.selected = 0;
     assert!(!app.is_bookmarked(0));
     app.toggle_bookmark();
     assert!(app.is_bookmarked(0));
@@ -850,9 +850,9 @@ fn is_bookmarked_false_by_default() {
 #[test]
 fn toggle_bookmark_multiple_entries() {
     let mut app = app_with_n_logs(5);
-    app.selected = 0;
+    app.logs.selected = 0;
     app.toggle_bookmark();
-    app.selected = 2;
+    app.logs.selected = 2;
     app.toggle_bookmark();
     assert!(app.is_bookmarked(0));
     assert!(app.is_bookmarked(2));
@@ -862,7 +862,7 @@ fn toggle_bookmark_multiple_entries() {
 #[test]
 fn bookmarks_survive_filter_change() {
     let mut app = app_with_n_logs(3);
-    app.selected = 1;
+    app.logs.selected = 1;
     app.toggle_bookmark();
     app.set_level(LogLevel::Error);
     assert!(app.is_bookmarked(1));
@@ -899,12 +899,12 @@ fn switch_tab_same_is_idempotent() {
 #[test]
 fn switch_tab_preserves_selected_and_scroll() {
     let mut app = app_with_n_logs(3);
-    app.selected = 2;
-    app.scroll_offset = 1;
+    app.logs.selected = 2;
+    app.logs.scroll_offset = 1;
     app.switch_tab(ViewTab::Network);
     // App-level selected/scroll are untouched by switch_tab.
-    assert_eq!(app.selected, 2);
-    assert_eq!(app.scroll_offset, 1);
+    assert_eq!(app.logs.selected, 2);
+    assert_eq!(app.logs.scroll_offset, 1);
 }
 
 #[test]
@@ -1028,15 +1028,15 @@ fn active_status_edge_exactly_at_expiry_is_none() {
 #[test]
 fn clear_logs_resets_store_and_state() {
     let mut app = app_with_n_logs(3);
-    app.selected = 2;
-    app.scroll_offset = 1;
-    app.auto_scroll = false;
+    app.logs.selected = 2;
+    app.logs.scroll_offset = 1;
+    app.logs.auto_scroll = false;
     app.new_logs_since_pause = 5;
     app.clear_logs();
     assert_eq!(app.store.len(), 0);
-    assert_eq!(app.selected, 0);
-    assert_eq!(app.scroll_offset, 0);
-    assert!(app.auto_scroll);
+    assert_eq!(app.logs.selected, 0);
+    assert_eq!(app.logs.scroll_offset, 0);
+    assert!(app.logs.auto_scroll);
     assert_eq!(app.new_logs_since_pause, 0);
     assert_eq!(app.filtered_count(), 0);
 }
@@ -1044,7 +1044,7 @@ fn clear_logs_resets_store_and_state() {
 #[test]
 fn clear_logs_also_clears_bookmarks() {
     let mut app = app_with_n_logs(3);
-    app.selected = 1;
+    app.logs.selected = 1;
     app.toggle_bookmark();
     app.clear_logs();
     assert!(app.bookmarks.is_empty());
@@ -1742,11 +1742,11 @@ fn auto_scroll_for_tab_reads_correct_flag_per_tab() {
     assert!(app.auto_scroll_for_tab(ViewTab::Logs));
     assert!(app.auto_scroll_for_tab(ViewTab::Network));
     // Flip Logs flag only.
-    app.auto_scroll = false;
+    app.logs.auto_scroll = false;
     assert!(!app.auto_scroll_for_tab(ViewTab::Logs));
     assert!(app.auto_scroll_for_tab(ViewTab::Network));
     // Flip Network flag only.
-    app.auto_scroll = true;
+    app.logs.auto_scroll = true;
     app.network.auto_scroll = false;
     assert!(app.auto_scroll_for_tab(ViewTab::Logs));
     assert!(!app.auto_scroll_for_tab(ViewTab::Network));

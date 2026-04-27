@@ -66,7 +66,7 @@ pub(super) fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 (0u16, 0u16),
             )
         } else {
-            let (live_text, live_style) = if app.auto_scroll {
+            let (live_text, live_style) = if app.logs.auto_scroll {
                 let dot = match (app.tick / 8) % 4 {
                     0 => "●",
                     1 => "◉",
@@ -93,7 +93,7 @@ pub(super) fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 let vis = app.layout.visible_entry_count.max(1);
                 let max_off = total.saturating_sub(vis);
                 let pct = if max_off > 0 {
-                    ((app.scroll_offset.min(max_off)) * 100) / max_off
+                    ((app.logs.scroll_offset.min(max_off)) * 100) / max_off
                 } else {
                     100
                 };

@@ -28,7 +28,8 @@ fn test_deserialize_hello_new_format() {
 #[test]
 fn test_deserialize_hello_legacy_format() {
     // Old Dart clients still send `device` and no `packageName`/`port`
-    let json = r#"{"type":"hello","device":"iPhone 15","app":"com.test","appVersion":"1.0.0","os":"ios"}"#;
+    let json =
+        r#"{"type":"hello","device":"iPhone 15","app":"com.test","appVersion":"1.0.0","os":"ios"}"#;
     let msg: ClientMessage = serde_json::from_str(json).unwrap();
     match msg {
         ClientMessage::Hello {
@@ -108,7 +109,8 @@ fn test_deserialize_log_with_optional_fields() {
 
 #[test]
 fn test_deserialize_net() {
-    let json = r#"{"type":"net","id":1,"t":"req","p":"http","method":"GET","url":"https://example.com"}"#;
+    let json =
+        r#"{"type":"net","id":1,"t":"req","p":"http","method":"GET","url":"https://example.com"}"#;
     let msg: ClientMessage = serde_json::from_str(json).unwrap();
     use crate::domain::network::FlogNetKind;
     match msg {
