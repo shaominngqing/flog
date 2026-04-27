@@ -411,16 +411,20 @@ maintained by **additive evolution**:
 optionally; Rust captures it into `ClientInfo.session_id = Option<String>`
 with `None` as the default. Older Dart clients keep working.
 
-### 9.1 flog_dart v0.8 breaking changes (DART-033 forward ref)
+### 9.1 flog_dart v0.8 SSE redesign (DART-033, shipped)
 
-Seven SSE-subsystem design issues (layering mix, API asymmetry,
-closure-variable state, UTF-8 decode cost, unbounded byte buffer,
-duplicate parser paths) were deferred to a dedicated `flog_dart v0.8`
-breaking release. v0.8 will move `FlogSseParser` to a clean
-`StreamTransformer<List<int>, SseEvent>`, expose the raw stream
-alongside typed events, and add byte-buffer limits. **Wire protocol
-stays unchanged** — flog TUI 0.4.x keeps working with both v0.7.x
-and v0.8.x.
+`flog_dart 0.8.0` (2026-04-27) redesigned the SSE subsystem into three
+composable `StreamTransformer`s:
+`SseByteDecoder` → `SseLineDecoder` → `FlogSseReporter`. Each is
+testable in isolation and can be swapped or omitted. The legacy
+`FlogSseParser` entry point is preserved as a thin compat shim.
+`SseResponse` grows a typed `events: Stream<SseEvent>` alongside the
+legacy (now `@Deprecated`) `stream: Stream<String>`.
+
+**Wire protocol is unchanged.** All four `t` values (`req` / `chunk` /
+`done` / `err`) emitted over flog_net for SSE continue to match the
+v0.7 shape byte-for-byte — flog TUI 0.4.x decodes both v0.7.x and
+v0.8.x clients identically.
 
 ## 10. Cross-references
 

@@ -3,6 +3,107 @@
 All notable changes to `flog_dart`. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.8.0 — 2026-04-27
+
+**Breaking release.** The SSE subsystem is redesigned into three
+composable `StreamTransformer`s (DART-033). Non-SSE APIs (`FlogLogger`,
+`FlogDio` non-sse surface, `FlogWebSocket`, `FlogMockInterceptor`,
+`Flog.init`) are unchanged and source-compatible.
+
+### What's new
+
+- **`SseByteDecoder : StreamTransformer<List<int>, String>`** — UTF-8
+  boundary reassembly with zero-copy `Uint8List` view slicing, leading
+  BOM strip, and a bounded buffer (default 1 MiB, configurable via
+  `maxBufferBytes`) that errors out on runaway producers.
+- **`SseLineDecoder : StreamTransformer<String, SseEvent>`** — pure W3C
+  line/field parser as a proper transformer; all state lives on the
+  transformer's per-subscription sink, no closure-captured locals.
+- **`FlogSseReporter : StreamTransformer<SseEvent, SseEvent>`** — tee
+  that mirrors every event to flog_net (`req` / `chunk` / `done` / `err`
+  frames) while passing events through untouched. When `flogEnabled`
+  is `false` at compile time, AOT tree-shakes the whole reporter away.
+- **`SseResponse.events`** — `Stream<SseEvent>` typed access from
+  `FlogDio.sse()`. Exposes `event:` / `id:` / `retry:` fields that the
+  legacy data-only `.stream` hid.
+- **`SseResponse.options`** — exposes the final `RequestOptions`.
+
+### Migration
+
+#### `FlogSseParser` — no code changes required
+
+`FlogSseParser.wrap` / `FlogSseParser.wrapTyped` keep their exact v0.7
+signatures and behavior. They now delegate to the new transformer
+pipeline internally:
+
+```dart
+// Before (v0.7.x) and after (v0.8.0) — unchanged:
+final dataStream = FlogSseParser.wrap(response.data!.stream, url: url);
+final events = FlogSseParser.wrapTyped(response.data!.stream, url: url);
+```
+
+If you were depending on `FlogSseParser` directly, nothing changes.
+
+#### `SseResponse.stream` → `.events` (recommended)
+
+`.stream` is still functional; it's annotated `@Deprecated` and will be
+removed in v1.0. Prefer `.events` for new code:
+
+```dart
+// Before — data-only:
+final sse = await dio.sse('/chat');
+await for (final data in sse.stream) {
+  print(data);
+}
+
+// After — typed, with event:, id:, retry:
+final sse = await dio.sse('/chat');
+await for (final evt in sse.events) {
+  if (evt.data == '[DONE]') break;            // now explicit
+  print('${evt.event ?? "message"}[${evt.id}]: ${evt.data}');
+}
+```
+
+`[DONE]` filtering is NOT applied to `.events` — users that relied on
+the legacy filter should add `.where((e) => e.data != '[DONE]')`
+explicitly.
+
+`.stream` and `.events` share ONE subscription to the underlying byte
+stream. Listening to both on the same `SseResponse` raises
+`StateError: Stream has already been listened to.` — pick one.
+
+#### Custom pipelines
+
+You can now build your own pipeline, swap the reporter for a custom one,
+or bypass the reporter entirely:
+
+```dart
+import 'package:flog_dart/flog_dart.dart';
+
+final events = byteStream
+    .transform(const SseByteDecoder(maxBufferBytes: 4 * 1024 * 1024))
+    .transform(const SseLineDecoder())
+    // .transform(FlogSseReporter(url: url)) // omit for no telemetry
+    ;
+```
+
+### Internal
+
+- `flog_sse_parser.dart` 417 lines → 75 lines (compat shim).
+- New files: `lib/src/sse/byte_decoder.dart`,
+  `lib/src/sse/line_decoder.dart`, `lib/src/sse/reporter.dart`,
+  `lib/src/sse/event.dart`.
+- Test count: 133 → 161 (+28 new across the three transformer layers
+  and the `SseResponse` integration tests).
+
+### Red lines honored
+
+- All 47 tests in `flog_sse_parser_test.dart` pass unchanged against the
+  compat shim.
+- Non-SSE public API byte-identical to 0.7.3.
+- No new dependencies (everything is `dart:async` / `dart:convert` /
+  `dart:typed_data`).
+
 ## 0.7.3 — 2026-04-24
 
 Consolidation release of the Phase 3 / 4 / 5 cleanup campaign. All

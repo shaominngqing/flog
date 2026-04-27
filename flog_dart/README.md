@@ -122,32 +122,19 @@ response and the request stays `Pending` forever.
 
 ## SSE
 
-Via `FlogDio.sse`:
+v0.8 splits the SSE subsystem into three composable `StreamTransformer`s.
+Most users can ignore the transformers and just call `FlogDio.sse`:
 
 ```dart
-final response = await dio.sse('/chat/completions',
+final sse = await dio.sse('/chat/completions',
   method: 'POST',
   data: {'model': 'gpt-4', 'messages': [...]},
 );
-await for (final data in response.stream) {
-  print(data); // raw data frames as joined strings
-}
-```
 
-The returned `SseResponse` exposes a `Stream<String>` of joined-`data:`
-payloads per event.
-
-For typed access including `event:` / `id:` / `retry:` fields, use
-`FlogSseParser.wrapTyped`:
-
-```dart
-final events = FlogSseParser.wrapTyped(
-  response.data!.stream,
-  url: '/chat/completions',
-  method: 'POST',
-);
-await for (final SseEvent e in events) {
-  // e.data, e.event, e.id, e.retry, e.comments
+// v0.8 — preferred: typed events
+await for (final SseEvent e in sse.events) {
+  if (e.data == '[DONE]') break;
+  print('${e.event ?? "message"}[${e.id}]: ${e.data}');
 }
 ```
 
@@ -155,12 +142,42 @@ await for (final SseEvent e in events) {
 `null` for the default `message`), `data` (multi-line `data:` lines
 joined with `\n`), `id`, `retry` (ms), and any preceding `:` comments.
 
-Or against a raw byte stream with `FlogSseParser.wrap` (returns only
-the `data` payload per event):
+### v0.7 `.stream` is still supported
+
+`SseResponse.stream` is a `Stream<String>` of joined `data:` payloads
+with the OpenAI-style `[DONE]` terminator filtered out. It is annotated
+`@Deprecated` and will be removed in v1.0, but keeps working:
+
+```dart
+// ignore: deprecated_member_use
+await for (final data in sse.stream) { print(data); }
+```
+
+`.stream` and `.events` share one subscription to the underlying byte
+stream — pick one; listening to both raises a StateError.
+
+### Custom pipelines (advanced)
+
+For full control, compose the transformers yourself. This lets you,
+for example, raise the default 1 MiB buffer cap or skip the reporter
+entirely:
+
+```dart
+import 'package:flog_dart/flog_dart.dart';
+
+final events = responseBody.stream
+    .cast<List<int>>()
+    .transform(const SseByteDecoder(maxBufferBytes: 4 * 1024 * 1024))
+    .transform(const SseLineDecoder())
+    .transform(FlogSseReporter(url: url, method: 'POST'));
+```
+
+Or use `FlogSseParser.wrap` / `FlogSseParser.wrapTyped` — the v0.7
+convenience shims, unchanged:
 
 ```dart
 await for (final data in FlogSseParser.wrap(
-  response.data!.stream,
+  responseBody.stream,
   url: '/api/chat/completions',
   method: 'POST',
 )) {
@@ -237,17 +254,11 @@ The `flog_dart/test/` suite includes the W3C-compliant SSE parser
 contract (DART-001/002 regression tests) — they exercise `FlogSseParser`
 directly against realistic SSE streams.
 
-## v0.8 breaking changes (planned)
+## v0.8 → v1.0 migration preview
 
-v0.8 will reshape the SSE subsystem into a clean
-`StreamTransformer<List<int>, SseEvent>`, expose the raw stream
-alongside the typed events, and add byte-buffer limits (audit
-DART-033). **Wire protocol stays unchanged** — flog TUI 0.4.x will
-keep working with both v0.7.x and v0.8.x. Migration will only touch
-Dart-side SSE call sites.
-
-See [`docs/PROTOCOL.md §9.1`](../docs/PROTOCOL.md#91-flog_dart-v08-breaking-changes-dart-033-forward-ref)
-in the flog repository for detail.
+`SseResponse.stream` is `@Deprecated` as of v0.8 and will be removed in
+v1.0. Switch call sites to `.events` at your convenience; the wire
+protocol does not change.
 
 ## License
 

@@ -25,6 +25,13 @@ export 'src/flog_mock_interceptor.dart';
 export 'src/flog_sse_parser.dart';
 export 'src/flog_web_socket.dart';
 export 'src/flog_dio.dart' show FlogDio, FlogHttpConfig, SseResponse;
+// DART-033 v0.8 — three composable SSE StreamTransformers. Users can
+// build their own pipeline, swap the reporter for a custom one, or
+// bypass the FlogSseParser shim entirely.
+export 'src/sse/byte_decoder.dart' show SseByteDecoder;
+export 'src/sse/event.dart' show SseEvent;
+export 'src/sse/line_decoder.dart' show SseLineDecoder;
+export 'src/sse/reporter.dart' show FlogSseReporter;
 
 /// Top-level entry point for flog_dart.
 ///
