@@ -1,308 +1,267 @@
-# AI long-workflow methodology — a cleanup-campaign case study
+# AI 长工作流方法论 —— 一次清理战役的案例研究
 
-**Status:** standalone case study. The concrete project —
-[`flog`](https://github.com/shaomingqing/flog), a Rust TUI + Dart
-companion — is incidental. The technique generalises to any
-existing, mostly-working codebase (Go, React, Python, ...) whose
-owner can articulate quality debt and is willing to spend three
-days running an AI-assisted cleanup.
+**状态：** 独立案例研究。具体项目 ——
+[`flog`](https://github.com/shaomingqing/flog)，一个 Rust TUI + Dart
+伴生包 —— 只是载体。模式可推广到任何已存在、基本可工作、所有者
+能说清质量债的代码库（Go、React、Python 都行）。
 
-**Reading time:** 30 minutes.
-**Audience:** engineers considering using LLM agents for multi-day
-refactoring or cleanup campaigns. Not an introduction to LLMs or to
-software quality — assumes the reader already knows what a
-characterization test is, what clippy / ruff / eslint is, and what
-"drive subagents from a plan file" means.
+**阅读时间：** 30 分钟。
+**目标读者：** 正在考虑用 LLM Agent 做多天重构或清理的工程师。不是
+LLM 入门，也不是软件质量入门 —— 假设你已经知道 characterization
+test 是什么、clippy / ruff / eslint 是什么、"用计划文件驱动 subagent"
+是什么。
 
-## Why this document exists
+## 本文档为什么存在
 
-In April 2026 one engineer ran a six-phase, three-day, ~162-commit
-cleanup of a ~20 kLOC Rust/Dart project using AI subagents. It
-worked. The user tested every phase boundary locally and signed off
-each plan before execution. Coverage went from ~31% to ~90%, 10
-oversized files dropped to 0, and 13 tracked bugs closed.
+2026 年 4 月，一个工程师用 AI subagent 在三天内对一个约 2 万行的
+Rust/Dart 项目做了一次 6 阶段、约 162 次提交的清理。它成功了。用户
+在每个阶段边界亲自验证，每份计划都由他审阅后执行。测试覆盖率从
+约 31% 拉到约 90%，10 个超标文件全部落回合理区间，13 个追踪中的
+bug 全部关闭。
 
-The user's prompt, at session start, said: "也是一个长工作流的AI实
-践，所以需要记录一下" — *"this is also a long-workflow AI practice,
-so it should be documented."*
+用户在会话开始时说过一句话："也是一个长工作流的 AI 实践，所以需要
+记录一下"。
 
-This file documents the practice so another engineer can read it on
-Monday and start a cleanup on Tuesday.
+本文就是为此而写 —— 让另一个工程师周一读完，周二就能上手。
 
-## 1. The premise — why long workflows fail for LLMs
+## 1. 前提 —— LLM 为什么会在长工作流里翻车
 
-LLM agents degrade along three axes as a task extends over hours and
-days:
+Agent 随任务拉长到几小时甚至几天，会在三个维度上劣化：
 
-1. **Context loss.** The conversation grows past the cache window;
-   earlier decisions get summarised into a blurb that omits the load-
-   bearing detail. A decision made on hour 2 drifts by hour 18.
-2. **Drift.** Without a committed artifact at every milestone, the
-   agent's next turn re-derives intent from a compressed chat log.
-   Re-derivation is not identity: the plan at hour 20 may be a
-   subtly different plan than the one the user approved at hour 0.
-3. **Over-abstraction.** Left to its own judgment, an LLM will
-   create an abstraction whenever it sees a hand-written pattern
-   twice. A codebase refactored for an hour by an unsupervised LLM
-   often has one extra trait for every three it needed.
+1. **上下文丢失。** 对话长度超过缓存窗口后，早期的决策被压缩进
+   一段摘要，关键细节被抹掉。第 2 小时做出的决定，到第 18 小时
+   已经漂移了。
+2. **目标漂移。** 如果每个里程碑都没有落盘成提交制品，Agent 下
+   一轮就会从压缩后的聊天记录里**重新推断**意图。重推断不是恒
+   等映射：第 20 小时的计划，可能和用户在第 0 小时批准的不是同
+   一份。
+3. **过度抽象。** 任其自行判断，LLM 每看到两次手写重复就会造一
+   个抽象。一个 LLM 自由重构一小时的代码库，往往每 3 个需要的
+   trait 会多出 1 个没必要的。
 
-The workflow below is a set of artifacts, gates, and subagent-
-dispatch disciplines designed to counter all three failure modes at
-once. It is **not** prompt engineering — it is *process
-engineering*. The prompts given to subagents are ordinary; what
-makes the campaign reliable is what's written down before each
-prompt runs.
+下面描述的工作流不是"提示工程"，而是**流程工程**：一组在每个里
+程碑上固化下来的制品、闸门和 subagent 派发纪律，用来同时压住这
+三种失败模式。传给 subagent 的提示词是普通提示词 —— 让整个战役
+变得可靠的是**跑提示之前写下来的东西**。
 
-## 2. The six-phase model
+## 2. 六阶段模型
 
-A linear sequence, one phase per commit-cluster, tests green at
-every boundary, no code change in the final phase:
+线性序列。每阶段一个 commit 簇，每个阶段边界都要求测试全绿。最
+后一个阶段不改代码。
 
-| Phase | Purpose                                        | Deliverable                          | Can this phase fail silently? |
-|-------|------------------------------------------------|--------------------------------------|-------------------------------|
-| 0     | Brainstorm scope + write the phase contract    | design spec + decision journal       | yes if skipped — entire campaign sets up wrong |
-| 1     | Audit (read-only, classify findings)           | per-scope audit files + index        | no — read-only, verifiable by reading the code |
-| 2     | Mechanical cleanup (lint, dead code, fmt)      | clippy/lint 0 warnings               | no — compiler verifies |
-| 2.5   | Testability + characterization                 | regression fence (>90% coverage target) | yes if Rule 2/9/10 gates skipped |
-| 3     | Redesign (step-by-step, one cluster per step)  | code reshape, B-class fixes land     | yes — this is the risk-heavy phase |
-| 4     | Residual cleanup + why-comments                | file-budget compliance + targeted comments | no — small delta, guarded by tests |
-| 5     | Documentation                                  | engineering + user docs              | no — docs-only |
-| 6     | Retrospective + methodology                    | this file's cousin for the project   | no — docs-only |
+| 阶段 | 目的                              | 产出                         | 会不会默默翻车 |
+|---|-----------------------------------|------------------------------|--------------|
+| 0  | 头脑风暴范围 + 写阶段合约          | 设计规格 + 决策日志          | 会 —— 跳过则整个战役定错位 |
+| 1  | 审计（只读，分类）                  | 按域的审计文件 + 索引        | 不会 —— 只读，靠读代码可验证 |
+| 2  | 机械清理（lint、死代码、fmt）       | clippy/lint 0 告警           | 不会 —— 编译器把关 |
+| 2.5| 可测性 + 特征化测试                 | 回归围栏（>90% 覆盖目标）   | 会 —— 如果跳过 Rule 2/9/10 |
+| 3  | 重新设计（每 step 处理一个 cluster）| 代码重塑、B 类 bug 落地      | 会 —— 风险最高的阶段 |
+| 4  | 残余清理 + "为什么"注释             | 文件预算达标 + 定点注释      | 不会 —— 改动小，测试守住 |
+| 5  | 文档                                | 工程文档 + 用户文档          | 不会 —— 纯文档 |
+| 6  | 复盘 + 方法论                       | 项目专属的复盘 + 本文兄弟篇  | 不会 —— 纯文档 |
 
-The model is not original — it's a fusion of:
-- **read before write** (Phase 1 before Phase 2),
-- **test before refactor** (Phase 2.5 before Phase 3),
-- **compile-green-at-every-commit** (standard),
-- **documented exit before close** (Phases 5 + 6).
+这个模型本身并不新 —— 它是以下几条老原则的组合：
+- **先读后写**（Phase 1 → Phase 2）
+- **先测后改**（Phase 2.5 → Phase 3）
+- **每次提交编译全绿**（标准做法）
+- **关闭前有落盘交接**（Phase 5 + 6）
 
-What's original is the *allocation of work between user and AI* at
-each phase. See §6.
+新的是**在每个阶段里，人和 AI 之间如何分工**。详见 §6。
 
-## 3. The audit taxonomy — A/B/C/D/E in five labels
+## 3. 审计分类法 —— A/B/C/D/E 五个标签
 
-Before any code change, every finding gets exactly one of five
-labels. The distribution from the flog campaign:
+代码修改开始之前，每条发现恰好打一个标签。flog 战役的分布：
 
-| Label | Meaning                                     | Count (flog) | Handled by |
-|-------|---------------------------------------------|--------------|------------|
-| **A** | Correct-but-ugly behaviour (keep, just clean) | 27         | Phase 3 — A-class test freezes behaviour before touch |
-| **B** | Confirmed bug                               | 13 → 14      | Phase 2.5 red/ignored test → Phase 3 un-ignore on fix |
-| **C** | Ambiguous — is it a feature or a bug?        | 0 (forced)  | Resolved with user before Phase 2 — taxonomy gate |
-| **D** | Architecture smell                          | 66 + addenda | Phase 3 redesign with A-class guard |
-| **E** | Mechanical 0-risk tidy-up                   | 9           | Phase 2 only — no tests needed |
+| 标签 | 含义                                | 数量（flog）| 由谁处理 |
+|---|-------------------------------------|-------------|---------|
+| **A** | 行为正确但难看（保留，只清理）       | 27          | Phase 3 —— A 类测试在动手前把行为冻结 |
+| **B** | 已确认的 bug                         | 13 → 14    | Phase 2.5 红色忽略测试 → Phase 3 修完取消忽略 |
+| **C** | 有歧义 —— 是 feature 还是 bug？       | 0（强制）   | Phase 2 开始前与用户商定 —— 强制闸门 |
+| **D** | 架构异味                             | 66 + 增补   | Phase 3 在 A 类测试保护下重新设计 |
+| **E** | 零风险机械整理                       | 9           | 仅 Phase 2 —— 不需要写测试 |
 
-Every finding has a stable id (`TRANS-009`, `DOM-003`, `UI-041`,
-`DART-023`). Ids appear in: commit messages, test names, source
-comments, the plan for the owning phase, and the journal that
-records the phase's exit. Given any id you can reconstruct every
-step it moved through in 2–3 hops of `git log --grep` or file
-search.
+每条发现都有一个稳定 ID（`TRANS-009`、`DOM-003`、`UI-041`、
+`DART-023`）。这些 ID 出现在：commit 消息、测试名、源码注释、对
+应阶段的计划、阶段出口的 journal。给定任意一个 ID，你通过 2-3
+跳 `git log --grep` 或文件搜索就能重建它走过的每一步。
 
-### Why five labels and not three (or ten)?
+### 为什么是五个标签，而不是三个或十个？
 
-- **Two labels** (bug / not bug) has no room for "correct but the
-  code is unreadable" (A) — which is the single most common finding
-  in a mature codebase. Without A, those findings either get
-  ignored (rot) or mis-labelled as bugs (subagent wastes time
-  "fixing" what is already correct).
-- **Ten labels** (severity × confidence × urgency + ...) is
-  overhead without payoff. The subagent driving Phase 2 doesn't
-  need to reason about urgency. The user does, once, when choosing
-  which phase to start.
-- **Five is the empirical sweet spot.** A: "lock it before moving."
-  B: "this is wrong, prove it with a failing test first."
-  C: "I can't tell without asking the user." D: "this is a design
-  problem, not a bug — schedule a redesign with tests in place."
-  E: "just do it, it's free." Every finding fits exactly one.
+- **两个标签**（bug / 非 bug）留不下位置给"行为正确但代码不可
+  读" (A) —— 而 A 恰恰是成熟代码库里出现最多的类别。没有 A，这
+  类发现要么被忽视（烂掉），要么被错打成 bug（subagent 在"修"其
+  实没错的东西上浪费时间）。
+- **十个标签**（严重度 × 置信度 × 紧急度 + ...）开销大，收益
+  低。Phase 2 的 subagent 不需要考虑紧急度，用户也只需要在选阶
+  段起点时考虑一次。
+- **五个是经验上的甜点。** A："动之前先锁住。" B："这错了，先
+  写个失败测试。" C："没法判断，得问用户。" D："这是设计问题，
+  不是 bug —— 在测试保护下重新设计。" E："直接动手就行，0 成本
+  。" 每条发现都恰好落入一个。
 
-### The `C = 0` discipline
+### `C = 0` 纪律
 
-At the end of Phase 1 Task 3 (taxonomy audit), every C-class finding
-is adjudicated with the user and re-labelled A / B / D / E. Phase 2
-does **not** begin with C-labels outstanding. This gate is the
-cleanest "user must be in the loop" moment in the entire campaign
-— it forces the user to read the ambiguous findings and commit to
-an interpretation. Every subsequent subagent call can then act
-without backtracking.
+Phase 1 的 Task 3（分类审计）结束时，所有 C 类发现都要和用户一
+起**裁决**，重新贴上 A / B / D / E。Phase 2 **绝不**在还有 C
+标签的情况下开始。这个闸门是整个战役中"用户必须在线"最干净的一
+刻 —— 它强制用户把有歧义的发现读一遍，并确定一个解释。之后每一
+次 subagent 调用都可以毫无回溯地推进。
 
-## 4. Key techniques, with concrete instances
+## 4. 关键技术，配具体实例
 
-### 4.1 Characterization tests as a regression fence
+### 4.1 特征化测试作为回归围栏
 
-**Principle.** Before you can safely reshape a codebase, you must
-pin its current observable behaviour in tests. These tests are not
-specifications — they simply declare "whatever the code does today,
-that's what it does tomorrow." The flog campaign wrote 1 525 such
-tests in Phase 2.5B, including 541 integration tests across 8
-crates and 436 lib-tests.
+**原则。** 在安全重塑代码之前，你必须把**它当前的可观察行为**锁
+定到测试里。这些测试不是规范 —— 它们只是声明"今天代码怎么做，
+明天也得怎么做"。flog 战役在 Phase 2.5B 一共写了 1 525 条这样的
+测试，包括 8 个 crate 下的 541 条集成测试和 436 条 lib 测试。
 
-The fence pays off during Phase 3. Any subagent-driven refactor
-that breaks an A-class characterization test has two possible
-resolutions: either the refactor is wrong, or the test was wrong.
-The user then decides, explicitly. There is no silent behaviour
-change because there is no silent regression.
+这道围栏在 Phase 3 开始回本。任何 subagent 驱动的重构一旦打破某
+条 A 类特征化测试，就只有两种解释：重构错了，或测试错了。用户此
+时**必须显式**做出判断。不会有静默的行为变更，因为不会有静默的
+回归。
 
-**Gates that kept the fence honest:**
+**守住围栏的数字闸门：**
 
-- **Rule 2 — per-module coverage gates.** Every core module has a
-  hard coverage floor (≥ 90% for domain/, ≥ 85% for ui/, ≥ 80% for
-  session/main/cli). A subagent cannot declare done until
-  `cargo llvm-cov` reports the module at or above the floor. The
-  same idea works for pytest `--cov` or Jest `--coverage`.
-- **Rule 9 — multi-scenario.** If an audit entry lists N distinct
-  scenarios, the test for it must have N distinct cases. "Filter
-  state with include + exclude + regex" is three cases, not one.
-- **Rule 10 — per-public-function density.** Core modules require
-  ≥ 5 test cases per public function. A trivial getter can be
-  exempted; anything that takes decisions cannot.
+- **Rule 2 —— 每模块覆盖率闸门。** 每个核心模块都有一条硬性地
+  板（domain/ ≥ 90%、ui/ ≥ 85%、session/main/cli ≥ 80%）。
+  subagent 只有在 `cargo llvm-cov` 报告达到或超过地板时才能声称
+  完成。pytest `--cov`、Jest `--coverage` 也一样。
+- **Rule 9 —— 多场景覆盖。** 如果某条审计列了 N 个不同的场景，
+  对应测试必须有 N 个不同的用例。"带 include + exclude + regex
+  的 filter 状态"是 3 个用例，不是 1 个。
+- **Rule 10 —— 每公开函数密度。** 核心模块要求每个公开函数 ≥ 5
+  条测试用例。平凡 getter 可以豁免；任何有决策的都不行。
 
-These numeric gates prevent the single most common subagent failure
-mode: delivering a shallow test that covers one happy path and no
-edge cases, then claiming the work is complete.
+这些数字化闸门能挡住 subagent 最常见的失败模式：交一个只覆盖快
+乐路径、没有边界情况的浅测试，然后宣称完工。
 
-### 4.2 The red-lock pattern for B-class bugs
+### 4.2 B 类 bug 的"红锁"模式
 
-**Shape:** write an `#[ignore = "bug: <id>"]` test that asserts the
-correct behaviour. The test fails (so it's ignored so CI stays
-green). In the same commit that fixes the bug, un-ignore the test.
-Now CI would fail if the bug returned.
+**形状：** 写一个 `#[ignore = "bug: <id>"]` 的测试，断言**正确**
+行为。这个测试会失败（所以被 ignore，CI 保持绿）。在修 bug 的
+**同一个 commit** 里，取消 ignore。现在如果这个 bug 再回来，CI
+就会挂。
 
-**Three concrete instances from the flog campaign:**
+**flog 战役里的三个具体实例：**
 
-- **DART-001** — the SSE parser dropped all events after the first
-  `data:` line in a chunk. The red lock was the pre-existing
-  `flog_dart/test/flog_sse_parser_test.dart` suite, committed as-is
-  in Phase 1. It compile-failed (W3C tests referenced APIs that
-  didn't exist). Phase 3 Step 3.4's fix commit `6179631` both
-  implemented `FlogSseParser.wrapTyped` + `SseEvent` and made
-  `flutter test` go from 84 pass / 1 fail → 131 pass / 0 fail.
-  The test file's header comment was updated from "locks the bug"
-  to "locks the fix."
-- **UI-042** — WS chat ↔ raw toggle leaked collapse-key state,
-  corrupting the render of the adjacent pane. User-reported
-  mid-Phase-3. Step 3.6 wrote the red lock (commit `95f97d7`,
-  `test(characterization): UI-042 red lock — WS chat↔raw toggle
-  state leak`). Step 3.8 shipped the fix (`133b631`) and un-ignored
-  the test in the same commit.
-- **DOM-003** — HTTP response without prior request was silently
-  dropped. Red lock planted in Phase 2.5B Task 12; fix in Phase 3
-  Step 3.2 (`7e333a1`).
+- **DART-001** —— SSE parser 在一个 chunk 里吃掉第一个 `data:`
+  之后的所有事件。红锁其实是预先存在的
+  `flog_dart/test/flog_sse_parser_test.dart` 测试套件 —— Phase 1
+  把它以"原样"提交了进来，它编译失败（W3C 测试引用了还不存在的
+  API）。Phase 3 Step 3.4 的修复 commit `6179631` 同时实现了
+  `FlogSseParser.wrapTyped` + `SseEvent`，让 `flutter test` 从 84
+  通过 / 1 失败变成 131 通过 / 0 失败。测试文件的头注释从"锁住
+  这个 bug"改成了"锁住这个修复"。
+- **UI-042** —— WS chat ↔ raw 模式切换泄漏 collapse-key 状态，
+  污染相邻面板的渲染。用户在 Phase 3 中期报告。Step 3.6 写红锁
+  （commit `95f97d7`，`test(characterization): UI-042 red lock
+  — WS chat↔raw toggle state leak`）。Step 3.8 在同一个 commit
+  里交付修复（`133b631`）并取消 ignore。
+- **DOM-003** —— 没有前置 request 的 HTTP response 被静默丢弃。
+  Phase 2.5B Task 12 种下红锁；Phase 3 Step 3.2 修复（`7e333a1`）。
 
-**Why "red lock" instead of just writing the fix?**
+**为什么是"红锁"，不是直接写修复？**
 
-The red-ignored test is a commit-level artifact that encodes "we
-know about this bug, we know the correct behaviour, the fix is
-scheduled." If a subagent in an intervening phase somehow "fixes"
-the bug by mistake — while working on something unrelated — the
-test goes from ignored-failing to ignored-passing, and the next
-developer sees it and un-ignores it. If a regression rolls back
-the fix, the test fails and CI blocks. The pattern is not test-
-driven-development (the fix commit isn't driven by the test), it's
-**bug-surface-pinning**: the bug has a name, a file, a line, and a
-test, before any fix is attempted.
+红色且被忽略的测试是一种提交级的制品，它编码了"我们知道这个
+bug、我们知道正确行为、修复已排期"。如果中间某个阶段的 subagent
+无意中把这个 bug"顺手修了"（在做其他事情时），这个测试会从
+ignored-failing 变成 ignored-passing，下一个开发者看见就会取消
+ignore。如果某次回滚把修复打翻，测试失败，CI 阻断。这个模式**不
+是 TDD**（修复的 commit 不是由测试驱动出来的），它是**bug 表面
+钉固 (bug-surface-pinning)**：bug 先有名字、文件、行号、测试，然
+后才去尝试修复。
 
-### 4.3 Step = spec + plan + subagent dispatch
+### 4.3 Step = spec + plan + subagent 派发
 
-Phase 3 of the flog campaign decomposed into 10 steps. Each step
-was one atomic unit:
+flog 的 Phase 3 分成 10 个 step。每个 step 都是一个原子单元：
 
-1. A **plan file** under `docs/superpowers/plans/` that names the
-   audit ids in scope, the target files, the exit gates.
-2. A **spec reference** — the plan cites the Phase 0 design spec
-   section that governs this scope (e.g. "§5.3 — transport layer").
-3. A **subagent dispatch** or inline execution. For flog, most
-   steps were single-round subagents (1 prompt → 1 response → 5–15
-   commits). Some were multi-round when a first pass came back
-   shallow.
-4. A **journal file** under `docs/superpowers/journal/` recording
-   the exit state: audit ids locked, files changed, test delta,
-   coverage delta, deviations from the plan.
+1. 一份 **计划文件**，在 `docs/superpowers/plans/` 下，列出本范
+   围内的审计 ID、目标文件、出口闸门。
+2. 一份 **spec 引用** —— 计划引用 Phase 0 设计规格中管辖本范围
+   的章节（例如 "§5.3 —— transport layer"）。
+3. 一次 **subagent 派发** 或内联执行。flog 大多数 step 是单轮
+   subagent（1 个提示 → 1 次响应 → 5-15 个 commits）。少数是多
+   轮 —— 第一轮结果太浅的时候。
+4. 一份 **journal 文件**，在 `docs/superpowers/journal/` 下，记
+   录出口状态：锁住的审计 ID、修改的文件、测试数变化、覆盖率变
+   化、与计划的偏离。
 
-The pattern forces every step to be a self-contained unit. A new
-contributor reading the step's plan, journal, and commits can
-reconstruct exactly what happened without reading the conversation
-that drove it. This artifact-centric design is what lets the
-campaign survive LLM context loss.
+这个模式强迫每个 step 成为**自包含单元**。一个新贡献者只读 step
+的计划、journal、commit 就能重建发生了什么，**完全不用读驱动它
+的对话**。这种"以制品为中心"的设计，正是让战役能扛住 LLM 上下文
+丢失的关键。
 
-### 4.4 File-size as signal, not judgment
+### 4.4 文件大小作为信号，而非判决
 
-flog used a **500-line budget** for production files (documented in
-`docs/CONTRIBUTING.md §5.5`). The budget is not a law — it's a
-signal. Three stances are legal:
+flog 用的是 **500 行预算**（见 `docs/CONTRIBUTING.md §5.5`）。预
+算不是铁律，是信号。三种状态都合法：
 
-- **Under 500**: no action required.
-- **500–800 (yellow)**: the author must write a one-sentence
-  justification in the file's `//!` module comment ("kept together
-  because X is inseparable from Y").
-- **Over 800 (red)**: must be split, or the justification must be
-  on record in a plan + journal.
+- **< 500 行**：无需处理。
+- **500-800 行（黄）**：作者必须在文件的 `//!` 模块注释里写一句
+  理由（"X 和 Y 不可分"之类）。
+- **> 800 行（红）**：必须拆，或者把理由记录在计划 + journal 里
+  留档。
 
-Test files (`*_tests.rs` in the sibling pattern) are exempt — they
-grow linearly with observable scenarios, and a 700-line test file
-is usually 50 small cases, not a readability problem.
+测试文件（兄弟模式下的 `*_tests.rs`）豁免 —— 它们随可观察场景线
+性增长，700 行测试文件通常是 50 个小用例，不是可读性问题。
 
-**What the budget prevents, concretely.** An LLM will cheerfully
-add 40 lines to the end of a 900-line file. A 900-line file has
-nowhere the LLM can *see* to put the new code, so it accretes. A
-human engineer learns to shudder at 900 lines and splits. An LLM
-needs a numeric cue to do the same. The budget is that cue.
+**这条预算具体挡住什么。** LLM 会毫不犹豫地在 900 行文件末尾再
+加 40 行。900 行的文件里，LLM 能看到的合适位置都不在窗口里，所
+以就堆积。有经验的人类看到 900 行会本能地皱眉然后拆。LLM 需要一
+条数字提示来做同样的事。这条预算就是那条提示。
 
-**What the budget doesn't prevent.** Over-splitting. See §5 on the
-flog Phase 4 Task 2 drift.
+**预算挡不住什么。** 过度拆分。见 §5 对 flog Phase 4 Task 2 的
+回顾。
 
-### 4.5 Subagent dispatch with characterization fences
+### 4.5 带特征化围栏的 subagent 派发
 
-A subagent round, in this workflow, looks like:
+一轮 subagent 的流程大致是这样：
 
 ```
-[user-curated plan file]  ──▶  [subagent reads plan]
-                               ├─▶ reads audit ids in scope
-                               ├─▶ reads current file sizes + coverage
-                               ├─▶ confirms gates (tests green, fence intact)
-                               ├─▶ executes the plan's tasks
-                               │      (1 commit per task, bite-sized)
-                               ├─▶ runs `cargo test --all` + clippy + fmt
-                               └─▶ writes the journal entry
+[用户审定的计划文件]  ──▶  [subagent 读计划]
+                           ├─▶ 读入范围内的审计 ID
+                           ├─▶ 读当前文件大小 + 覆盖率
+                           ├─▶ 确认闸门状态（测试绿、围栏完整）
+                           ├─▶ 执行计划里的 task
+                           │      （每个 task 一个 commit，小步走）
+                           ├─▶ 跑 `cargo test --all` + clippy + fmt
+                           └─▶ 写 journal 条目
 ```
 
-The subagent is never asked "do the right thing" — it is asked
-"execute this plan, which has exit gates." If the gates fail, the
-subagent either backtracks or surfaces a blocker. The user can
-inspect the journal, the commits, and the test output before
-accepting the phase boundary.
+subagent 永远不会被要求"做正确的事" —— 它被要求"执行这份计划，
+计划带出口闸门"。如果闸门不过，subagent 要么回退，要么抛一个
+blocker。用户可以在接受阶段边界前检查 journal、commits、测试输出。
 
-**Concrete example — Phase 3 Step 3.6 (event dispatch redesign):**
-- Plan (`plans/2026-04-24-phase3-step6-event.md`, ~200 lines) lists
-  UI-001, UI-007, UI-008, UI-009, UI-016, UI-041 as in-scope.
-- Plan requires `ClickRegion` enum in `event/click_region.rs`,
-  `detect_click_region` in `event/detect.rs`, `apply_click_region`
-  in `event/apply.rs`, zero reduction in `characterization_event_mouse`
-  tests.
-- Subagent executed 8 commits (ClickRegion scaffold → pure detect
-  → classify_click → apply_click_region → pill constants → j/k
-  SSE field navigation → mod.rs //! routing invariants → journal).
-- Every commit compiled, tested green, clippy clean. The final
-  event/mod.rs is 463 lines; the file that was 1677 lines pre-
-  campaign is now a 10-file directory with a 35-line
-  dispatcher shell.
+**具体例子 —— Phase 3 Step 3.6（事件分派重设计）：**
+- 计划（`plans/2026-04-24-phase3-step6-event.md`，约 200 行）把
+  UI-001/007/008/009/016/041 列为范围。
+- 计划要求在 `event/click_region.rs` 定义 `ClickRegion` 枚举，在
+  `event/detect.rs` 写 `detect_click_region`，在 `event/apply.rs`
+  写 `apply_click_region`，`characterization_event_mouse` 测试数
+  不得下降。
+- subagent 执行了 8 个 commit（ClickRegion 骨架 → 纯 detect →
+  classify_click → apply_click_region → pill 常量 → j/k SSE
+  field 导航 → mod.rs `//!` 路由不变量 → journal）。
+- 每个 commit 都通过编译、测试绿、clippy 干净。最终
+  `event/mod.rs` 是 463 行；战役前 1677 行的那个文件，现在是个
+  10 文件目录，里面有一个 35 行的分派外壳。
 
-### 4.6 Two-phase dispatch — "design for testability" as a refactor goal
+### 4.6 两阶段派发 —— "为可测性设计"作为重构目标
 
-The flog mouse dispatcher pre-campaign was a single 700-line
-function interleaving (a) detecting which UI region the user
-clicked, (b) resolving double-click semantics, (c) mutating state.
-Coverage plateaued at 61% in Phase 2.5B because the "detection"
-logic was unreachable without running the whole dispatcher under
-a TestBackend.
+战役前的 flog 鼠标分派器，是一个 700 行的单体函数，交错做三件
+事：(a) 判断用户点到了哪个 UI 区域；(b) 解析双击语义；(c) 变更
+状态。Phase 2.5B 里覆盖率卡在 61%，原因就是"检测"逻辑没法绕开整
+套分派器 + TestBackend 来测试。
 
-Phase 3 Step 3.6 redesigned this as two phases:
+Phase 3 Step 3.6 把它重设计成两阶段：
 
 ```
-detect_click_region(app, x, y) -> Option<ClickRegion>   [pure; ~300 lines]
-apply_click_region(app, region, click_class, x, y)      [mutating; ~500 lines]
+detect_click_region(app, x, y) -> Option<ClickRegion>   [纯函数；约 300 行]
+apply_click_region(app, region, click_class, x, y)      [有副作用；约 500 行]
 ```
 
-with the dispatcher reduced to:
+分派器缩到：
 
 ```rust
 fn handle_normal_mouse(app, event) {
@@ -312,116 +271,97 @@ fn handle_normal_mouse(app, event) {
 }
 ```
 
-**What this bought:**
-- The pure `detect_click_region` can be tested by constructing an
-  App, setting layout rects, and asserting click (x, y) → region.
-  No TestBackend needed.
-- `classify_click` is a pure function of time + coords + previous.
-  Trivially unit-testable.
-- `apply_click_region` has one match arm per region. Adding a new
-  region adds a variant + a match arm, not editing a 700-line
-  spaghetti.
+**这一拆带来了：**
+- 纯函数 `detect_click_region` 可以通过构造 App、设 layout rect、
+  断言 (x, y) → region 来测试。不需要 TestBackend。
+- `classify_click` 是 时间 + 坐标 + 上一次点击 的纯函数。平凡地
+  可单元测试。
+- `apply_click_region` 每个 region 一个 match 分支。新增一个
+  region 就是加一个枚举变体 + 一个 match 分支，而不是在 700 行
+  意大利面里编辑。
 
-**This is not refactoring for its own sake.** It is the audit
-finding UI-041 concretised: "click-region detection cannot be
-pure-function-tested in current form." The refactor makes the
-finding go away.
+**这不是为了重构而重构。** 它是审计项 UI-041 的具体化："点击区
+域检测在当前形式下无法被纯函数化测试"。重构让这条发现消失。
 
-The pattern — design-for-testability as an explicit refactor
-target — generalises. Anywhere a function is "hard to test because
-it does detection + mutation," splitting into detect/apply is a
-candidate.
+这个模式 —— **把"为可测性设计"作为显式重构目标** —— 可以推广。
+任何一个函数"难测是因为它在做检测 + 变更"，把它拆成 detect/apply
+都是候选重构。
 
-### 4.7 Subagent watchdog — event-size truncations and how to resume
+### 4.7 subagent 看门狗 —— 事件大小截断及如何恢复
 
-The concrete runtime running the flog subagents had an event-size
-watchdog: if a subagent emitted no visible output for ~15–20 min,
-the turn was killed with "Truncated event message received." This
-killed 3 task-attempts in Phase 2.5B before the user adapted.
+跑 flog subagent 的具体运行时带了一个事件大小看门狗：如果
+subagent 15-20 分钟没有可见输出，回合会被强制终止，附带"Truncated
+event message received"。这在 Phase 2.5B 杀掉了 3 个 task 尝试，
+之后用户才适应了。
 
-**Symptoms:**
-- Subagent goes silent, no tool calls for 10+ minutes.
-- Eventually: runtime error, conversation ends, commits may be
-  partially staged.
+**症状：**
+- subagent 沉默，10+ 分钟没有工具调用。
+- 最终：运行时报错，会话结束，commit 可能部分暂存。
 
-**Resolution:**
-1. Run `git log --oneline` + `git status` to see what landed.
-2. Often the subagent committed N–1 of N tasks and died on the
-   last one. The plan can be resumed from that commit.
-3. The repair commit is usually small — finish the last task
-   manually or dispatch a narrower follow-up prompt.
+**恢复手段：**
+1. 跑 `git log --oneline` + `git status` 看哪些东西落盘了。
+2. 通常 subagent 在 N 个 task 里完成了 N-1 个，死在最后一个。计
+   划可以从这个 commit 继续。
+3. 修补 commit 通常很小 —— 手工完成最后一个 task，或派发一个
+   范围更窄的后继提示。
 
-**Prevention:**
-- Cap subagent scope at ~6–10 commits per dispatch. flog learned
-  this the hard way (Phase 2.5B Task 5 was split into 5a + 5b).
-- Favour sequential over parallel when the scope is ambiguous.
-  Parallel subagents collide on file edits; the "recovery" is
-  often rewriting both branches anyway.
-- Include explicit "commit after each task" in the plan. A
-  subagent that commits at task boundaries has a recoverable
-  failure surface; one that plans to "commit at the end" has a
-  catastrophic failure surface.
+**预防：**
+- 每次派发的范围控制在 6-10 个 commit。flog 是吃了亏才学会的
+  （Phase 2.5B 的 Task 5 被拆成了 5a + 5b）。
+- 范围模糊时优先串行，不是并行。并行 subagent 在文件编辑上容易
+  撞车，"恢复"往往就是把两边都重写一遍。
+- 在计划里明确写"每个 task 完成后 commit"。在 task 边界 commit
+  的 subagent 失败表面是可恢复的；打算"最后一次 commit"的
+  subagent 失败表面是灾难性的。
 
-## 5. What didn't work (must include)
+## 5. 没奏效的东西（必须写进来）
 
-An honest case study names its failures.
+一份诚实的案例研究要指出自己的失败。
 
-### 5.1 Worktree isolation was cosmetic
+### 5.1 worktree 隔离只是化妆
 
-The initial design in Phase 0 (and Phase 2.5B) called for
-subagents to run in isolated git worktrees
-(`.claude/worktrees/<name>`), so parallel subagents wouldn't stomp
-on each other's file edits. In practice, the runtime's `Agent(..., isolation: "worktree")`
-flag created the worktrees but the subagents continued writing to
-the main workspace. When the worktrees were inspected afterward,
-they were empty; when the main workspace was inspected, all
-subagent work was there.
+Phase 0（以及 Phase 2.5B）最初的设计要求 subagent 在隔离的 git
+worktree（`.claude/worktrees/<name>`）里运行，这样并行 subagent
+就不会互踩文件。实际上，运行时的
+`Agent(..., isolation: "worktree")` 参数创建了 worktree，但
+subagent 继续往**主工作区**写。事后检查 worktree 全是空的，主
+工作区里却有所有 subagent 的工作。
 
-**Lesson.** Worktree-based isolation requires a runtime that
-*forces* the subagent to `cd` into the worktree and bounds its
-filesystem writes. An annotation on the dispatch call isn't enough.
-For flog, we fell back to sequential single-shot subagents, which
-turned out to be nearly as fast (network + review was the real
-bottleneck, not compile time).
+**教训。** 基于 worktree 的隔离需要一种会**强制** subagent
+`cd` 进去、把它文件系统写操作限制到 worktree 范围内的运行时。派
+发调用上的一个注解不够用。对 flog 来说，我们退回了"串行单次
+subagent"路径，结果几乎一样快 —— 瓶颈是网络 + review 时间，不是
+编译时间。
 
-### 5.2 Parallel subagents were conflict-prone
+### 5.2 并行 subagent 容易撞车
 
-We attempted 4-way parallel subagents for Phase 1 audits (one per
-scope: transport / domain / ui / flog_dart). That worked — audits
-are read-only, no edits, no conflicts. We attempted 4-way parallel
-for Phase 2 mechanical cleanup. It didn't work cleanly — two
-subagents touched `src/main.rs` at the same time, clippy merges
-were inconsistent, and the user ended up rebasing by hand. Time-
-to-green for the parallel attempt was longer than time-to-green
-for the sequential retry.
+我们尝试对 Phase 1 审计做 4 路并行（每个 scope 一个：transport /
+domain / ui / flog_dart）。这个奏效 —— 审计是只读的，没有编辑，
+没有冲突。我们又尝试对 Phase 2 机械清理做 4 路并行。结果不干
+净 —— 两个 subagent 同时动了 `src/main.rs`，clippy 合并不一
+致，用户只能手工 rebase。并行尝试到绿的时间，比串行重做还长。
 
-**Lesson.** Parallelise read-only work. Serialise write work,
-except when each subagent has a strictly non-overlapping file set
-*including build artifacts*.
+**教训。** 并行**只读**工作。串行**写**工作，除非每个 subagent
+有**严格不重叠**的文件集，**包括构建产物**。
 
-### 5.3 Over-specification was worse than under-specification
+### 5.3 过度具体反而不如欠具体
 
-Early Phase 3 step plans tried to prescribe per-line diffs ("move
-function X to file Y, rename symbol Z, change line 44 from A to
-B"). The subagent would dutifully execute and miss the shape of
-the refactor. The plan author (the user + Claude driving the plan
-session) didn't know the codebase at a per-line level; the
-subagent did, but couldn't deviate from the plan. Net: a worse
-result than either would have produced alone.
+早期 Phase 3 的 step 计划尝试规定每行 diff（"把函数 X 移到文件
+Y，把符号 Z 重命名，第 44 行从 A 改成 B"）。subagent 会老老实实
+照办但错失重构的大形状。计划作者（用户 + 驱动计划会话的 Claude）
+不掌握代码的每一行细节；subagent 掌握，但被计划锁死没法偏离。净
+结果：比两者单独做都更差。
 
-**Revised approach** (from Phase 3 Step 3.2 onward): plans name
-audit ids in scope, name the target files and the exit gates, and
-leave "how" to the subagent. The subagent can make local judgment
-calls on extraction points while still being accountable to the
-named ids and gates.
+**修正方法**（从 Phase 3 Step 3.2 开始）：计划只列范围内的审计
+ID、目标文件、出口闸门；"怎么做"留给 subagent。subagent 可以就
+局部抽取点做判断，但仍然对命名的 ID 和闸门负责。
 
-### 5.4 The 500-line limit produced over-splitting
+### 5.4 500 行预算导致了过度拆分
 
-Phase 4 Task 2 planned to split `src/app.rs` (1506 lines) into 5
-files:
+Phase 4 Task 2 本来打算把 `src/app.rs`（1506 行）拆成 5 个文件：
 
 ```
-(plan excerpt)
+（计划节选）
 - src/app/multi_app.rs
 - src/app/mock_edit.rs
 - src/app/sse_merge.rs
@@ -429,295 +369,259 @@ files:
 - src/app/mod.rs
 ```
 
-The subagent shipped **11 files:**
+subagent 交付了 **11 个文件：**
 
 ```
-(phase4 journal)
+（Phase 4 journal）
 src/app/{mod, state_structs, network_state, scroll, input_fields,
          detail, mode, mock_edit, multi_app, sse_merge,
          layout_cache}.rs
 ```
 
-The additional 6 were created because several intermediate files
-overshot 500 lines themselves, and the subagent (correctly, by its
-reading of the budget rule) split them further. The result is not
-wrong — every file has a coherent theme, nothing is below 30 lines,
-and the build is clean — but the cognitive shape of "App" is now
-spread across more files than a reader needs.
+多出来的 6 个，是因为某些中间文件自己超过了 500 行，subagent
+（按它对预算规则的正确解读）又把它们进一步拆了。结果并不算错 ——
+每个文件都有连贯主题，没有一个文件 <30 行，构建干净 —— 但"App"
+这个认知形状现在散到了比读者需要的更多文件里。
 
-**Lesson.** File-size budget is a signal, not a law. The plan
-should name a target file *count*, not just a size bound. A
-future iteration of this methodology would cap at "prefer ≤ 500,
-accept up to 650 with a justification comment, split further only
-if the subagent can name a distinct theme for each new file."
+**教训。** 文件大小预算是信号，不是法律。计划应当给出**目标文
+件数量**，而不只是大小上限。这套方法论下一版会改成 "优先 ≤
+500，可以接受到 650 但要写注释解释，进一步拆只有在 subagent 能
+给每个新文件命名清晰主题时才做"。
 
-### 5.5 Subagents wrote tests based on imagined UI
+### 5.5 subagent 给"想象中的 UI"写了测试
 
-Phase 2.5B Task 7 shipped 87 tests for the Logs view. 3 of them
-asserted UI behaviour that didn't exist in the code — a "percent
-readout" in the status bar and a "jump-to-bottom pill" visible at
-narrow widths. The code had neither. The subagent had invented
-them, plausibly, from context.
+Phase 2.5B Task 7 为 Logs 视图交付了 87 个测试。其中 3 个断言了
+代码里根本不存在的 UI 行为 —— 状态栏里的"百分比读数"、窄宽度下
+的"跳到底部 pill"。这些代码里都没有。subagent 从上下文合理地**
+脑补**了它们出来。
 
-The resolution was not to "fix" the tests (there was no bug) but
-to delete them. This is the risk of Rule 6 ("test observable
-behaviour") applied by a subagent that also renders the imaginary
-UI in its head: it will test what it imagines rather than what
-exists. The mitigation is a read-the-code-first pass before test-
-writing, but that pass is easier to specify than to enforce.
+修复方法不是"修测试"（没有 bug 可修），而是**删掉**它们。这是
+Rule 6（"测试可观察行为"）的反面：当 subagent 一边写测试一边在
+头脑里渲染它想象的 UI，它会测试它想象的东西，而不是真实存在的
+东西。缓解办法是强制"写测试前先读代码"，但这个步骤容易说不容易
+执行。
 
-## 6. Cost accounting
+## 6. 成本核算
 
-A generalised estimate, calibrated against the flog campaign.
+一份按 flog 战役校准过的估算。
 
-| Resource                 | flog actual | What you should plan for |
-|--------------------------|-------------|--------------------------|
-| Calendar time            | 3 days      | 3–7 days for 20–30 kLOC; scale linearly |
-| Commits                  | 162         | expect 1.5–2× the raw-code-change count |
-| Subagent rounds          | ~15–20      | expect 2–4 per phase step |
-| User attention hours     | ~20–30      | ~10–15% of the elapsed wall-clock |
-| Test-count change        | +1 948      | 5–10× the starting count if coverage is < 50% at entry |
-| Doc pages produced       | ~15         | 5 engineering docs + ~10 journals |
+| 资源                     | flog 实际     | 你应该预留 |
+|--------------------------|---------------|--------------------|
+| 日历时间                  | 3 天          | 20-30 kLOC 花 3-7 天；线性放大 |
+| commit 数                 | 162           | 约为原始代码变更数的 1.5-2× |
+| subagent 轮次             | 约 15-20      | 每个阶段步约 2-4 次 |
+| 用户注意力                | 约 20-30 小时  | 约为挂钟时间的 10-15% |
+| 测试数变化                | +1 948        | 入场覆盖率 < 50% 时约为起点的 5-10× |
+| 文档页数                  | 约 15         | 5 份工程文档 + 约 10 份 journal |
 
-**User intervention points** (where the user cannot be replaced):
+**用户不可替代的介入点：**
 
-1. **Phase 0 — scope decision.** Only the user knows what quality
-   debt hurts them. An AI cannot generate a meaningful scope from
-   a git log alone.
-2. **Phase 1 — C-class adjudication.** Ambiguous findings require
-   user interpretation. This is the one unavoidable "user reads
-   the code" moment.
-3. **Phase 3 mid-campaign — bug escalation.** UI-042 was caught by
-   the user exercising the TUI, not by the test suite. Multi-day
-   campaigns with a TUI or a UI in scope need user-run manual
-   testing at least once per phase.
-4. **Phase 3 — pace calls.** When a step is debating between two
-   correct options ("should this constant be named
-   `defaultCapacity` or `FLOG_STORE_CAPACITY`?"), the user picks
-   and the campaign continues. Without a user in the loop these
-   micro-decisions stall.
-5. **Phase 6 — close.** Only the user decides when the campaign
-   is done.
+1. **Phase 0 —— 范围决策。** 只有用户知道自己被什么质量债折
+   磨。AI 无法仅从 git log 产生有意义的范围。
+2. **Phase 1 —— C 类裁决。** 有歧义的发现需要用户解释。这是整
+   个战役里唯一绕不过去的"用户亲自读代码"时刻。
+3. **Phase 3 中期 —— bug 升级。** UI-042 是用户**跑 TUI**抓到
+   的，不是测试套件抓到的。任何 TUI / UI 在范围内的多天战役，每
+   个阶段都至少需要一次用户手工测试。
+4. **Phase 3 —— 节奏决策。** 当一个 step 在两个都对的选项之间
+   纠结（"这个常量该叫 `defaultCapacity` 还是 `FLOG_STORE_CAPACITY`"），
+   用户一锤定音，战役继续。没有用户在线，这些微决策会让流程停
+   摆。
+5. **Phase 6 —— 关闭。** 只有用户决定战役何时结束。
 
-## 7. When this pattern applies
+## 7. 这个模式什么时候适用
 
-- **Existing codebase, mostly-working feature set.** The pattern
-  assumes the code currently does something the user cares about.
-  A campaign on greenfield code is just "writing the code." Use
-  TDD directly.
-- **Known quality debt.** The user can articulate at least 3–5
-  concrete concerns ("file X is too long," "feature Y has no
-  tests," "this module's API is confusing"). Without that, Phase 0
-  has no anchor.
-- **Owner has vocabulary to describe quality concerns.** "The
-  domain layer should not depend on the UI layer" is a usable
-  concern. "The code feels icky" is not.
-- **Three-to-seven calendar days of owner attention available.**
-  Shorter campaigns don't get through Phase 3 cleanly.
-- **Tests can be automated.** `cargo test` / `pytest` / `go test` /
-  `vitest run` — exit-code-driven, no TUI required. The entire
-  regression fence depends on this.
+- **已存在、基本可工作的代码库。** 这个模式假设代码现在能做用户
+  关心的事。对 greenfield 代码做战役，就是"写代码" —— 直接用
+  TDD。
+- **已知的质量债。** 用户能说出至少 3-5 条具体的担忧（"文件 X
+  太长"、"feature Y 没测试"、"这个模块的 API 让人糊涂"）。没有
+  这些，Phase 0 就没锚点。
+- **所有者有质量词汇。** "domain 层不应该依赖 UI 层"是可用的担
+  忧。"代码感觉不对"不是。
+- **所有者有 3-7 天注意力可投入。** 更短的战役走不完 Phase 3。
+- **测试可以自动化。** `cargo test` / `pytest` / `go test` /
+  `vitest run` —— 退出码驱动，不需要 TUI。整个回归围栏依赖这一
+  点。
 
-## 8. When this pattern does not apply
+## 8. 这个模式什么时候不适用
 
-- **Greenfield / no code yet.** Nothing to audit. Use spec →
-  design → TDD instead.
-- **Rapidly evolving spec.** If features are being added or
-  removed week-over-week, the audit becomes stale before Phase 3
-  executes. Freeze the spec first.
-- **Absent user.** Subagents cannot resolve C-class findings on
-  their own; they will invent an interpretation, which may be
-  wrong. A campaign with a user who is "occasionally available" is
-  slower, not faster — the wait for user input becomes the
-  bottleneck.
-- **Non-deterministic build.** If `cargo test` is flaky, the
-  regression fence has false positives and the user loses trust in
-  it. Fix the flake first, then run the campaign.
-- **No CI, no clippy, no linter.** Phase 2 becomes "bootstrap
-  linting," which is a separate campaign. Don't combine.
+- **Greenfield / 还没有代码。** 没有可审计的东西。用 spec → 设
+  计 → TDD。
+- **规格在快速变化。** 如果功能在周对周地增删，审计在 Phase 3
+  执行前就过期了。先冻结规格。
+- **用户缺席。** subagent 没法独立裁决 C 类发现；它会脑补一个解
+  释，可能错。用户"偶尔在线"的战役**更慢**，不是更快 —— 等用户
+  输入成了瓶颈。
+- **构建不稳定。** 如果 `cargo test` 是 flaky 的，回归围栏会有
+  假阳性，用户会失去对它的信任。先修 flake，再跑战役。
+- **没 CI、没 clippy、没 linter。** 那 Phase 2 就变成"搭 lint
+  基础设施"了，这是另一场战役。不要合并。
 
-## 9. Prerequisites
+## 9. 前置技能
 
-Minimum skills the driving engineer needs:
+驱动工程师至少要会：
 
-- **Writing-plans skill** (see Superpowers' `writing-plans`
-  meta-skill). The plan is the load-bearing artifact of every
-  phase. A bad plan cannot be salvaged by a good subagent.
-- **Subagent-driven-development literacy.** Knowing when to
-  parallelise, when to serialise, how to fence with plan gates,
-  how to recover from a truncation.
-- **Characterization-test literacy.** Knowing the difference
-  between a specification test ("X should do Y") and a
-  characterization test ("X currently does Y, keep it that way").
-- **Version-control hygiene.** Atomic commits, one-task-one-commit,
-  conventional-commit-style messages, no amends of shared history.
-- **Coverage tooling.** For Rust: `cargo llvm-cov`. For Python:
-  `coverage.py`. For JS: `c8` / `nyc`. The per-module gate is
-  enforceable only if you have the numbers.
+- **Writing-plans 技能** —— 计划是每个阶段的承重制品。糟糕的
+  计划没办法被一个好 subagent 救回来。
+- **Subagent 驱动开发素养。** 知道什么时候并行、什么时候串行、
+  如何用计划闸门围栏、如何从截断里恢复。
+- **特征化测试素养。** 知道规范测试（"X 应当做 Y"）和特征化测
+  试（"X 目前做 Y，保持这样"）的区别。
+- **版本控制卫生。** 原子 commit，一 task 一 commit，约定式
+  commit 消息，不要 amend 已共享的历史。
+- **覆盖率工具。** Rust 用 `cargo llvm-cov`；Python 用
+  `coverage.py`；JS 用 `c8` / `nyc`。模块级闸门只有在你手里有
+  数字时才能强制执行。
 
-## 10. Red flags during execution
+## 10. 战役进行中的红旗
 
-Side-bar — anti-patterns to watch for while the campaign runs.
+侧栏 —— 战役运行时需要留意的反模式。
 
-- **Subagent silent for > 5 minutes.** Either it's thinking
-  hard, or the watchdog is about to fire. Don't wait longer than
-  ~15 min; abort and resume from the last commit. The flog Phase 4
-  Task 1 UI-003 migration first hit this at commit 30-of-239 sites
-  (dispatch was subsequently narrowed to mechanical sed + batched
-  commits).
-- **`git status` shows uncommitted work at turn end.** The
-  subagent intended to commit but didn't finish. Inspect the diff
-  before accepting. If it's incomplete, back it out and re-dispatch
-  with a narrower scope.
-- **Clippy / lint errors introduced mid-refactor.** The subagent
-  is not running `cargo clippy --all-targets -D warnings` before
-  each commit. Fix the plan to require this gate and restart the
-  step.
-- **Test count drops.** The subagent deleted tests. Sometimes
-  correct (imagined-UI tests from §5.5), sometimes not. Always
-  inspect the diff: the ratio "tests removed / tests added"
-  should be 0 in every phase except explicitly test-refactor
-  phases.
-- **Coverage drops.** The regression fence is leaking. Do not
-  advance to the next phase until it recovers. This is the single
-  most important numeric gate of the entire workflow.
-- **Plan-file edits mid-execution.** The plan is the contract. If
-  the subagent proposes editing the plan mid-run, stop and have
-  the user review. Plan edits during execution should produce a
-  new commit (`docs(plans): revise step X plan based on Y finding`),
-  not a silent rewrite.
-- **A B-class test flips green with no corresponding fix commit.**
-  Someone fixed the bug accidentally. Good news, but the campaign
-  lost traceability. File a correction commit that un-ignores the
-  test and names the actual fix commit in its message.
+- **subagent 沉默 > 5 分钟。** 要么它在认真思考，要么看门狗快
+  触发了。不要等超过 15 分钟；放弃并从上一个 commit 恢复。flog
+  Phase 4 Task 1 的 UI-003 迁移第一次撞到这个，是在做到 239 个
+  站点里的第 30 个时（之后派发改成机械 sed + 按批次 commit）。
+- **回合结束时 `git status` 有未提交的内容。** subagent 想
+  commit 但没做完。检查 diff 再接受。如果不完整，回滚掉，用更窄
+  的范围重新派发。
+- **重构中途引入了 clippy / lint 错误。** subagent 每次 commit
+  前没跑 `cargo clippy --all-targets -D warnings`。修计划加上这
+  个闸门，重启该步。
+- **测试数下降。** subagent 删了测试。有时对（比如 §5.5 的脑补
+  UI 测试），有时不对。永远检查 diff：除了明确的"测试重构"阶段
+  外，每个阶段的"删测试 / 加测试"比率都应该是 0。
+- **覆盖率下降。** 回归围栏漏了。在它恢复之前不要推进下一阶
+  段。这是整个工作流里最重要的数字闸门。
+- **执行中途在改计划文件。** 计划是合约。如果 subagent 想在执行
+  过程中改计划，停下，让用户审。执行期的计划变更应当产生一个新
+  的 commit（`docs(plans): revise step X plan based on Y finding`），
+  而不是默默重写。
+- **一个 B 类测试没有对应的修复 commit 就变绿了。** 有人**顺手
+  修了** bug。好消息，但战役丢失了追溯性。补一个修正 commit，取
+  消 ignore 并在消息里命名真正的修复 commit。
 
-## 11. Worked example — the flog-specific story
+## 11. 一个完整可工作示例 —— flog 具体故事
 
-One full cycle, showing every artifact type:
+一个完整周期，展示每种制品类型：
 
 ```
 spec
   specs/2026-04-22-project-cleanup-design.md
-    (667 lines, §1–§7 — 6-phase roadmap, taxonomy, gates)
+    （667 行，§1-§7 —— 6 阶段路线图、分类、闸门）
 
-  ↓ drives
+  ↓ 驱动
 
-plan (per phase)
+plan（每个阶段一份）
   plans/2026-04-22-phase1-audit.md
-    (names 4 scope files, A/B/C/D/E taxonomy, C=0 gate)
+    （命名 4 个 scope 文件、A/B/C/D/E 分类、C=0 闸门）
 
-  ↓ executed by
+  ↓ 由以下执行
 
-4 parallel read-only subagents
-  each produces:
-    audit/01-transport.md (15 findings)
-    audit/02-domain.md   (25 findings)
-    audit/03-ui.md       (42 findings)
-    audit/04-flog-dart.md (33 findings)
+4 个并行只读 subagent
+  各自产出：
+    audit/01-transport.md（15 条发现）
+    audit/02-domain.md   （25 条发现）
+    audit/03-ui.md       （42 条发现）
+    audit/04-flog-dart.md（33 条发现）
 
-  ↓ consolidated into
+  ↓ 合并为
 
-index
-  audit/00-index.md — 115 findings, 27 A / 13 B / 0 C / 66 D / 9 E
+索引
+  audit/00-index.md —— 115 条发现，27 A / 13 B / 0 C / 66 D / 9 E
 
-  ↓ gate: user reviews B class, adjudicates C class
+  ↓ 闸门：用户审 B 类、裁决 C 类
 
-Phase 2 begins
+Phase 2 开始
   plans/2026-04-22-phase2-mechanical-cleanup.md
-    (names all 9 E-class ids, clippy -D warnings as gate)
-  subagent executes → 1 commit (rebased from 4 parallel attempts
-  that collided on main.rs)
+    （列出全部 9 个 E 类 ID，clippy -D warnings 为闸门）
+  subagent 执行 → 1 个 commit（4 路并行尝试因在 main.rs 上撞车
+  被 rebase 进一个 commit）
 
-  ↓ gate: cargo test unchanged, clippy 0 warnings
+  ↓ 闸门：cargo test 不变、clippy 0 warnings
 
-Phase 2.5A, 2.5B, Phase 3 (×10 steps), Phase 4, Phase 5
+Phase 2.5A、2.5B、Phase 3（×10 步）、Phase 4、Phase 5
 
-  ↓ each phase produces
+  ↓ 每个阶段产出
 
 journal
-  journal/phase-<N>.md — entry/exit HEAD, commits, audit ids closed
+  journal/phase-<N>.md —— 入/出口 HEAD、commits、关闭的审计 ID
 
-Phase 6 writes this methodology file + the flog retrospective +
-a campaign-close journal.
+Phase 6 写本方法论文件 + flog 项目复盘 + 战役关闭 journal。
 
   ↓
 
-Campaign is closed — any further work is a new spec.
+战役关闭 —— 进一步的工作都是新 spec。
 ```
 
-Given the paper trail, a reader opening `UI-042` in the audit
-index can trace:
-1. Audit addendum (2026-04-24).
-2. Red lock commit (`95f97d7`, Phase 3 Step 3.6).
-3. Fix commit (`133b631`, Phase 3 Step 3.8).
-4. Journal entry (`journal/phase3-step8.md`, §"UI-042 resolution").
-5. Retrospective mention (`retrospective-flog.md` §4 + §9).
+有了这条纸质追溯，一个打开审计索引里 `UI-042` 的读者，可以顺
+着：
+1. 审计增补（2026-04-24）。
+2. 红锁 commit（`95f97d7`，Phase 3 Step 3.6）。
+3. 修复 commit（`133b631`，Phase 3 Step 3.8）。
+4. journal 条目（`journal/phase3-step8.md`，§"UI-042 resolution"）。
+5. 复盘提及（`retrospective-flog.md` §4 + §9）。
 
-Five hops, entirely mechanical, no conversational context needed.
+五跳，全部机械，不需要任何对话上下文。
 
-## 12. How to start a campaign on Monday
+## 12. 周一怎么在另一个代码库上跑起来
 
-If you want to run this pattern on a different codebase next week:
+如果你下周想在另一个代码库上跑这个模式：
 
-1. **Pick a scope bound.** 10–40 kLOC is the sweet spot. Smaller
-   doesn't need the ceremony; larger needs more days than you
-   probably have.
+1. **选定范围。** 10-40 kLOC 是甜点。更小不需要这种仪式感；更大
+   需要的天数比你大概率没有。
 
-2. **Write the Phase 0 design** (1–2 hours).
-   - 6-phase roadmap (copy from §2 above).
-   - Audit taxonomy (copy from §3).
-   - File budget (copy from §4.4; adjust for language).
-   - Rules 1–11 (test density, observability, coverage gates).
-   - Commit once as `docs: campaign plan + Phase 0 design`.
+2. **写 Phase 0 设计**（1-2 小时）。
+   - 6 阶段路线图（照抄上面 §2）。
+   - 审计分类（照抄 §3）。
+   - 文件预算（照抄 §4.4，按语言调整）。
+   - Rules 1-11（测试密度、可观察性、覆盖率闸门）。
+   - 一次性 commit：`docs: campaign plan + Phase 0 design`。
 
-3. **Run Phase 1 with 3–4 read-only subagents** (0.5–1 day).
-   Dispatch one per scope. Require the A/B/C/D/E label on every
-   finding. Consolidate into an index. Review B class with
-   yourself.
+3. **用 3-4 个只读 subagent 跑 Phase 1**（0.5-1 天）。每个 scope
+   派一个。要求每条发现都打 A/B/C/D/E。合并成索引。自己把 B 类过
+   一遍。
 
-4. **Resolve all C-class findings** (0.5–1 day). This is the one
-   unavoidable personal-attention step.
+4. **解决所有 C 类发现**（0.5-1 天）。这是唯一绕不过去的"亲自关
+   注"步骤。
 
-5. **Phase 2 mechanical cleanup** (1–2 hours). One subagent, clippy
-   / lint / fmt as the gate.
+5. **Phase 2 机械清理**（1-2 小时）。1 个 subagent，clippy /
+   lint / fmt 作为闸门。
 
-6. **Phase 2.5 characterization** (1 day). This is the heaviest
-   subagent phase. Dispatch per-module. Enforce Rule 2 (per-module
-   coverage), Rule 9 (multi-scenario), Rule 10 (per-pub-fn
-   density) as numeric gates.
+6. **Phase 2.5 特征化**（1 天）。这是 subagent 用得最重的阶段。
+   按模块派发。把 Rule 2（每模块覆盖率）、Rule 9（多场景）、
+   Rule 10（每公开函数密度）作为数字闸门强制执行。
 
-7. **Phase 3 redesign** (1–3 days). Per step: 1 plan, 1 subagent
-   dispatch, 1 journal. 5–15 steps depending on the codebase.
+7. **Phase 3 重新设计**（1-3 天）。每个 step：1 份计划、1 次
+   subagent 派发、1 份 journal。根据代码库大小 5-15 个 step。
 
-8. **Phase 4 residual** (0.5 day).
+8. **Phase 4 残余**（0.5 天）。
 
-9. **Phase 5 docs** (1 day).
+9. **Phase 5 文档**（1 天）。
 
-10. **Phase 6 retrospective** (0.5 day — mostly this template +
-    numbers from your journals).
+10. **Phase 6 复盘**（0.5 天 —— 主要是把本模板 + journal 里的
+    数字填进去）。
 
-Expect slippage. Expect at least one truncation. Expect the user
-to catch at least one bug the test suite missed. These are normal
-— design the campaign so they are recoverable, not catastrophic.
+预计会超期。预计至少会碰到一次截断。预计用户至少会抓到一个测试
+套件没抓到的 bug。这些都是**正常的** —— 战役的设计目标是让它们
+可恢复，而不是灾难性。
 
-## 13. Closing note
+## 13. 结尾
 
-The single most important insight from the flog campaign is not
-the six-phase model, not the A/B/C/D/E taxonomy, not the
-red-lock pattern. It is this:
+flog 战役最重要的一条洞见不是六阶段模型，不是 A/B/C/D/E 分类，
+也不是红锁模式。是这条：
 
-> **Write the plan. Run the subagent. Read the journal. Accept the
-> commit. Then decide the next step.**
+> **写计划。跑 subagent。读 journal。接受 commit。然后决定下
+> 一步。**
 
-Every artifact in the workflow exists so the user-and-LLM loop can
-be interrupted at any point and resumed from the last committed
-artifact. The LLM's context loss is a liability; git + markdown
-files are the remedy. Trust the paper trail, not the chat log.
+工作流里的每一件制品，存在的目的都是为了让"用户 + LLM"这个循环
+能在任何一点被打断并从最后一件已提交的制品处继续。LLM 的上下文
+丢失是一种负债；git + markdown 文件是解药。**相信纸质追溯，而
+不是聊天记录。**
 
-A workflow that survives an LLM restart is a workflow that can run
-for days.
+一条能扛住 LLM 重启的工作流，就是一条能跑几天的工作流。
 
 ---
 
-*Companion: `retrospective-flog.md` in the same directory — the
-flog-project-specific numbers, bugs, and commits.*
+*兄弟篇：同目录下的 `retrospective-flog.md` —— flog 项目专属的
+数字、bug、commit 清单。*
