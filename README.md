@@ -11,17 +11,7 @@
 
 **给 Flutter 开发者的终端日志查看器 + 网络调试器。**
 
-### ▤ Logs — 实时日志流
-
-![日志列表](docs/screenshot-logs.png)
-
-![日志详情面板](docs/screenshot-logs-detail.png)
-
-### ⇄ Network — 网络请求检查器
-
-![网络请求列表](docs/screenshot-network.png)
-
-![SSE 流式请求详情](docs/screenshot-network-sse.png)
+![Logs 主界面](docs/screenshots/logs-main.png)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
@@ -29,22 +19,147 @@ curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.s
 
 ## 解决什么问题
 
-Flutter 开发中看日志有两个烦的点：
+Flutter 开发日志查看和网络调试一直有明显短板：
 
-**终端日志不可读** — `flutter run` 的输出里业务日志和系统日志混在一起，没有级别区分、没有颜色、没法过滤、JSON 挤成一行。要在一堆 `I/flutter`、`W/1.raster`、`D/TrafficStats` 里找到你关心的信息，全靠眼睛扫。
+**日志方面**
+- `flutter run` 输出里业务日志和系统日志（`I/flutter`、`W/1.raster`、`D/TrafficStats`）混在一起，没有级别颜色、没法过滤、没有搜索
+- JSON 被挤在一行，可读性差
+- Android `logcat` 噪音大、过滤繁琐，单条日志 1KB 长度限制会把长 JSON 截断
+- iOS 端通过 Xcode / Console 看日志，看不到 Flutter 框架层（`debugPrint`、framework error）的完整系统日志
 
-**网络请求难调试** — 想看请求详情要么加 print，要么开 DevTools，每次重启都要重连。没有一个轻量的方式在终端里直接看 HTTP/SSE/WebSocket 请求。
+**网络方面**
+- 看请求详情要么加 `print`，要么开 DevTools，每次重启都要重连
+- DevTools 网络面板功能有限
+- 抓包工具（Charles、Proxyman、Reqable）需设置代理、装证书，调移动端还要处理网络环境
+- SSE、WebSocket 等流式请求缺少专门的可视化支持
 
-## flog 做了什么
+其他平台都有对应成熟工具（Flipper / Proxyman / Chrome DevTools 等），**Flutter 生态在这一方向长期空缺**。flog 就是为填补这个空缺而生。
 
-flog 是一个独立运行的终端日志查看器 + 网络调试器。你把它开在一个终端窗口里，Flutter 应用通过 flog_dart 自动连接进来，实时显示结构化的日志和网络请求。
+## 产品优势
 
-**两个标签页：**
+### 零代理、零网络依赖
 
-- **▤ Logs** — 实时日志流，级别颜色区分，Tag 对齐，系统噪音过滤掉，JSON 可折叠展开
-- **⇄ Network** — Flipper 风格的网络检查器，支持 HTTP/SSE/WebSocket，请求详情、Headers、Body 全部可查看
+这是 flog 与通用抓包工具最本质的区别：
 
-**不用重新打开** — flog 常驻运行，Flutter App 重启后 flog_dart 自动重连，不需要手动操作。先开 flog 或先开 App 都行。
+- 无需设置 `HTTP_PROXY`、无需装 CA 证书
+- 无需设备与电脑在同一网络
+- 仅需 USB 连接：Android 走 `adb forward`，iOS 真机走 usbmuxd，模拟器直通
+- 自动设备发现：`flutter devices` 能识别的都自动接入
+
+### 缓存不丢
+
+- Dart 端作为唯一数据源，App 启动即开始记录
+- `FlogStore` 环形缓冲：10 万条日志 + 1 万条请求
+- 不依赖 flog 连接状态：即使 flog 没开，数据也在 Dart 端缓冲
+- flog 启动或重连后，Dart 端自动把历史数据回放给 TUI
+- 问题发生时即使没连电脑、没开 flog，事后仍可完整回溯，对偶发问题复现至关重要
+
+### 多设备、多 App 自动发现
+
+- 自动识别所有已连接设备及其上接入 flog 的 App
+- 底部设备选择器一键切换
+- 切换后即时重建历史记录，支持模拟器 + 真机无缝调试
+
+![设备选择器](docs/screenshots/device-picker.png)
+
+### 终端优先、轻量无负担
+
+选择 TUI 而非 Web 面板：进程开关无心理负担，Rust 实现响应迅速，二进制产物仅几 MB，一键安装一键卸载，不依赖运行时。
+
+TUI 不意味着门槛高：完整支持鼠标操作（点击、滚轮、右键菜单）与键盘快捷键，`?` 一键打开完整快捷键说明。
+
+### Release 零开销
+
+- `flogEnabled` 在 release 模式为 `false`，AOT 编译时移除所有 flog 代码
+- 运行时零开销
+- 系统日志（`debugPrint` / `FlutterError.onError` / `PlatformDispatcher.onError`）自动捕获，无需手动转发
+
+---
+
+## 功能介绍
+
+### ▤ Logs — 实时日志流
+
+![日志详情面板](docs/screenshots/logs-detail.png)
+
+**过滤与搜索**
+- 级别过滤：Verbose / Debug / Info / Warning / Error
+- Tag 过滤：支持逗号分隔、`-tag` 排除、正则表达式
+- 全文搜索：`/` 触发，支持 `/正则/i` 语法，`n/N` 跳转匹配
+- 重复日志自动折叠
+- 统计视图：级别分布、Tag 排名
+
+**详情面板**
+- JSON 自动格式化，语法高亮，按深度着色
+- JSON 树可折叠展开至任意层级
+- 不仅 JSON，Dart 对象 `toString` 输出也能识别并格式化
+- 一键复制、书签标记、日志导出
+
+**其他**
+- Jump to Bottom 浮层：暂停滚动后显示新日志计数
+- 10 万条环形缓冲，启动后不丢失
+
+---
+
+### ⇄ Network — 网络请求检查器
+
+![网络请求列表](docs/screenshots/network-main.png)
+
+**协议支持**
+- HTTP / SSE / WebSocket 统一列表展示
+- 列表字段：Protocol、Method、URL、Status、Duration、Size
+- 过滤器行内 pill 切换（Protocol / Method / Status）
+- URL 搜索
+
+**请求详情**
+- General：URL、Method、Status、Duration、Size
+- Query Parameters 自动解析
+- Request / Response Headers
+- Request / Response Body：JSON 语法高亮 + 可折叠树
+
+**Mock 规则**
+
+从当前请求一键创建 mock 规则，从 TUI 编辑响应体，通过 Direct Socket 下发给 App：
+
+![Mock 编辑器](docs/screenshots/mock-editor.png)
+
+匹配的请求会被 `FlogMockInterceptor` 拦截，返回预设响应，在列表中以 `[Mock]` 标记：
+
+![Network 详情带 Mock 标记](docs/screenshots/network-detail-mock.png)
+
+**核心操作**
+- **Copy as cURL** — 一键复制为 curl 命令
+- **Copy Response** — 一键复制响应体
+- **Replay** — 从 TUI 重放请求
+- **Mock** — 创建 mock 规则拦截指定请求
+
+**SSE Merged View**
+
+按指定 JSON 字段自动拼接多个 chunk 为完整文本。默认 `Events` 视图展示每个 chunk：
+
+![SSE Events 原始列表](docs/screenshots/sse-events.png)
+
+切到 `Merged` 视图（会自动识别 OpenAI / Claude 等 LLM streaming 格式，同一 URL 后续请求自动继承设置）：
+
+![SSE Merged View](docs/screenshots/sse-merged.png)
+
+**WebSocket Chat View**
+
+对话流视图：send 靠左（绿色 →），recv 靠右（蓝色 ←）。`*.delta` 类消息自动合并拼接，base64 音频数据折叠为 `[binary N KB]`：
+
+![WS Chat View](docs/screenshots/ws-chat.png)
+
+可切换到 `Raw` 视图查看原始 JSON 树：
+
+![WS Raw View](docs/screenshots/ws-raw.png)
+
+对调试 AI 相关功能（LLM streaming、语音实时会话等）帮助显著，无需借助浏览器 DevTools。
+
+**扩展功能**
+- **Performance Stats** — 延迟百分位、Top 5 慢请求、状态码分布、按域名统计
+- **Mock 规则管理面板**（`Ctrl+M`）— 统一管理所有 mock 规则
+
+---
 
 ## 通信架构
 
@@ -63,41 +178,6 @@ flog 采用 **Direct Socket + Data Source** 架构：
   - **macOS / iOS 模拟器** — localhost 直通
   - **Android** — 自动 `adb forward` 端口转发
   - **iOS 真机** — usbmuxd USB 端口转发
-
-## Logs 功能
-
-- 按级别过滤（Verbose / Debug / Info / Warning / Error）
-- 按 Tag 过滤（支持包含/排除，支持正则）
-- 全文搜索（支持正则，高亮匹配，`n/N` 跳转）
-- 详情面板（JSON 可折叠树，语法高亮，深度着色）
-- 书签（右键标记，方便回看）
-- 日志导出（导出过滤后的结果到文件）
-- 统计视图（日志级别分布、Tag 排名）
-- 重复日志折叠
-- Jump to Bottom 浮层（暂停滚动后显示新日志计数）
-- 10 万条日志环形缓冲
-
-## Network 功能
-
-- HTTP / SSE / WebSocket 三种协议支持
-- 请求列表（Protocol、Method、URL、Status、Duration、Size）
-- 详情面板（可折叠 JSON 树）：
-  - General（URL、Method、Status、Duration、Size）
-  - Query Parameters（自动解析 URL 参数）
-  - Request / Response Headers
-  - Request / Response Body（JSON 语法高亮，逐层展开）
-  - SSE Events（每个 chunk 可展开查看 JSON，支持 Merged 聚合视图）
-  - WebSocket Messages（Chat 对话流视图：按方向分列、type 标签、delta 消息自动拼接、binary 数据智能折叠；可切换 Raw 原始列表）
-- 过滤器（Protocol / Method / Status 行内 pill 切换）
-- URL 搜索
-- Copy as cURL（一键复制为 curl 命令）
-- Copy Response（复制响应体；SSE Merged 模式下复制拼接后的完整文本）
-- **Replay** — 重放请求（从详情面板触发，通过 Direct Socket 下发给 App 重新发送）
-- **Performance Stats** — 统计面板（延迟百分位、Top 5 慢请求、状态码分布、按域名统计）
-- **Mock** — 在 TUI 中创建 Mock 规则（URL 匹配、Method 过滤、自定义 Status/Body/Delay），通过 Direct Socket 同步到 Dart 应用，拦截匹配请求返回预设响应（仅 HTTP）
-- **SSE Merged View** — 将 SSE 流式响应中的多个 chunk 按指定 JSON 字段拼接为完整文本。自动识别 OpenAI / Claude 等 LLM streaming 格式，也支持手动切换字段。设置后同一 URL 的后续请求自动继承
-- 自动滚动 + LIVE 指示器
-- 1 万条请求缓冲
 
 ## 用法
 
@@ -120,7 +200,7 @@ flog 能识别任何 Flutter 日志输出。搭配 [flog_dart](https://pub.dev/p
 ```bash
 # pubspec.yaml
 dependencies:
-  flog_dart: ^0.7.2
+  flog_dart: ^0.8.0
 ```
 
 ### 初始化

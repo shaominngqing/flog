@@ -11,21 +11,51 @@
 
 **Terminal log viewer + network inspector for Flutter developers.**
 
-### ▤ Logs — live log stream
-
-![log list](docs/screenshot-logs.png)
-
-![log detail panel](docs/screenshot-logs-detail.png)
-
-### ⇄ Network — request inspector
-
-![network request list](docs/screenshot-network.png)
-
-![SSE stream detail](docs/screenshot-network-sse.png)
+![Logs main view](docs/screenshots/logs-main.png)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
 ```
+
+## Screenshots
+
+### ▤ Logs
+
+![Logs detail](docs/screenshots/logs-detail.png)
+
+### ⇄ Network
+
+![Network list](docs/screenshots/network-main.png)
+
+Mock a response from the TUI — the editor, plus a `[Mock]` badge on the request list:
+
+![Mock editor](docs/screenshots/mock-editor.png)
+
+![Network with mock badge](docs/screenshots/network-detail-mock.png)
+
+### SSE streaming
+
+Raw `Events` view:
+
+![SSE events](docs/screenshots/sse-events.png)
+
+`Merged` view — joins multiple chunks into one stream per JSON field (auto-detects OpenAI / Claude format):
+
+![SSE merged](docs/screenshots/sse-merged.png)
+
+### WebSocket
+
+`Chat` view — send on the left (green →), recv on the right (blue ←); `*.delta` messages are coalesced; base64 audio collapses to `[binary N KB]`:
+
+![WS chat](docs/screenshots/ws-chat.png)
+
+`Raw` view — full JSON tree:
+
+![WS raw](docs/screenshots/ws-raw.png)
+
+### Device picker
+
+![Device picker](docs/screenshots/device-picker.png)
 
 ## What problem it solves
 
@@ -117,7 +147,7 @@ flog recognises any Flutter log output; pair it with [flog_dart](https://pub.dev
 ```yaml
 # pubspec.yaml
 dependencies:
-  flog_dart: ^0.7.2
+  flog_dart: ^0.8.0
 ```
 
 ### Bootstrap
