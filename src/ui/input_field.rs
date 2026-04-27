@@ -1,7 +1,13 @@
 //! Shared input field renderer — stateless, three-state background, scroll window.
+//!
+//! Active-state colors (box background, body text color, cursor glyph style)
+//! are now decoupled from the shared palette. Callers build
+//! [`InputFieldProps`] via [`InputFieldProps::with_default_style`] to inherit
+//! the Catppuccin Macchiato defaults, or set `bg` / `fg` / `cursor_style`
+//! explicitly for a custom palette (UI-015).
 
 use ratatui::{
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::Span,
 };
 use unicode_width::UnicodeWidthChar;
@@ -18,6 +24,41 @@ pub struct InputFieldProps<'a> {
     pub cursor_byte: usize,
     /// Total width the field may consume (label + value box + 1-char gaps).
     pub total_width: u16,
+    /// Active-state box background color. Ignored when `active == false`.
+    pub bg: Color,
+    /// Active-state body text color. Ignored when `active == false`.
+    pub fg: Color,
+    /// Active-state style for the `_` cursor glyph. When this equals
+    /// `Style::default().fg(fg).bg(bg)` the cursor is merged into the
+    /// body span (visually identical); otherwise it renders as its own
+    /// span so callers can recolor just the caret.
+    pub cursor_style: Style,
+}
+
+impl<'a> InputFieldProps<'a> {
+    /// Build an [`InputFieldProps`] with the shared Catppuccin Macchiato
+    /// defaults for `bg`, `fg`, and `cursor_style`. Existing call sites
+    /// switch to this factory; the rendered output is unchanged.
+    pub fn with_default_style(
+        label: &'a str,
+        hint: &'a str,
+        value: &'a str,
+        active: bool,
+        cursor_byte: usize,
+        total_width: u16,
+    ) -> Self {
+        Self {
+            label,
+            hint,
+            value,
+            active,
+            cursor_byte,
+            total_width,
+            bg: SURFACE1,
+            fg: TEXT,
+            cursor_style: Style::default().fg(TEXT).bg(SURFACE1),
+        }
+    }
 }
 
 /// Output from render_input_field.
@@ -153,8 +194,8 @@ pub fn render_input_field(props: InputFieldProps<'_>, x_offset: u16) -> Rendered
                 .fg(YELLOW)
                 .bg(MANTLE)
                 .add_modifier(Modifier::BOLD),
-            SURFACE1,
-            TEXT,
+            props.bg,
+            props.fg,
         )
     } else if has_text {
         (Style::default().fg(SUBTEXT0).bg(MANTLE), SURFACE0, YELLOW)
@@ -178,17 +219,42 @@ pub fn render_input_field(props: InputFieldProps<'_>, x_offset: u16) -> Rendered
         visible_window(props.value, props.cursor_byte, inner_w, props.active)
     };
 
-    let mut body = body_text;
-    if props.active {
-        body.push('_');
-    }
-    // Pad to box_width
-    let body_w = body.width();
-    if body_w < box_width {
-        body.push_str(&" ".repeat(box_width - body_w));
-    }
+    let body_style = Style::default().fg(text_fg).bg(box_bg);
 
-    spans.push(Span::styled(body, Style::default().fg(text_fg).bg(box_bg)));
+    if props.active {
+        // Active: value + cursor + padding. When cursor_style matches body
+        // style, emit a single merged span (unchanged render output); when
+        // the caller customises cursor_style, split into separate spans so
+        // only the caret picks up the override.
+        let body_w = body_text.width();
+        let cursor_w = 1usize; // '_' is 1 col
+        let pad_w = box_width.saturating_sub(body_w + cursor_w);
+
+        if props.cursor_style == body_style {
+            let mut merged = body_text;
+            merged.push('_');
+            if pad_w > 0 {
+                merged.push_str(&" ".repeat(pad_w));
+            }
+            spans.push(Span::styled(merged, body_style));
+        } else {
+            if !body_text.is_empty() {
+                spans.push(Span::styled(body_text, body_style));
+            }
+            spans.push(Span::styled("_", props.cursor_style));
+            if pad_w > 0 {
+                spans.push(Span::styled(" ".repeat(pad_w), body_style));
+            }
+        }
+    } else {
+        // Idle: body + padding as a single span (cursor_style unused).
+        let mut body = body_text;
+        let body_w = body.width();
+        if body_w < box_width {
+            body.push_str(&" ".repeat(box_width - body_w));
+        }
+        spans.push(Span::styled(body, body_style));
+    }
 
     RenderedInputField {
         spans,
@@ -233,14 +299,7 @@ mod tests {
     #[test]
     fn render_input_field_narrow_fallback() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "Search",
-                hint: "(a|b)",
-                value: "",
-                active: false,
-                cursor_byte: 0,
-                total_width: 5,
-            },
+            InputFieldProps::with_default_style("Search", "(a|b)", "", false, 0, 5),
             0,
         );
         assert_eq!(r.used_width, 5);
@@ -250,14 +309,7 @@ mod tests {
     #[test]
     fn render_input_field_hit_x_covers_label() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "Search",
-                hint: "(a|b)",
-                value: "",
-                active: false,
-                cursor_byte: 0,
-                total_width: 30,
-            },
+            InputFieldProps::with_default_style("Search", "(a|b)", "", false, 0, 30),
             5,
         );
         // hit_x should start at x_offset (5), not at x_offset+label_w
@@ -325,14 +377,7 @@ mod tests {
     #[test]
     fn render_input_field_idle_empty_shows_hint() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "Search",
-                hint: "regex",
-                value: "",
-                active: false,
-                cursor_byte: 0,
-                total_width: 30,
-            },
+            InputFieldProps::with_default_style("Search", "regex", "", false, 0, 30),
             0,
         );
         // spans: [label, body]
@@ -348,14 +393,7 @@ mod tests {
     #[test]
     fn render_input_field_idle_with_text_yellow_fg() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "Search",
-                hint: "regex",
-                value: "hello",
-                active: false,
-                cursor_byte: 0,
-                total_width: 30,
-            },
+            InputFieldProps::with_default_style("Search", "regex", "hello", false, 0, 30),
             0,
         );
         // Body span fg should be YELLOW when has_text && !active.
@@ -367,14 +405,7 @@ mod tests {
     #[test]
     fn render_input_field_active_shows_underscore_cursor() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "Search",
-                hint: "regex",
-                value: "abc",
-                active: true,
-                cursor_byte: 3,
-                total_width: 30,
-            },
+            InputFieldProps::with_default_style("Search", "regex", "abc", true, 3, 30),
             0,
         );
         let body = &r.spans[1].content;
@@ -391,14 +422,7 @@ mod tests {
     #[test]
     fn render_input_field_active_empty_shows_only_cursor() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "S",
-                hint: "h",
-                value: "",
-                active: true,
-                cursor_byte: 0,
-                total_width: 20,
-            },
+            InputFieldProps::with_default_style("S", "h", "", true, 0, 20),
             0,
         );
         let body = &r.spans[1].content;
@@ -413,14 +437,7 @@ mod tests {
     fn render_input_field_used_width_consistent_with_hit_x() {
         let x = 12u16;
         let r = render_input_field(
-            InputFieldProps {
-                label: "Tag",
-                hint: "pat",
-                value: "",
-                active: false,
-                cursor_byte: 0,
-                total_width: 40,
-            },
+            InputFieldProps::with_default_style("Tag", "pat", "", false, 0, 40),
             x,
         );
         assert_eq!(r.hit_x, (x, x + r.used_width));
@@ -429,14 +446,14 @@ mod tests {
     #[test]
     fn render_input_field_long_text_truncates_with_ellipsis_when_idle() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "S",
-                hint: "",
-                value: "abcdefghijklmnopqrstuvwxyz",
-                active: false,
-                cursor_byte: 0,
-                total_width: 12, // label=" S: " (4) + box=8
-            },
+            InputFieldProps::with_default_style(
+                "S",
+                "",
+                "abcdefghijklmnopqrstuvwxyz",
+                false,
+                0,
+                12, // label=" S: " (4) + box=8
+            ),
             0,
         );
         let body = &r.spans[1].content;
@@ -450,14 +467,7 @@ mod tests {
     #[test]
     fn render_input_field_bg_active_is_surface1() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "S",
-                hint: "",
-                value: "x",
-                active: true,
-                cursor_byte: 1,
-                total_width: 20,
-            },
+            InputFieldProps::with_default_style("S", "", "x", true, 1, 20),
             0,
         );
         assert_eq!(r.spans[1].style.bg, Some(SURFACE1));
@@ -466,16 +476,48 @@ mod tests {
     #[test]
     fn render_input_field_bg_idle_is_surface0() {
         let r = render_input_field(
-            InputFieldProps {
-                label: "S",
-                hint: "",
-                value: "x",
-                active: false,
-                cursor_byte: 0,
-                total_width: 20,
-            },
+            InputFieldProps::with_default_style("S", "", "x", false, 0, 20),
             0,
         );
         assert_eq!(r.spans[1].style.bg, Some(SURFACE0));
+    }
+
+    // ── UI-015 (Phase 3 Step 3.9 Task 6) ──────────────────────────────
+    //
+    // Custom active-state palette: caller overrides bg / fg / cursor_style
+    // so the rendered cells pick up the override (not the Catppuccin
+    // defaults baked into `with_default_style`). When cursor_style differs
+    // from the body style, the cursor is emitted as its own span so only
+    // the caret is restyled.
+
+    #[test]
+    fn render_input_field_custom_palette_propagates_to_cells() {
+        use ratatui::style::Color;
+
+        let custom_bg = Color::Rgb(10, 20, 30);
+        let custom_fg = Color::Rgb(200, 210, 220);
+        let cursor_fg = Color::Rgb(250, 100, 100); // distinct from body fg
+        let cursor_bg = custom_bg;
+        let mut props = InputFieldProps::with_default_style("S", "", "abc", true, 3, 30);
+        props.bg = custom_bg;
+        props.fg = custom_fg;
+        props.cursor_style = Style::default().fg(cursor_fg).bg(cursor_bg);
+
+        let r = render_input_field(props, 0);
+
+        // Body span: custom bg + fg.
+        let body_span = &r.spans[1];
+        assert_eq!(body_span.style.bg, Some(custom_bg));
+        assert_eq!(body_span.style.fg, Some(custom_fg));
+        assert!(body_span.content.contains("abc"));
+
+        // Cursor span (separate because cursor_style differs from body).
+        let cursor_span = r
+            .spans
+            .iter()
+            .find(|s| s.content == "_")
+            .expect("cursor span should exist when cursor_style != body style");
+        assert_eq!(cursor_span.style.fg, Some(cursor_fg));
+        assert_eq!(cursor_span.style.bg, Some(cursor_bg));
     }
 }

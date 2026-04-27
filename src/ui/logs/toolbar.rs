@@ -92,14 +92,14 @@ pub(super) fn draw_toolbar_op1(f: &mut Frame, app: &mut App, area: Rect) {
         let cursor_byte = app.inputs.cursor(*field);
 
         let out = render_input_field(
-            InputFieldProps {
+            InputFieldProps::with_default_style(
                 label,
                 hint,
-                value: &value,
+                &value,
                 active,
                 cursor_byte,
-                total_width: widths[i],
-            },
+                widths[i],
+            ),
             x,
         );
 
