@@ -1,6 +1,6 @@
 name: flog_dart
 description: Flutter companion for flog terminal log viewer. Structured logging, Network Inspector (HTTP/SSE/WS), FlogDio drop-in, mock interceptor. Tree-shakes to zero in release builds.
-version: 0.7.2
+version: 0.7.3
 homepage: https://github.com/shaominngqing/flog
 repository: https://github.com/shaominngqing/flog/tree/master/flog_dart
 
@@ -9,7 +9,7 @@ dependencies:
     sdk: flutter
   dio: ">=4.0.0 <6.0.0"
   web_socket_channel: ">=2.0.0 <4.0.0"
-  package_info_plus: ">=1.0.0"
+  package_info_plus: ">=1.0.0 <12.0.0"
   meta: ">=1.8.0 <2.0.0"
 
 dev_dependencies:

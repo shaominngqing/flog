@@ -3,7 +3,13 @@
 All notable changes to `flog_dart`. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.7.3 — 2026-04-24
+
+Consolidation release of the Phase 3 / 4 / 5 cleanup campaign. All
+B-class bugs identified in the Phase 1 audit are fixed; README +
+CHANGELOG rewritten; public API is unchanged from 0.7.2 (breaking
+changes deferred to v0.8 per DART-033). Safe to pick up as a
+drop-in upgrade.
 
 ### DART-024 / DART-025 audit resolution (Phase 5)
 
