@@ -1,121 +1,275 @@
 # flog
 
-**Flutter Log Viewer — see your logs, finally.**
+```
+███████╗██╗      ██████╗  ██████╗
+██╔════╝██║     ██╔═══██╗██╔════╝
+█████╗  ██║     ██║   ██║██║  ███╗
+██╔══╝  ██║     ██║   ██║██║   ██║
+██║     ███████╗╚██████╔╝╚██████╔╝
+╚═╝     ╚══════╝ ╚═════╝  ╚═════╝
+```
 
-A terminal-native, cross-platform, intelligent log viewer for Flutter developers. One command. Zero config.
+**Terminal log viewer + network inspector for Flutter developers.**
+
+### ▤ Logs — live log stream
+
+![log list](docs/screenshot-logs.png)
+
+![log detail panel](docs/screenshot-logs-detail.png)
+
+### ⇄ Network — request inspector
+
+![network request list](docs/screenshot-network.png)
+
+![SSE stream detail](docs/screenshot-network-sse.png)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
 ```
 
-Or via Cargo:
+## What problem it solves
 
-```bash
-cargo install flog
-```
+Flutter log debugging has two pain points:
 
-## Features
+**Terminal logs are unreadable** — `flutter run` output mixes business logs with system noise, no level coloring, no filtering, JSON collapsed on a single line. Finding what you care about inside a sea of `I/flutter`, `W/1.raster`, `D/TrafficStats` lines is an eyes-first problem.
 
-- **Cross-platform** — Android (ADB), VM Service WebSocket (all platforms), stdin pipe
-- **Intelligent** — Multi-strategy parser chain auto-detects structured `[LEVEL][Tag]` format, generic Flutter patterns, and keyword-based levels
-- **Interactive** — Search (text or `/regex/i`), filter by level/tag, bookmarks, statistics, timeline heatmap
-- **Mouse-friendly** — Click to select, double-click for detail, right-click to bookmark
-- **Persistent** — Saves session (filters, bookmarks, search) across runs
-- **Non-intrusive** — Connects via DDS proxy, never blocks `flutter run`
+**Network requests are hard to debug** — inspecting requests means adding `print` statements or firing up DevTools, and every restart means reconnecting. There's no lightweight way to watch HTTP / SSE / WebSocket calls straight from a terminal.
 
-## flog_logger Integration
+## What flog does
 
-flog natively parses the [flog_logger](https://pub.dev/packages/flog_logger) structured format:
+flog is a standalone terminal log viewer + network inspector. Keep it running in one terminal window; your Flutter app connects automatically via `flog_dart` and you get a live view of structured logs and network traffic.
 
-```dart
-final log = FlogLogger('Network');
-log.i('-> GET /api/scene-types');
-log.d('  query: {_productId: 66000001}');
-```
+**Two tabs:**
 
-Output in your terminal:
+- **▤ Logs** — live log stream with level coloring, aligned tag pills, system-noise filtering, collapsible JSON.
+- **⇄ Network** — Flipper-style inspector with HTTP / SSE / WebSocket support; request details, headers, and bodies all viewable.
 
-```
-[INFO][Network] -> GET /api/scene-types
-[DEBUG][Network]   query: {_productId: 66000001}
-```
+**No reattachment needed** — flog stays running across `flutter run` restarts; `flog_dart` reconnects automatically. Start flog first or the app first, either works.
 
-flog displays these logs with proper level coloring, tag filtering, and full-width messages — no truncation, no noise.
+## Architecture
+
+flog uses a **Direct Socket + Data Source** architecture:
+
+- **Dart side = data source.** `FlogStore` is a 50 000-message FIFO ring buffer. The app starts recording at launch, independent of whether flog is attached.
+- **flog TUI = pure renderer.** On connection, Dart replays the buffer; flog then receives live messages with no gap. Disconnects don't lose data; switching app sessions rebuilds instantly.
+- **System logs captured automatically.** `Flog.init()` registers hooks for `debugPrint` / `FlutterError.onError` / `PlatformDispatcher.onError`, so framework exceptions and layout overflows flow into `FlogStore` with no `flutter logs` needed.
+
+No VM Service dependency — logs don't travel via `print` / `developer.log`. No terminal noise — `flog_net` frames don't appear in the Flutter console. Automatic device discovery via `flutter devices`. All platforms covered:
+
+- **macOS / iOS simulator** — direct to `localhost`.
+- **Android** — `adb forward` port forwarding (automatic).
+- **iOS real device** — usbmuxd USB port forwarding.
+
+## Logs features
+
+- Level filter (Verbose / Debug / Info / Warning / Error).
+- Tag filter with include + exclude, regex supported.
+- Full-text search (regex with `/pattern/i`, match highlighting, `n` / `N` jump).
+- Exclude search (drop any row matching the pattern).
+- Detail panel (collapsible JSON tree, syntax highlight, depth-aware coloring).
+- Bookmarks (right-click to toggle; survive session restart).
+- Log export (dumps the filtered view to a file).
+- Stats (level distribution, tag ranking).
+- Consecutive-duplicate folding.
+- Jump-to-Bottom pill (appears when you scroll off the tail; shows buffered count).
+- 100 000-entry ring buffer.
+
+## Network features
+
+- HTTP / SSE / WebSocket support.
+- Request list (Protocol, Method, URL, Status, Duration, Size).
+- Detail panel (collapsible JSON tree):
+  - General (URL / Method / Status / Duration / Size).
+  - Query Parameters (auto-parsed from URL).
+  - Request + Response Headers.
+  - Request + Response Body (JSON pretty-print with syntax colors).
+  - SSE Events (per-chunk JSON with **Merged View** — automatic field concatenation for OpenAI / Claude streaming).
+  - WebSocket Messages (**Chat View**: direction-aware columns, type labels, delta concatenation, binary blob folding — with Raw fallback).
+- Inline filter pills (Protocol / Method / Status).
+- URL search + exclude.
+- Copy as cURL (HTTP only).
+- Copy Response (or the Merged / Chat text in the streaming modes).
+- **Replay** — resend a captured request from the detail panel.
+- **Performance stats** — latency percentiles, top-5 slowest, status distribution, per-domain breakdown.
+- **Mock** — author rules in the TUI (URL pattern / method / status / body / delay); synced to the running Dart app via the WebSocket control channel. Intercepted requests resolve locally and still appear in the inspector tagged `Mocked` (HTTP only).
+- **SSE Merged View** — concatenate a chosen JSON field across all SSE chunks; automatic LLM streaming detection. Per-URL rules persist across calls.
+- Auto-scroll + LIVE indicator.
+- 10 000-entry ring buffer.
 
 ## Usage
 
 ```bash
-# Auto-detect — scans for running Flutter VM, connects via DDS proxy
+# Start flog (default port 9753)
 flog
 
-# Connect to a specific VM Service WebSocket
-flog --uri ws://127.0.0.1:8181/TOKEN=/ws
+# Custom port
+flog --port 9754
 
-# Android via ADB logcat
-flog --adb
-flog --adb -s emulator-5554
-
-# Pipe from any command
-flutter run 2>&1 | flog --stdin
-
-# With initial filters
-flog --level w --tag Network
-flog --level d
+# Initial filters
+flog --level w
+flog --tag network,-flog_net
 ```
 
-### Recommended workflow
+## With flog_dart
 
-1. Start `flog` in one terminal (it waits for a Flutter app)
-2. Run `flutter run` in another terminal
-3. flog auto-discovers and connects within 1-2 seconds
-4. Stop/restart `flutter run` freely — flog reconnects automatically
+flog recognises any Flutter log output; pair it with [flog_dart](https://pub.dev/packages/flog_dart) for precise level / tag parsing and the Network Inspector:
 
-## Keyboard Shortcuts
+```yaml
+# pubspec.yaml
+dependencies:
+  flog_dart: ^0.7.2
+```
+
+### Bootstrap
+
+Call `Flog.init()` as early as possible in `main()` — synchronous, non-blocking:
+
+```dart
+import 'package:flog_dart/flog_dart.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  Flog.init();
+  runApp(MyApp());
+}
+```
+
+### Network Inspector (recommended)
+
+Swap `Dio()` for `FlogDio()` — zero config, auto-injected HTTP logging + mock:
+
+```dart
+import 'package:flog_dart/flog_dart.dart';
+
+final dio = FlogDio(baseUrl: 'https://api.example.com');
+
+// Normal Dio API; every request appears in the flog Network panel
+final response = await dio.get('/users');
+
+// Built-in SSE support
+final sse = await dio.sse('/chat/completions',
+  method: 'POST',
+  data: {'prompt': 'hello'},
+);
+await for (final event in sse.stream) {
+  print(event);
+}
+```
+
+> Release builds tree-shake automatically: `flogEnabled` is `false` in release and all flog code is removed by AOT.
+
+### Logging
+
+```dart
+import 'package:flog_dart/flog_dart.dart';
+
+final log = FlogLogger('Network');
+log.i('-> GET /api/users');
+log.e('Connection failed', error: e, stackTrace: st);
+```
+
+### Manual interceptors
+
+```dart
+final dio = Dio();
+dio.interceptors.addAll([
+  FlogHttpInterceptor(),        // ← must be FIRST
+  ApiResponseInterceptor(),
+  LoggingInterceptor(),
+]);
+```
+
+> **Ordering matters.** `FlogHttpInterceptor` must sit before any interceptor that calls `handler.reject()`. Otherwise flog never sees the response and the request stays Pending forever.
+
+### SSE
+
+```dart
+await for (final data in FlogSseParser.wrap(
+  response.data!.stream,
+  url: '/api/chat/completions',
+  method: 'POST',
+)) {
+  final json = jsonDecode(data);
+  // ...
+}
+```
+
+### WebSocket
+
+```dart
+final ws = await FlogWebSocket.connect('wss://example.com/ws');
+ws.send(jsonEncode({'type': 'hello'}));
+ws.stream.listen((data) => print(data));
+await ws.close();
+```
+
+## Keyboard shortcuts
+
+Press `?` inside flog for the full interactive help.
+
+### Logs
 
 | Key | Action |
 |-----|--------|
-| `/` | Search (text or `/regex/i`) |
+| `1` / `2` | Switch Logs / Network tab |
+| `/` | Focus Search (supports `a|b`, `/regex/`, `/regex/i`) |
+| `\` | Focus Exclude |
+| `t` | Focus Tag filter (e.g. `+network|-flog_net`) |
 | `n` / `N` | Next / previous match |
-| `j/k` or `Up/Down` | Scroll |
-| `PgUp/PgDn` | Page scroll |
-| `Home/End` | Jump to top/bottom |
-| `Enter` | Toggle detail panel (JSON pretty-print) |
-| `c` | Copy selected entry to clipboard |
-| `e` | Export filtered logs to file |
-| `?` | Help |
-| `S` | Statistics view |
-| `Esc` | Close panel / clear all filters |
-| `q` / `Ctrl+C` | Quit |
-
-## Mouse
-
-| Action | Effect |
-|--------|--------|
-| Click row | Select |
-| Double-click | Detail view |
+| `j/k` or arrows | Move selection |
+| `PgUp` / `PgDn` | Page scroll |
+| `Home` / `End` | Top / bottom |
+| `G` | Jump to bottom (resume LIVE) |
+| `Enter` | Toggle detail panel |
 | Right-click | Toggle bookmark |
-| Scroll wheel | Scroll |
-| Click toolbar | Search, filter, change level |
-| Click source name | Switch source |
+| `c` | Copy selected log |
+| `e` | Export filtered logs to file |
+| `S` | Statistics view |
+| `s` | Text-selection mode |
+| Click `⇅ AppName …` | Open device picker (switch app) |
+| `?` | Help |
+| `Esc` | Clear filters / close overlay |
+| `q` | Quit |
 
-## Architecture
+### Network
 
+| Key | Action |
+|-----|--------|
+| `/` | URL search |
+| `\` | Exclude search |
+| `c` | Copy as cURL (HTTP only) |
+| `y` | Copy response (Merged / Chat in streaming modes) |
+| `r` | Replay request (HTTP only) |
+| `M` | Create mock rule from selected (HTTP only) |
+| `Ctrl+M` | Open mock rules panel |
+| `S` | Stats overlay |
+| `E` / `C` | Expand all / collapse all JSON sections |
+| `Enter` | Toggle detail panel |
+| `j/k` | Move selection (or switch field in SSE Merged mode) |
+| `G` / `End` | Jump to bottom |
+| `Esc` | Exit merged mode / clear filters |
+| `s` | Text-selection mode |
+
+## Installation
+
+```bash
+# One-liner
+curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
+
+# Or via Cargo
+cargo install --path .
 ```
-src/
-├── domain/     — Core types (LogEntry, LogLevel, LogStore, FilterState)
-├── input/      — Source abstraction (ADB, VM Service, stdin, auto-discovery)
-├── parser/     — Multi-strategy format detection (Structured, Generic, Keyword)
-└── ui/         — Terminal UI (ratatui + crossterm)
-```
 
-## Log Level Guidelines
+Supported: macOS (Intel / Apple Silicon), Linux (x86_64 / aarch64), Windows.
 
-| Level | Use for | Examples |
-|-------|---------|---------|
-| **INFO** | Business milestones | Connection ready, practice started, score result |
-| **DEBUG** | Internal state | WS protocol, audio state, token cache, transcripts |
-| **WARNING** | Recoverable issues | Session expiring (GoAway), token refresh failed |
-| **ERROR** | Failures | Connection failed, parse error, reconnect failed |
+## Contributor docs
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — high-level architecture.
+- [`docs/MODULES.md`](docs/MODULES.md) — per-module index.
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — wire protocol spec.
+- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — audit taxonomy, testing rules, commit format.
+
+Current version (**0.4.0**) is the post-cleanup build; see `docs/superpowers/` for the campaign audit trail.
 
 ## License
 

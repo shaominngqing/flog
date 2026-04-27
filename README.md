@@ -120,7 +120,7 @@ flog 能识别任何 Flutter 日志输出。搭配 [flog_dart](https://pub.dev/p
 ```bash
 # pubspec.yaml
 dependencies:
-  flog_dart: ^0.6.4
+  flog_dart: ^0.7.2
 ```
 
 ### 初始化
@@ -211,26 +211,30 @@ await ws.close();
 
 ## 快捷键
 
+按 `?` 可在 flog 内查看完整帮助。
+
 ### Logs
 
 | 按键 | 功能 |
 |------|------|
 | `1` / `2` | 切换 Logs / Network 标签页 |
-| `/` | 搜索（支持 `/正则/i`） |
+| `/` | 聚焦搜索框（支持 `a|b`、`/正则/`、`/正则/i`） |
+| `\` | 聚焦排除框 |
+| `t` | 聚焦 Tag 过滤（如 `+network|-flog_net`） |
 | `n` / `N` | 下一个/上一个匹配 |
-| `t` | Tag 过滤（逗号分隔，`-tag` 排除） |
 | `j/k` 或方向键 | 移动选择 |
 | `PgUp` / `PgDn` | 翻页 |
-| `G` / `End` | 跳回列表底部 |
+| `Home` / `End` | 顶部 / 底部 |
+| `G` | 跳回底部（恢复 LIVE） |
 | `Enter` | 打开/关闭详情面板 |
-| 右键 | 书签 |
-| `c` | 复制日志 |
-| `e` | 导出 |
-| `S` | 统计 |
+| 右键 | 书签切换 |
+| `c` | 复制选中日志 |
+| `e` | 导出过滤后的日志到文件 |
+| `S` | 统计视图 |
 | `s` | 选择模式（终端文字选择） |
 | 点击底栏 `⇅ AppName …` | 打开设备选择器切换 App |
 | `?` | 帮助 |
-| `Esc` | 清除过滤 |
+| `Esc` | 清除过滤 / 关闭浮层 |
 | `q` | 退出 |
 
 ### Network
@@ -238,12 +242,14 @@ await ws.close();
 | 按键 | 功能 |
 |------|------|
 | `/` | URL 搜索 |
+| `\` | 排除搜索 |
 | `c` | Copy as cURL（仅 HTTP） |
 | `y` | Copy Response（SSE Merged / WS Chat 模式下复制拼接文本） |
 | `r` | Replay 重放请求（仅 HTTP） |
 | `M` | 从当前请求创建 Mock 规则（仅 HTTP） |
-| `Ctrl+m` | 打开 Mock 规则管理面板 |
+| `Ctrl+M` | 打开 Mock 规则管理面板 |
 | `S` | 统计面板 |
+| `E` / `C` | 展开 / 折叠全部 JSON |
 | `Enter` | 打开/关闭详情面板 |
 | `j/k` | SSE Merged 模式下切换字段；其他情况移动选择 |
 | `G` / `End` | 跳回请求列表底部 |
@@ -257,10 +263,19 @@ await ws.close();
 curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
 
 # 或通过 Cargo
-cargo install flog
+cargo install --path .
 ```
 
 支持 macOS (Intel / Apple Silicon)、Linux (x86_64 / aarch64)、Windows。
+
+## 贡献者文档
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 分层架构总览。
+- [`docs/MODULES.md`](docs/MODULES.md) — 各模块索引。
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — flog ↔ flog_dart 线协议规范。
+- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — 审计分类 / 测试规约 / commit 约定。
+
+当前版本 **0.4.0** 是 Phase 3–4 清理完成后的发布；完整审计线索见 `docs/superpowers/`。
 
 ## License
 
