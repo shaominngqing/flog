@@ -1,4 +1,7 @@
 use super::*;
+use crate::app::App;
+use crate::domain;
+use crate::input::ClientMessage;
 
 #[test]
 fn split_stacktrace_finds_first_frame() {
