@@ -938,6 +938,26 @@ proposed_action: |
   the B-class correctness fix (DART-001/002); this is pure architectural
   debt. Phase 5 writes the v0.8 migration doc; v0.8 ships as a dedicated
   breaking release after the cleanup campaign completes.
+status: CLOSED
+resolution: |
+  flog_dart 0.8.0 shipped 2026-04-27 with the full architectural
+  redesign:
+    - SseByteDecoder: StreamTransformer<List<int>, String> (zero-copy
+      Uint8List views + BOM strip + 1 MiB bounded buffer with hard error
+      on overrun)
+    - SseLineDecoder: StreamTransformer<String, SseEvent> (W3C parser
+      with per-subscription state on the transformer's sink, no
+      closure-captured locals)
+    - FlogSseReporter: StreamTransformer<SseEvent, SseEvent>
+      (passthrough when flogEnabled == false — AOT tree-shakes)
+    - FlogSseParser becomes a 75-line compat shim composing the three;
+      all 47 existing tests pass unchanged
+    - SseResponse gains .events (typed) + .options; .stream kept as
+      @Deprecated for v0.7 compat
+    - +33 new tests (166 Flutter tests green)
+    - `flutter pub publish --dry-run` → 0 warnings
+    - Wire protocol byte-identical to v0.7; flog TUI unaffected
+  See journal: docs/superpowers/journal/dart-033-v08.md
 risk: medium
 ```
 

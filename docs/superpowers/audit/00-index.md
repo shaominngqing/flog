@@ -290,3 +290,12 @@ correctness fix (DART-001/002 parser rewrite). The remaining issues
 are design quality, require API breakage to fix properly, and should
 land as a coherent v0.8 release with migration docs rather than be
 squeezed into the current campaign.
+
+**CLOSED 2026-04-27 — flog_dart 0.8.0 shipped.** SSE split into three
+composable `StreamTransformer`s (`SseByteDecoder`, `SseLineDecoder`,
+`FlogSseReporter`); `FlogSseParser` kept as a v0.7-compat shim; all 47
+existing SSE tests pass unchanged; +33 new tests land across the
+three transformer layers and the `SseResponse` integration surface;
+`flutter pub publish --dry-run` reports 0 warnings; wire protocol
+byte-identical to v0.7. See
+[`docs/superpowers/journal/dart-033-v08.md`](../journal/dart-033-v08.md).
