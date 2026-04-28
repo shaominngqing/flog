@@ -355,7 +355,7 @@ cargo install --path .
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — flog ↔ flog_dart 线协议规范。
 - [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — 审计分类 / 测试规约 / commit 约定。
 
-当前版本 **0.4.0** 是 Phase 3–4 清理完成后的发布；完整审计线索见 `docs/superpowers/`。
+当前版本 **0.5.0** —— 包含 Phase 3-4 清理、flog_dart v0.8 SSE 架构重设计、UI-042 WS 模式切换修复。完整审计线索见 `docs/superpowers/`。
 
 ## License
 

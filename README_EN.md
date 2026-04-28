@@ -299,7 +299,7 @@ Supported: macOS (Intel / Apple Silicon), Linux (x86_64 / aarch64), Windows.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — wire protocol spec.
 - [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — audit taxonomy, testing rules, commit format.
 
-Current version (**0.4.0**) is the post-cleanup build; see `docs/superpowers/` for the campaign audit trail.
+Current version (**0.5.0**) — ships the Phase 3-4 cleanup, the flog_dart v0.8 SSE redesign, and the UI-042 WS-mode-toggle fix. See `docs/superpowers/` for the campaign audit trail.
 
 ## License
 
