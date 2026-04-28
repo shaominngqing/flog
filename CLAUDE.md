@@ -2,7 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Before non-trivial changes, read `docs/ARCHITECTURE.md` first, then `docs/MODULES.md` to locate the right file, and `docs/PROTOCOL.md` for wire-format detail. Process rules live in `docs/CONTRIBUTING.md`.**
+**Before non-trivial changes, read `docs/ARCHITECTURE.md` first, then `docs/MODULES.md` to locate the right file, and `docs/PROTOCOL.md` for wire-format detail. Process rules live in `docs/CONTRIBUTING.md`; code-style rules in `docs/CODING_STYLE.md`; UI framework boundaries in `docs/UI_FRAMEWORK_BOUNDARY.md`.**
+
+## 🛡️ Design rules that outlive the codebase
+
+These rules guard against regressions that would make future work (including a planned GUI frontend) expensive. They apply to every commit, human or AI:
+
+1. **UI layer only reads `App`, never writes business state.** Renderers may only write `LayoutCache`. Business mutations belong to `event/apply.rs` or `App` methods.
+2. **`domain/` `parser/` `input/` `transport/` `app/` must NEVER `use ratatui` / `use crossterm` / any UI framework.** This is the UI-agnostic core; it must stay portable to a future GUI. `event/` may depend on exactly one input framework (currently `crossterm`), but must translate framework signals to neutral `ClickRegion` / (future) `KeyAction` enums before they reach `App` mutations.
+3. **Input events must go through the two-phase detect/apply pattern.** `detect_click_region(&App, x, y) -> Option<ClickRegion>` is pure and testable. `apply_click_region(&mut App, region, class)` performs mutations. Never interleave the two. See Phase 3 Step 3.6.
+4. **New state must be derivable by pure functions without assuming a TUI cell grid.** If your state requires a `Frame` or `Rect` to make sense, it belongs in `ui/` or `LayoutCache` (R5 of UI_FRAMEWORK_BOUNDARY.md), not in `App`.
+5. **File size budget is a signal, not a law.** Under 500 lines is default. 500-800 yellow (document the reason). Over 800 red (must split). Test files (`*_tests.rs` sibling pattern) are exempt. Per `CONTRIBUTING.md §5.5`.
+6. **Every B-class bug gets a red-locked characterization test.** `#[ignore = "bug: <audit-id>"]` test lands first; un-ignore in the same commit as the fix. No shadow TODOs, no silent fixes.
+
+Violating any of these requires an audit entry and reviewer sign-off, not just a commit.
 
 ## What This Is
 
