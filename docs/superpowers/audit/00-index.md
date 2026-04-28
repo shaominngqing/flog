@@ -12,12 +12,13 @@ gate entry to Phase 2.
 | 02-domain    | 5 | 2 | 0 | 14 | 4 | 25 |
 | 03-ui        | 13 | 1 | 0 | 27 | 1 | 42 |
 | 04-flog-dart | 3 | 9 | 0 | 19 | 2 | 33 |
-| **Total**    | **27** | **13** | **0** | **66** | **9** | **115** |
+| Addenda      | 0 | 1 | 0 | 1 | 0 | 2 |
+| **Total**    | **27** | **14** | **0** | **67** | **9** | **117** |
 
 **DOM-025 added during Phase 2 Task 2** — see "Addenda" section at the
 end of this file.
 **UI-041 added during Phase 2.5A Task 6** — see "Addenda" section.
-**UI-042 + DART-033 added during Phase 3 Step 3.5→3.6 transition** — see "Addenda".
+**UI-042 (B) + DART-033 (D) added during Phase 3 Step 3.5→3.6 transition** — see "Addenda". Both closed by end of campaign (UI-042 via Step 3.8 `133b631`, DART-033 via flog_dart v0.8 release 2026-04-27).
 
 C = 0 as required: all C-class entries resolved with user in Task 3 and
 reclassified into A/B/D/E.
@@ -207,7 +208,7 @@ event/mouse routing and the per-tab render integration tests.
 - [x] Every C-class resolved into A/B/D/E (Task 3 — C count = 0)
 - [x] B list reviewed by user
 - [x] `flog_dart/test/` disposition decided: **option A**
-- [ ] User confirms Phase 2 may begin
+- [x] User confirms Phase 2 may begin (resolved during Phase 2 entry — see journal phase-2.md)
 
 ## Resolved: DART-002 disposition
 
