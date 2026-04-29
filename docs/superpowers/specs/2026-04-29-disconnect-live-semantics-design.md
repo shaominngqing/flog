@@ -235,33 +235,160 @@ impl App {
 | S6 | 设备 Removed 走真正的 remove_connected_app | run/ | `run/server.rs`（原代码已是如此，确认无 regression） |
 | S7 | `App::live_state_for(tab)` + `LiveState` enum | app/ | `app/mod.rs` 或新增 `app/live_state.rs` |
 | S8 | `live_state_chip` 共享渲染 + 替换两个 status_bar.rs 的 LIVE 绘制 | ui/ | `ui/mod.rs`, `ui/logs/status_bar.rs`, `ui/network/status_bar.rs` |
-| S9 | 集成测试：端到端 reconnect 场景断言无 eprintln 发生、状态转换正确 | tests/ | 新增或扩 `tests/reconnect_test.rs` |
+| S9 | 状态机 table-driven 测试 + 多步序列测试 | tests/ | 扩 `tests/characterization_app_state.rs` |
+| S10 | UI 渲染 negative 断言补齐（Reconnecting / Offline / Paused 文案） | tests/ | 扩 `tests/characterization_ui_logs.rs` + `characterization_ui_network.rs` |
+| S11 | `FakeFlogServer` test harness 扩展 + `tests/reconnect_test.rs` 端到端 | tests/ | `tests/support/fake_flog_server.rs`, 新增 `tests/reconnect_test.rs` |
+| S12 | `tests/forbidden_patterns_test.rs` 新增类别 + `eprintln!` 规则 | tests/ | 新增 `tests/forbidden_patterns_test.rs` |
 
-每单元 ≤ 80 行增量（估计），独立可 test。
+每单元 ≤ 80 行增量（估计），独立可 test。S12 必须在 S1（删除 eprintln）**之后** 才能通过，是最终的回归闸。
 
 ## 4. 测试策略
 
-### 4.1 单元测试
+### 4.1 背景：为什么要补齐测试，不是单点添加
 
-- `connector.rs`：writer 失败能触发 Disconnected；writer 失败后 reader 不再阻塞
-- `multi_app.rs`：
-  - Reconnecting 状态下同 id 重连 → 不触发 reset_session（用 store.len() 或 bookmark 存在性断言）
-  - Device Removed 清 ConnectedApp 以及其 adb forward 记录
-  - `live_state_for` 四态覆盖（包括 active_app_id=None 但 connected_apps 非空的过渡态——走向 Offline）
-- `app/live_state.rs`（若新建）：纯函数 table-driven 测试
+本次 bug 在覆盖率 ~90% 的代码库里漏掉，根因是**覆盖率 ≠ 路径覆盖 ≠ 负样本覆盖**。具体缺口：
 
-### 4.2 集成测试
+| 缺口 | 证据 | 后果 |
+|---|---|---|
+| **断开事件端到端缺测** | `tests/characterization_input.rs` 有 24 处提到 `Disconnected` 但 **0 个 `#[test]`**（全是 fixture）；`tests/ws_server_test_direct.rs` 同样 0 个 `#[test]` | 真实 WS 断连的全路径（connector → server → App 状态）从未被自动化验证 |
+| **UI negative 断言缺失** | `ui_010_status_bar_shows_live_pill_when_auto_scroll` 只验证 "auto_scroll=true → 显示 LIVE"；**从未**验证 "断开 + auto_scroll=true → LIVE 消失" | 语义错位的 bug 可以在所有正样本测试通过的情况下存在 |
+| **多步状态转换无覆盖** | `app_state` 测试都是单步纯函数（"add 后状态 X" / "remove 后状态 Y"），没有"add→remove→add 后状态 Z"的连续序列 | `is_reconnect` 这种依赖"上一步状态"的判定错误无法被捕捉 |
+| **输出通道污染无防线** | `tests/` 里 0 处 `eprintln` / `stderr` / `alternate_screen` 相关断言 | 任何走 stderr 的新代码默认合法，不存在"禁止引入"的测试闸 |
 
-`tests/reconnect_test.rs`（新增）：启一个 mock WebSocket server，模拟三种场景：
+本次 spec 的测试章节不仅覆盖本次 bug，还**补齐这四类缺口的最小闭环**，让同类 bug（"状态机路径组合"、"屏幕污染"、"正反语义"）未来能被挡在 CI 前。
 
-1. Peer close → TUI 应 status_bar toast "disconnected"；状态机从 Live → Reconnecting
-2. 设备 Removed → TUI 应从 Live → Offline（不经过 Reconnecting）
-3. WS 断开再连 → 状态 Reconnecting → Live，store 保留，不触发 reset
+### 4.2 单元测试
 
-### 4.3 回归断言
+#### 4.2.1 connector.rs
 
-- `cargo test` 全绿
-- 手动 smoke：用 aura-lang-flutter 连一次，关闭 app，观察屏幕底部**无 eprintln 残留**、状态栏显示 RECONNECTING 2s 内→ OFFLINE（如果 connection_task 真的放弃）或保持 RECONNECTING（retry loop 继续）
+- `writer_failure_teardowns_reader` — 写失败后 reader 也必须解阻塞并发出 `Disconnected`（S2 的直接断言）
+- `disconnect_reason_peer_close` / `disconnect_reason_read_error` / `disconnect_reason_writer_error` / `disconnect_reason_channel_closed` — 每个 `DisconnectReason` variant 的触发路径各一条
+- `no_eprintln_on_disconnect` — 见 §4.5 的 forbidden-pattern 检查，不在此单元里重复
+
+#### 4.2.2 multi_app.rs / live_state.rs
+
+**关键新增**：table-driven 状态机测试。把 `LiveState` 四态和 ConnStatus + auto_scroll + active_app_id 的组合展开成表：
+
+```rust
+#[test]
+fn live_state_matrix() {
+    struct Case {
+        name: &'static str,
+        active_id: Option<&'static str>,
+        connected: Vec<(&'static str, ConnStatus)>,
+        auto_scroll: bool,
+        expect: LiveState,
+    }
+    let cases = [
+        Case { name: "live + tail", active_id: Some("a"),
+               connected: vec![("a", ConnStatus::Live)],
+               auto_scroll: true, expect: LiveState::Live },
+        Case { name: "live + paused", /* ... */ expect: LiveState::LivePaused },
+        Case { name: "reconnecting + tail", /* ... */ expect: LiveState::Reconnecting },
+        Case { name: "reconnecting + paused", /* ... */ expect: LiveState::Reconnecting },
+        Case { name: "offline empty", /* ... */ expect: LiveState::Offline },
+        Case { name: "offline active_id dangles", /* ... */ expect: LiveState::Offline },
+        // 共 ≥ 8 例，覆盖所有 {状态机} × {UI tab 输入} 组合
+    ];
+    for c in cases { /* assert */ }
+}
+```
+
+原则：凡是**多维枚举组合**的纯函数，必须 table-driven 显式列举；不允许"代码行都跑到就算覆盖"。
+
+**多步转换序列**：至少三条连续路径必须有测试：
+
+1. `Connect → Disconnect → Reconnect` 后 store 保留、active_app_id 保留、ConnStatus 回到 Live
+2. `Connect → Disconnect → DeviceRemoved` 后 connected_apps 清空、active_app_id=None、LiveState=Offline
+3. `Connect(app1) → Connect(app2) → Disconnect(app1)` 后 active_app_id 不动（只要 app2 不是当前 active），app1 标记 Reconnecting
+
+#### 4.2.3 LogsViewState / NetworkState tab-aware 快照
+
+`live_state_for(tab)` 在 Logs / Network 两个 tab 各自的 auto_scroll 被修改时只读对应 tab 的字段——每 tab 各一条测试。
+
+### 4.3 UI 渲染测试：补齐 negative 断言
+
+在 `tests/characterization_ui_logs.rs` / `characterization_ui_network.rs` 里，**每个正样本断言都要有一个对应的负样本**：
+
+| 现有正样本 | 新增负样本 |
+|---|---|
+| `auto_scroll=true → 包含 "LIVE"` | `auto_scroll=true + connection_status=Reconnecting → 包含 "RECONNECTING"，不包含 "LIVE"` |
+| 同上 | `active_app_id=None → 包含 "OFFLINE"，不包含 "LIVE" 和 "RECONNECTING"` |
+| `auto_scroll=false → 显示 new pill` | `auto_scroll=false + Live → 显示 "PAUSED"` |
+
+这套断言直接使用现有 `render_logs(&mut app, 120, 30)` + `full_text(&buf).contains()` 的工具链，无新基建。
+
+### 4.4 端到端集成测试（本 spec 新增基础设施）
+
+`tests/support/fake_flog_server.rs` 已有部分 fixture。本次扩展成完整的 test harness：
+
+```rust
+// tests/support/fake_flog_server.rs 新增方法
+impl FakeFlogServer {
+    pub async fn start_on(port: u16) -> Self { ... }
+    pub async fn accept_one(&mut self) -> FakeSession { ... }
+    pub async fn send_hello(&mut self, client_info: &ClientInfo) { ... }
+    pub async fn send_log(&mut self, entry: &LogEntry) { ... }
+    pub async fn close_peer(&mut self) { ... }  // 模拟"app 退出"
+    pub fn kill_socket(&mut self) { ... }       // 模拟网络重置
+}
+```
+
+`tests/reconnect_test.rs`（新增）包含 4 条端到端场景：
+
+1. **e2e_peer_close**：fake server 发 Close 帧 → assert App 状态机变成 Reconnecting，status_message 包含 "disconnected"，LogStore 保留
+2. **e2e_reconnect_same_session**：场景 1 后 fake server 重新 accept → assert ConnStatus 回 Live，active_app_id 不变
+3. **e2e_writer_failure_cascade**：fake server accept 后立即关闭读端 → 触发 writer 错误 → assert reader 也解阻塞、Disconnected 事件送达（验证 S2）
+4. **e2e_device_removed_vs_ws_dropped**：两个并行 fake server 分别触发 WS 断和模拟 DeviceRemoved → assert 前者 LiveState=Reconnecting、后者 LiveState=Offline
+
+### 4.5 Forbidden-pattern 测试（新类别）
+
+`tests/forbidden_patterns_test.rs`（新增）：
+
+```rust
+#[test]
+fn no_eprintln_in_production_code() {
+    let src = walkdir::WalkDir::new("src")
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension() == Some("rs".as_ref()))
+        .filter(|e| !e.path().to_string_lossy().contains("_tests"));
+
+    let mut offenders = vec![];
+    for entry in src {
+        let content = std::fs::read_to_string(entry.path()).unwrap();
+        for (lineno, line) in content.lines().enumerate() {
+            if line.contains("eprintln!") && !line.trim_start().starts_with("//") {
+                offenders.push(format!("{}:{}", entry.path().display(), lineno + 1));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "eprintln! in production code pollutes alternate screen:\n  {}",
+        offenders.join("\n  "));
+}
+```
+
+目的：让本次修复**不可回滚**。任何人将来再加 `eprintln!` CI 就红。
+
+此类别未来可扩展到其他反模式（例如 `println!` 在 TUI 路径、`unwrap()` 在 connector 路径等），本次先立类别、只加 `eprintln!` 一条。
+
+### 4.6 手动冒烟
+
+自动化之外的回归确认（保留为 checklist，不是门禁）：
+
+- 用 aura-lang-flutter 连一次，关闭 app，观察：
+  - 屏幕底部**无 eprintln 残留**
+  - 状态栏左下角 chip 从 `LIVE` 变 `RECONNECTING`（黄底）
+  - 拔掉设备后 chip 变 `OFFLINE`（暗灰）
+- 滚动日志，观察 `LIVE` 变 `PAUSED`
+- `go_bottom` 后回到 `LIVE`
+
+### 4.7 CI 门禁
+
+- `cargo test` 全绿（包含新增的 state matrix、e2e、forbidden-pattern）
+- `cargo test --test forbidden_patterns_test` 单独可运行
+- `cargo clippy -- -D warnings` 无新警告
 
 ## 5. 不做的事
 
