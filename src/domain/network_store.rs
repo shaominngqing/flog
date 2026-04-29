@@ -291,13 +291,13 @@ impl Default for NetworkStore {
     }
 }
 
+/// Convert epoch milliseconds (UTC) to local-time `HH:MM:SS.mmm`.
 fn format_ts(millis: u64) -> String {
-    let secs = millis / 1000;
-    let ms = millis % 1000;
-    let h = (secs / 3600) % 24;
-    let m = (secs / 60) % 60;
-    let s = secs % 60;
-    format!("{:02}:{:02}:{:02}.{:03}", h, m, s, ms)
+    use chrono::{Local, TimeZone};
+    match Local.timestamp_millis_opt(millis as i64).single() {
+        Some(dt) => dt.format("%H:%M:%S%.3f").to_string(),
+        None => String::new(),
+    }
 }
 
 #[cfg(test)]

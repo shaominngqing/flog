@@ -663,23 +663,43 @@ fn handle_req_evicts_oldest_at_capacity() {
 
 // ---- format_ts branches -----------------------------------------
 
+// format_ts 现在返回本地时区 HH:MM:SS.mmm（见 network_store.rs），
+// 具体时分秒依赖 host 时区。下面的测试都和 chrono::Local 对比，锁定
+// "我们的实现和 chrono 同步"这一不变量。
+
 #[test]
-fn format_ts_zero_epoch() {
-    assert_eq!(format_ts(0), "00:00:00.000");
+fn format_ts_zero_epoch_matches_chrono_local() {
+    use chrono::{Local, TimeZone};
+    let expected = Local
+        .timestamp_millis_opt(0)
+        .single()
+        .unwrap()
+        .format("%H:%M:%S%.3f")
+        .to_string();
+    assert_eq!(format_ts(0), expected);
 }
 
 #[test]
-fn format_ts_wraps_day_boundary() {
-    // 25 hours exactly → wraps to 01:00:00.000
-    let ms = 25 * 3600 * 1000;
-    assert_eq!(format_ts(ms), "01:00:00.000");
+fn format_ts_format_shape() {
+    // 无论时区如何，格式必须是 HH:MM:SS.mmm（12 字符）
+    let t = format_ts(3_723_456);
+    assert_eq!(t.len(), "00:00:00.000".len());
+    assert!(t.contains(':'));
+    assert!(t.ends_with(".456"));
 }
 
 #[test]
-fn format_ts_with_milliseconds() {
+fn format_ts_with_milliseconds_matches_chrono_local() {
+    use chrono::{Local, TimeZone};
     // 1 hour 2 min 3 sec 456 ms
     let ms = (3600 + 2 * 60 + 3) * 1000 + 456;
-    assert_eq!(format_ts(ms), "01:02:03.456");
+    let expected = Local
+        .timestamp_millis_opt(ms as i64)
+        .single()
+        .unwrap()
+        .format("%H:%M:%S%.3f")
+        .to_string();
+    assert_eq!(format_ts(ms), expected);
 }
 
 // ---- find_by_id_mut: most-recent-wins -----------------------------

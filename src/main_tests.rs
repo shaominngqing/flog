@@ -48,24 +48,44 @@ fn raw_log_re_rejects_full_multiline_input() {
 }
 
 // ── format_ts (pure) ────────────────────────────────────────────
+//
+// format_ts 现在返回本地时区 HH:MM:SS.mmm（chrono::Local），具体时分秒
+// 依赖 host 时区，所以这些测试锁定 "格式正确 + 和 chrono Local 同步"。
 
 #[test]
-fn format_ts_zero() {
-    assert_eq!(format_ts(0), "00:00:00.000");
+fn format_ts_zero_matches_chrono_local() {
+    use chrono::{Local, TimeZone};
+    let expected = Local
+        .timestamp_millis_opt(0)
+        .single()
+        .unwrap()
+        .format("%H:%M:%S%.3f")
+        .to_string();
+    assert_eq!(format_ts(0), expected);
 }
 
 #[test]
-fn format_ts_wraps_past_24h() {
-    // 25 hours worth of ms → wraps to 01:00:00.000
-    let ms = 25u64 * 3600 * 1000;
-    assert_eq!(format_ts(ms), "01:00:00.000");
+fn format_ts_format_shape() {
+    // 无论时区如何，格式是 HH:MM:SS.mmm（12 字符），毫秒保持不变。
+    let ms = 25u64 * 3600 * 1000 + 123;
+    let t = format_ts(ms);
+    assert_eq!(t.len(), "00:00:00.000".len());
+    assert!(t.contains(':'));
+    assert!(t.ends_with(".123"));
 }
 
 #[test]
-fn format_ts_ms_preserved() {
+fn format_ts_ms_preserved_matches_chrono_local() {
+    use chrono::{Local, TimeZone};
     // 1h 2m 3s + 456 ms
     let ms = (3600u64 + 2 * 60 + 3) * 1000 + 456;
-    assert_eq!(format_ts(ms), "01:02:03.456");
+    let expected = Local
+        .timestamp_millis_opt(ms as i64)
+        .single()
+        .unwrap()
+        .format("%H:%M:%S%.3f")
+        .to_string();
+    assert_eq!(format_ts(ms), expected);
 }
 
 // ── dispatch_client_message (pure state mutation) ──────────────
@@ -92,7 +112,9 @@ fn dispatch_hello_is_noop_on_store() {
 
 #[test]
 fn dispatch_log_structured_preserves_level_and_tag() {
+    use chrono::{Local, TimeZone};
     let mut app = App::new();
+    let ts_ms: u64 = 3_723_456; // 1h02m03.456s past epoch (UTC)
     dispatch_client_message(
         &mut app,
         ClientMessage::Log {
@@ -101,13 +123,20 @@ fn dispatch_log_structured_preserves_level_and_tag() {
             message: "slow request".into(),
             error: None,
             stack_trace: None,
-            timestamp: Some(3_723_456), // 1h02m03.456s past epoch
+            timestamp: Some(ts_ms),
         },
     );
     let e = app.store.iter().last().expect("entry pushed");
     assert_eq!(e.level, domain::LogLevel::Warning);
     assert_eq!(e.tag, "net");
-    assert_eq!(e.timestamp, "01:02:03.456");
+    // timestamp 是本地时区字符串，和 chrono Local 自比
+    let expected = Local
+        .timestamp_millis_opt(ts_ms as i64)
+        .single()
+        .unwrap()
+        .format("%H:%M:%S%.3f")
+        .to_string();
+    assert_eq!(e.timestamp, expected);
 }
 
 #[test]
