@@ -3,5 +3,5 @@
 pub mod connector;
 pub mod protocol;
 
-pub use connector::{connect, connect_stream, ConnectorEvent, ConnectorHandle};
+pub use connector::{connect, connect_stream, ConnectorEvent, ConnectorHandle, DisconnectReason};
 pub use protocol::{ClientId, ClientInfo, ClientMessage, ServerMessage};

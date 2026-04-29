@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::app::{self, App};
-use crate::input::{connect, connect_stream, ConnectorEvent};
+use crate::input::{connect, connect_stream, ConnectorEvent, DisconnectReason};
 use crate::transport;
 
 use super::dispatch::dispatch_client_message;
@@ -32,6 +32,27 @@ pub(crate) const RECONNECT_BACKOFF_FACTOR: u64 = 2;
 
 /// Number of ports to scan per device (flog_dart binds `port..port+9`).
 const PORT_SCAN_RANGE: u16 = 10;
+
+/// Compose a human status-bar message for a disconnect event. Keeps
+/// the raw error text ≤ 40 chars so the status bar doesn't overflow.
+fn format_disconnect_message(device_name: &str, reason: &DisconnectReason) -> String {
+    match reason {
+        DisconnectReason::PeerClosed => format!("{} disconnected", device_name),
+        DisconnectReason::ReadError(e) | DisconnectReason::WriteError(e) => {
+            format!("{} connection lost: {}", device_name, truncate(e, 40))
+        }
+        DisconnectReason::WriterChannelClosed => format!("{} connection lost", device_name),
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{}…", head)
+    }
+}
 
 /// Spawn the device-discovery → per-connection task fanout.
 ///
@@ -163,12 +184,14 @@ async fn connection_task(
         // specific shell-out side effects symmetrically.
         let plan = match transport::resolve_transport_addr(&device, target_port) {
             Ok(plan) => plan,
-            Err(e) => {
-                // No variants today; future-proof.
+            Err(_e) => {
+                // No variants today; future-proof. Error is recoverable via
+                // the backoff retry below; no stderr leak (TUI alternate
+                // screen) — surface via status toast if this becomes a real
+                // failure mode.
                 tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
                 retry_delay_secs =
                     (retry_delay_secs * RECONNECT_BACKOFF_FACTOR).min(RECONNECT_MAX_DELAY_SECS);
-                eprintln!("transport resolve failed: {e}");
                 continue;
             }
         };
@@ -235,13 +258,19 @@ async fn connection_task(
                         let json = a.mock_rules.to_json_string();
                         handle.send_mock_sync(json);
                     }
-                    ConnectorEvent::Disconnected => {
-                        if let Some((ref serial, local_port)) = adb_forward_info {
-                            transport::adb::remove_forward(serial, local_port).await;
+                    ConnectorEvent::Disconnected { reason } => {
+                        // Take the adb forward so the outer fallback cleanup
+                        // (after the event loop exits) doesn't double-remove.
+                        if let Some((serial, local_port)) = adb_forward_info.take() {
+                            transport::adb::remove_forward(&serial, local_port).await;
                             adb_fwd.lock().await.remove(&task_key_c);
                         }
+                        // WS session ended. flog is a viewer; data lives in
+                        // the Dart app's FlogStore. Drop the local session
+                        // slot — a future reconnect is a fresh session that
+                        // Dart will auto-replay into.
                         a.remove_connected_app(&task_key_c);
-                        a.show_status(format!("Disconnected: {}", device.name));
+                        a.show_status(format_disconnect_message(&device.name, &reason));
                         break;
                     }
                     ConnectorEvent::Message(msg) => {
@@ -259,9 +288,10 @@ async fn connection_task(
             }
         }
 
-        // Clean up adb forward on failure
-        if let Some((ref serial, local_port)) = adb_forward_info {
-            transport::adb::remove_forward(serial, local_port).await;
+        // Clean up adb forward on failure (no-op if the Disconnected arm
+        // above already consumed it via .take()).
+        if let Some((serial, local_port)) = adb_forward_info.take() {
+            transport::adb::remove_forward(&serial, local_port).await;
             adb_fwd.lock().await.remove(&task_key_c);
         }
 
@@ -269,11 +299,11 @@ async fn connection_task(
         // TRANS-008.
         //
         // TRANS-011 (A-class ack): the retry loop is intentionally
-        // unlogged per-attempt — the reader/writer task exit-cause
-        // eprintln!s from TRANS-006 already tell the user the connection
-        // dropped, and spamming status bar toasts on every 2s–30s poll
-        // cycle would drown out real events. Observability upgrade
-        // (retry_count on ConnectedApp) is deferred to Phase 3.5.
+        // unlogged per-attempt. The Disconnected event already emits one
+        // status-bar toast via format_disconnect_message; a repeated toast
+        // on every 2s–30s backoff iteration would drown out real events.
+        // Observability upgrade (retry_count on ConnectedApp) deferred to
+        // Phase 3.5.
         tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
         retry_delay_secs =
             (retry_delay_secs * RECONNECT_BACKOFF_FACTOR).min(RECONNECT_MAX_DELAY_SECS);

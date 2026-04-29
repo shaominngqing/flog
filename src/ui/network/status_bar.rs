@@ -63,7 +63,7 @@ pub(super) fn draw_empty_network(f: &mut Frame, app: &mut App, area: Rect) {
 pub(super) fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
 
-    // Left side: toast OR normal info (with source_name for device switching)
+    // Left side: toast / OFFLINE chip / normal info
     let (left_spans, left_width, source_x) =
         if let Some(msg) = app.active_status().map(|s| s.to_string()) {
             let ok_text = " OK ";
@@ -83,6 +83,10 @@ pub(super) fn draw_network_status_bar(f: &mut Frame, app: &mut App, area: Rect) 
                 w as u16,
                 (0u16, 0u16),
             )
+        } else if app.active_app_id.is_none() {
+            // No app attached. Show OFFLINE chip; skip counts/source_name block.
+            let (spans, w) = crate::ui::offline_chip();
+            (spans, w, (0u16, 0u16))
         } else {
             // Count stats
             let total = app.network_store.len();

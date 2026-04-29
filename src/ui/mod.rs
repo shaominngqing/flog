@@ -44,6 +44,30 @@ pub const PINK: Color = Color::Rgb(245, 189, 230); // #f5bde6 — special
 pub const LAVENDER: Color = Color::Rgb(183, 189, 248); // #b7bdf8 — subtle hl
 
 // ══════════════════════════════════════
+//  Offline chip (shared by both status bars)
+// ══════════════════════════════════════
+
+/// Render the `OFFLINE` chip shown in the status bar when no app is
+/// attached. Returns (spans, width_cells) so callers can place it in
+/// their layout arithmetic without re-measuring.
+///
+/// This is the only "no active connection" chip flog emits. When an
+/// app is attached, both status bars fall through to their existing
+/// LIVE/`% progress`/`N new` rendering — untouched by this helper.
+pub(crate) fn offline_chip() -> (Vec<Span<'static>>, u16) {
+    use ratatui::style::Modifier;
+    let text = " OFFLINE ";
+    let span = Span::styled(
+        text,
+        Style::default()
+            .fg(SUBTEXT0)
+            .bg(SURFACE0)
+            .add_modifier(Modifier::BOLD),
+    );
+    (vec![span], text.width() as u16)
+}
+
+// ══════════════════════════════════════
 //  Shared Utility Functions
 // ══════════════════════════════════════
 

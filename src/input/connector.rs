@@ -16,11 +16,28 @@ pub struct ConnectorHandle {
     tx: mpsc::UnboundedSender<String>,
 }
 
+/// Reason a connection was torn down. Structured so status-bar messages
+/// can switch on concrete variants instead of parsing error strings.
+///
+/// Replaces the pre-existing `eprintln!` reports on reader/writer exit
+/// which leaked through `EnterAlternateScreen` and polluted the TUI.
+#[derive(Debug, Clone)]
+pub enum DisconnectReason {
+    /// Peer sent a WebSocket Close frame (normal shutdown — app closed).
+    PeerClosed,
+    /// Reader returned an error (e.g. connection reset).
+    ReadError(String),
+    /// Writer's `ws_sink.send` returned an error.
+    WriteError(String),
+    /// The `ConnectorHandle`'s cmd channel closed (all handles dropped).
+    WriterChannelClosed,
+}
+
 /// Events produced by the connector for the main event loop.
 #[derive(Debug)]
 pub enum ConnectorEvent {
     Connected(ClientInfo),
-    Disconnected,
+    Disconnected { reason: DisconnectReason },
     Message(ClientMessage),
 }
 
@@ -191,52 +208,86 @@ where
 
     let _ = event_tx.send(ConnectorEvent::Connected(client_info));
 
-    // Spawn writer task.
+    // Coordinate writer ↔ reader teardown. Whichever half dies first records
+    // the reason in `writer_reason` and signals via `writer_dead`; the reader
+    // always emits the final `Disconnected { reason }` event.
     //
-    // TRANS-006: the task is fire-and-forget by design — we only surface
-    // exit reasons via `eprintln!` so debugging session issues doesn't
-    // require attaching a debugger. TODO-phase3.5: if connection flakiness
-    // surfaces, promote these to `tracing` events and/or return a
-    // JoinHandle so the connector can proactively detect writer-only
-    // failures that the reader half hasn't noticed yet.
-    tokio::spawn(async move {
-        while let Some(json) = cmd_rx.recv().await {
-            if let Err(e) = ws_sink.send(Message::Text(json.into())).await {
-                eprintln!("connector writer task exiting: send failed: {e}");
-                break;
-            }
-        }
-        // Channel closed (ConnectorHandle + all clones dropped) or send
-        // errored out above. Either way, there's nothing more to write.
-    });
+    // Critical: previously if the writer died (cmd channel closed or send
+    // error), the reader could block indefinitely on `ws_read.next()`. This
+    // meant connection teardown was asymmetric depending on which half
+    // failed first. The notify_one + shared reason slot make teardown
+    // symmetric and bounded-time.
+    //
+    // std::sync::Mutex (not tokio::sync::Mutex) is deliberate: the critical
+    // section is just an Option<T> store (no await, no panicking ops), so
+    // tokio::Mutex would add hop-between-executor overhead for zero gain.
+    let writer_dead: std::sync::Arc<tokio::sync::Notify> =
+        std::sync::Arc::new(tokio::sync::Notify::new());
+    let writer_reason: std::sync::Arc<std::sync::Mutex<Option<DisconnectReason>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
 
-    // Spawn reader task.
-    //
-    // TRANS-006: same deal — log the exit cause before falling through to
-    // the `Disconnected` event, so stale-connection symptoms can be
-    // correlated with stderr output. TODO-phase3.5: JoinHandle monitoring
-    // if flakiness surfaces.
-    let event_tx_clone = event_tx.clone();
+    let writer_dead_w = std::sync::Arc::clone(&writer_dead);
+    let writer_reason_w = std::sync::Arc::clone(&writer_reason);
     tokio::spawn(async move {
-        while let Some(msg_result) = ws_read.next().await {
-            match msg_result {
-                Ok(Message::Text(text)) => {
-                    if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
-                        let _ = event_tx_clone.send(ConnectorEvent::Message(client_msg));
+        let reason = loop {
+            match cmd_rx.recv().await {
+                Some(json) => {
+                    if let Err(e) = ws_sink.send(Message::Text(json.into())).await {
+                        break DisconnectReason::WriteError(e.to_string());
                     }
                 }
-                Ok(Message::Close(_)) => {
-                    eprintln!("connector reader task exiting: peer sent Close");
-                    break;
-                }
-                Err(e) => {
-                    eprintln!("connector reader task exiting: read error: {e}");
-                    break;
-                }
-                _ => {}
+                None => break DisconnectReason::WriterChannelClosed,
             }
-        }
-        let _ = event_tx_clone.send(ConnectorEvent::Disconnected);
+        };
+        *writer_reason_w.lock().unwrap() = Some(reason);
+        // Best-effort: drop sink so the reader's next poll may yield
+        // None/Err. The notify_one() below is the guaranteed wakeup path —
+        // the sink drop is a shortcut, not a contract.
+        drop(ws_sink);
+        // notify_one (not notify_waiters) because it stores a permit that
+        // persists across the reader loop's iterations; notify_waiters
+        // would race with the reader's select! re-registration.
+        writer_dead_w.notify_one();
+    });
+
+    // Reader task.
+    let event_tx_clone = event_tx.clone();
+    let writer_reason_r = std::sync::Arc::clone(&writer_reason);
+    let writer_dead_r = std::sync::Arc::clone(&writer_dead);
+    tokio::spawn(async move {
+        let final_reason = loop {
+            tokio::select! {
+                msg = ws_read.next() => {
+                    match msg {
+                        Some(Ok(Message::Text(text))) => {
+                            if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
+                                let _ = event_tx_clone.send(ConnectorEvent::Message(client_msg));
+                            }
+                        }
+                        Some(Ok(Message::Close(_))) => break DisconnectReason::PeerClosed,
+                        Some(Err(e)) => break DisconnectReason::ReadError(e.to_string()),
+                        Some(Ok(_)) => {}
+                        None => {
+                            break writer_reason_r
+                                .lock()
+                                .unwrap()
+                                .clone()
+                                .unwrap_or(DisconnectReason::PeerClosed);
+                        }
+                    }
+                }
+                _ = writer_dead_r.notified() => {
+                    break writer_reason_r
+                        .lock()
+                        .unwrap()
+                        .clone()
+                        .unwrap_or(DisconnectReason::WriterChannelClosed);
+                }
+            }
+        };
+        let _ = event_tx_clone.send(ConnectorEvent::Disconnected {
+            reason: final_reason,
+        });
     });
 
     Ok((event_rx, ConnectorHandle { tx: cmd_tx }))
@@ -286,5 +337,79 @@ mod tests {
         let json = rx.try_recv().expect("message delivered");
         assert!(json.contains(r#""type":"replay""#));
         assert!(json.contains(r#""method":"GET""#));
+    }
+
+    // Disconnect reason coverage. These run a real loopback WS server to
+    // exercise the actual setup_connection teardown paths — not mocks.
+    use futures_util::SinkExt;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn disconnect_reason_peer_close_carried() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let hello = r#"{"type":"hello","app":"x","os":"t"}"#;
+            ws.send(Message::Text(hello.into())).await.unwrap();
+            ws.close(None).await.unwrap();
+        });
+
+        let url = format!("ws://{}", addr);
+        let (mut rx, _handle) = connect(&url).await.unwrap();
+
+        let mut saw_connected = false;
+        let mut got_disconnect: Option<DisconnectReason> = None;
+        while let Some(evt) = rx.recv().await {
+            match evt {
+                ConnectorEvent::Connected(_) => saw_connected = true,
+                ConnectorEvent::Disconnected { reason } => {
+                    got_disconnect = Some(reason);
+                    break;
+                }
+                ConnectorEvent::Message(_) => {}
+            }
+        }
+        assert!(saw_connected);
+        assert!(matches!(got_disconnect, Some(DisconnectReason::PeerClosed)));
+    }
+
+    #[tokio::test]
+    async fn writer_drop_triggers_reader_disconnect() {
+        // Handle dropped → writer's cmd_rx.recv returns None → writer exits
+        // with WriterChannelClosed → notify_one → reader unblocks and emits
+        // Disconnected. Proves teardown is bounded-time regardless of which
+        // half dies first.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let hello = r#"{"type":"hello","app":"x","os":"t"}"#;
+            ws.send(Message::Text(hello.into())).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        });
+
+        let url = format!("ws://{}", addr);
+        let (mut rx, handle) = connect(&url).await.unwrap();
+        let _ = rx.recv().await; // consume Connected
+        drop(handle);
+
+        let disc = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("reader should disconnect within 2s after handle drop");
+        assert!(
+            matches!(
+                disc,
+                Some(ConnectorEvent::Disconnected {
+                    reason: DisconnectReason::WriterChannelClosed
+                })
+            ),
+            "expected WriterChannelClosed on handle drop, got {:?}",
+            disc
+        );
     }
 }

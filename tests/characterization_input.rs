@@ -156,7 +156,7 @@ async fn conn_205_handles_server_disconnect_after_hello() {
 
         // Second event: Disconnected once the reader loop observes Close.
         match event_rx.recv().await.expect("disconnected") {
-            ConnectorEvent::Disconnected => {}
+            ConnectorEvent::Disconnected { .. } => {}
             other => panic!("expected Disconnected, got {:?}", other),
         }
     })
@@ -450,7 +450,7 @@ async fn conn_212_writer_task_exits_when_peer_disconnects() {
         // down on both sides.
         loop {
             match event_rx.recv().await {
-                Some(ConnectorEvent::Disconnected) => break,
+                Some(ConnectorEvent::Disconnected { .. }) => break,
                 Some(_) => continue,
                 None => break,
             }

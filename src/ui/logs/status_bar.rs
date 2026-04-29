@@ -45,7 +45,7 @@ pub(super) fn draw_column_header(f: &mut Frame, area: Rect) {
 pub(super) fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let bg = MANTLE;
 
-    // Left group: toast OR (LIVE pill + counts + app/device/port context)
+    // Left group: toast / OFFLINE chip / (LIVE pill + counts + app context)
     let (left_spans, left_width, source_x) =
         if let Some(msg) = app.active_status().map(|s| s.to_string()) {
             let ok_text = " OK ";
@@ -65,6 +65,10 @@ pub(super) fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 w as u16,
                 (0u16, 0u16),
             )
+        } else if app.active_app_id.is_none() {
+            // No app attached. Show OFFLINE chip; no counts/context to draw.
+            let (spans, w) = crate::ui::offline_chip();
+            (spans, w, (0u16, 0u16))
         } else {
             let (live_text, live_style) = if app.logs.auto_scroll {
                 let dot = match (app.tick / 8) % 4 {
