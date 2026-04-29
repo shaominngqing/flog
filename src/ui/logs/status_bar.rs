@@ -66,9 +66,17 @@ pub(super) fn draw_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
                 (0u16, 0u16),
             )
         } else if app.active_app_id.is_none() {
-            // No app attached. Show OFFLINE chip; no counts/context to draw.
-            let (spans, w) = crate::ui::offline_chip();
-            (spans, w, (0u16, 0u16))
+            // No app attached. Show OFFLINE chip + discovered-devices hint.
+            // The entire region (chip + hint) routes to the device picker
+            // via StatusBar click — in the OFFLINE state there's no log
+            // list to "jump to bottom", so we deliberately own x=0 too.
+            let (chip_spans, chip_w) = crate::ui::offline_chip();
+            let (hint_spans, hint_w) =
+                crate::ui::offline_devices_hint(app.discovered_devices.len(), bg);
+            let mut spans: Vec<Span> = chip_spans;
+            spans.extend(hint_spans);
+            let total_w = chip_w + hint_w;
+            (spans, total_w, (0u16, total_w))
         } else {
             let (live_text, live_style) = if app.logs.auto_scroll {
                 let dot = match (app.tick / 8) % 4 {

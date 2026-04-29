@@ -782,6 +782,65 @@ fn ui_010_status_bar_shows_live_pill_when_auto_scroll() {
 }
 
 #[test]
+fn ui_010_status_bar_shows_offline_chip_when_no_active_app() {
+    let mut app = App::default();
+    // No connected apps, no active_app_id.
+    let buf = render_logs(&mut app, 120, 30);
+    let text = full_text(&buf);
+    assert!(
+        text.contains("OFFLINE"),
+        "expected OFFLINE chip, got:\n{text}"
+    );
+    assert!(
+        !text.contains(" LIVE "),
+        "LIVE must not appear when no app attached:\n{text}"
+    );
+}
+
+#[test]
+fn ui_010_status_bar_offline_hint_reflects_discovered_devices() {
+    use flog::transport::device_monitor::{Device, DeviceKind};
+    let mut app = App::default();
+    // No apps, but two devices discovered (e.g. adb sees phones but flog_dart
+    // isn't running on either yet).
+    app.discovered_devices.insert(
+        "dev1".into(),
+        Device {
+            id: "dev1".into(),
+            name: "Pixel 8".into(),
+            kind: DeviceKind::Android,
+        },
+    );
+    app.discovered_devices.insert(
+        "dev2".into(),
+        Device {
+            id: "dev2".into(),
+            name: "iPhone".into(),
+            kind: DeviceKind::Local,
+        },
+    );
+    let buf = render_logs(&mut app, 120, 30);
+    let text = full_text(&buf);
+    assert!(text.contains("OFFLINE"));
+    assert!(
+        text.contains("2 devices"),
+        "expected '2 devices' hint, got:\n{text}"
+    );
+}
+
+#[test]
+fn ui_010_status_bar_offline_hint_reflects_no_devices() {
+    let mut app = App::default();
+    let buf = render_logs(&mut app, 120, 30);
+    let text = full_text(&buf);
+    assert!(text.contains("OFFLINE"));
+    assert!(
+        text.contains("No devices"),
+        "expected 'No devices' hint, got:\n{text}"
+    );
+}
+
+#[test]
 fn ui_010_status_bar_shows_new_pill_when_paused_with_new_logs() {
     let mut app = app_connected();
     seed_logs(&mut app, vec![fixtures::info("T", "orig")]);

@@ -67,6 +67,27 @@ pub(crate) fn offline_chip() -> (Vec<Span<'static>>, u16) {
     (vec![span], text.width() as u16)
 }
 
+/// Render the "⇅ <discovered devices>" hint shown next to the OFFLINE
+/// chip. Caller places it adjacent to the chip and marks the whole left
+/// block (chip + hint) as a single click zone routing to the device
+/// picker — callers don't need per-region x-ranges from this helper.
+///
+/// Text convention (matches existing `1 device` / `N devices` /
+/// `No devices found` casings in the codebase):
+/// - `0` → ` ⇅ No devices `
+/// - `1` → ` ⇅ 1 device `
+/// - `N` → ` ⇅ N devices `
+pub(crate) fn offline_devices_hint(device_count: usize, bg: Color) -> (Vec<Span<'static>>, u16) {
+    let label = match device_count {
+        0 => " ⇅ No devices ".to_string(),
+        1 => " ⇅ 1 device ".to_string(),
+        n => format!(" ⇅ {} devices ", n),
+    };
+    let w = label.width() as u16;
+    let span = Span::styled(label, Style::default().fg(SUBTEXT0).bg(bg));
+    (vec![span], w)
+}
+
 // ══════════════════════════════════════
 //  Shared Utility Functions
 // ══════════════════════════════════════
