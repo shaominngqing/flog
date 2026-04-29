@@ -48,17 +48,18 @@ pub(crate) fn split_stacktrace(body: &str) -> (String, Option<String>) {
     }
 }
 
-/// Convert epoch milliseconds to HH:MM:SS.mmm.
+/// Convert epoch milliseconds to local-time `HH:MM:SS.mmm`.
+///
+/// flog_dart sends `DateTime.now().millisecondsSinceEpoch` which is UTC-based.
+/// Display in the user's local timezone so on-screen timestamps match wall
+/// clock (fix for earlier UTC-only formatting that showed logs 8 hours off
+/// on CST/JST machines).
 pub(crate) fn format_ts(ms: u64) -> String {
-    let secs = ms / 1000;
-    let millis = ms % 1000;
-    format!(
-        "{:02}:{:02}:{:02}.{:03}",
-        (secs % 86400) / 3600,
-        (secs % 3600) / 60,
-        secs % 60,
-        millis
-    )
+    use chrono::{Local, TimeZone};
+    match Local.timestamp_millis_opt(ms as i64).single() {
+        Some(dt) => dt.format("%H:%M:%S%.3f").to_string(),
+        None => String::new(),
+    }
 }
 
 /// Dispatch a client message to the app.

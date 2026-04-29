@@ -43,20 +43,15 @@ static PIPE_RE: LazyLock<Regex> = LazyLock::new(|| {
 static PIPE_TS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\d{10,13})\s*\|\s*(\w+)\s*\|\s*(\S.*?)\s*\|\s?(.*)$").unwrap());
 
-/// Convert epoch milliseconds to HH:MM:SS.mmm format.
+/// Convert epoch milliseconds (UTC) to local-time `HH:MM:SS.mmm`.
 fn epoch_ms_to_timestamp(ms_str: &str) -> String {
-    if let Ok(ms) = ms_str.parse::<u64>() {
-        let secs = ms / 1000;
-        let millis = ms % 1000;
-        format!(
-            "{:02}:{:02}:{:02}.{:03}",
-            (secs / 3600) % 24,
-            (secs / 60) % 60,
-            secs % 60,
-            millis
-        )
-    } else {
-        String::new()
+    use chrono::{Local, TimeZone};
+    match ms_str.parse::<i64>() {
+        Ok(ms) => match Local.timestamp_millis_opt(ms).single() {
+            Some(dt) => dt.format("%H:%M:%S%.3f").to_string(),
+            None => String::new(),
+        },
+        Err(_) => String::new(),
     }
 }
 
@@ -398,10 +393,14 @@ mod tests {
     }
 
     #[test]
-    fn epoch_conversion_zero_produces_midnight() {
-        // Direct unit test of the pure helper.
+    fn epoch_conversion_zero_formats_as_hhmmss() {
+        // Direct unit test of the pure helper. Epoch 0 renders in local
+        // timezone — we just check format (HH:MM:SS.mmm) since the exact
+        // hour depends on the host's timezone.
         let t = epoch_ms_to_timestamp("0");
-        assert_eq!(t, "00:00:00.000");
+        assert_eq!(t.len(), "00:00:00.000".len());
+        assert!(t.contains(':'));
+        assert!(t.ends_with(".000"));
     }
 
     #[test]
@@ -412,11 +411,19 @@ mod tests {
     }
 
     #[test]
-    fn epoch_conversion_ms_rolls_over_24h() {
-        // 25 hours in ms — hour field wraps mod 24.
-        let ms = 25u64 * 3600 * 1000;
+    fn epoch_conversion_roundtrip_matches_chrono_local() {
+        // A specific ms value should render identically to what
+        // chrono::Local does on the same host — pinning timezone fidelity.
+        use chrono::{Local, TimeZone};
+        let ms: i64 = 1_714_000_000_000; // 2024-04-25 UTC, some local hour
+        let expected = Local
+            .timestamp_millis_opt(ms)
+            .single()
+            .unwrap()
+            .format("%H:%M:%S%.3f")
+            .to_string();
         let t = epoch_ms_to_timestamp(&ms.to_string());
-        assert!(t.starts_with("01:00:00"));
+        assert_eq!(t, expected);
     }
 
     #[test]
