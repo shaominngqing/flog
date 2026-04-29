@@ -823,8 +823,8 @@ fn ui_010_status_bar_offline_hint_reflects_discovered_devices() {
     let text = full_text(&buf);
     assert!(text.contains("OFFLINE"));
     assert!(
-        text.contains("2 devices"),
-        "expected '2 devices' hint, got:\n{text}"
+        text.contains("2 Devices"),
+        "expected '2 Devices' hint, got:\n{text}"
     );
 }
 
@@ -835,8 +835,8 @@ fn ui_010_status_bar_offline_hint_reflects_no_devices() {
     let text = full_text(&buf);
     assert!(text.contains("OFFLINE"));
     assert!(
-        text.contains("No devices"),
-        "expected 'No devices' hint, got:\n{text}"
+        text.contains("No Devices"),
+        "expected 'No Devices' hint, got:\n{text}"
     );
 }
 

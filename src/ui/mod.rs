@@ -67,24 +67,33 @@ pub(crate) fn offline_chip() -> (Vec<Span<'static>>, u16) {
     (vec![span], text.width() as u16)
 }
 
-/// Render the "⇅ <discovered devices>" hint shown next to the OFFLINE
+/// Render the "⇅ <discovered Devices>" hint shown next to the OFFLINE
 /// chip. Caller places it adjacent to the chip and marks the whole left
 /// block (chip + hint) as a single click zone routing to the device
 /// picker — callers don't need per-region x-ranges from this helper.
 ///
-/// Text convention (matches existing `1 device` / `N devices` /
-/// `No devices found` casings in the codebase):
-/// - `0` → ` ⇅ No devices `
-/// - `1` → ` ⇅ 1 device `
-/// - `N` → ` ⇅ N devices `
+/// Underlined to signal clickability, matching the connected-state
+/// `⇅ <source_name>` affordance.
+///
+/// Text:
+/// - `0` → ` ⇅ No Devices `
+/// - `1` → ` ⇅ 1 Device `
+/// - `N` → ` ⇅ N Devices `
 pub(crate) fn offline_devices_hint(device_count: usize, bg: Color) -> (Vec<Span<'static>>, u16) {
+    use ratatui::style::Modifier;
     let label = match device_count {
-        0 => " ⇅ No devices ".to_string(),
-        1 => " ⇅ 1 device ".to_string(),
-        n => format!(" ⇅ {} devices ", n),
+        0 => " ⇅ No Devices ".to_string(),
+        1 => " ⇅ 1 Device ".to_string(),
+        n => format!(" ⇅ {} Devices ", n),
     };
     let w = label.width() as u16;
-    let span = Span::styled(label, Style::default().fg(SUBTEXT0).bg(bg));
+    let span = Span::styled(
+        label,
+        Style::default()
+            .fg(SUBTEXT0)
+            .bg(bg)
+            .add_modifier(Modifier::UNDERLINED),
+    );
     (vec![span], w)
 }
 
