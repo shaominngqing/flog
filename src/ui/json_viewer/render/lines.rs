@@ -17,7 +17,7 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::ui::{sanitize_for_cell, BLUE, LAVENDER, OVERLAY0};
 
@@ -273,7 +273,7 @@ fn render_string_with_url(
         let mut used = 0usize;
         let mut cut = 0usize;
         for (i, ch) in src.char_indices() {
-            let cw = ch.to_string().as_str().width();
+            let cw = UnicodeWidthChar::width(ch).unwrap_or(1);
             if used + cw > avail {
                 break;
             }
@@ -357,13 +357,14 @@ fn render_string_with_url(
 
     // If the value was truncated and there are non-URL columns in the string
     // span, also register ExpandFullValue for those columns.
-    // "Truncated" = total displayed content < total original content.
+    // "Truncated" = total displayed content < total original content, covering
+    // all three cases: before truncated, url truncated, or after truncated.
     let total_original_w = before_w + url_w + after_w;
     // +2 for the surrounding quotes
-    let _is_truncated =
+    let is_truncated =
         url_display_truncated || (total_original_w + 2 > max_width && max_width >= 3);
 
-    if url_display_truncated || displayed_after.contains('…') {
+    if is_truncated {
         // URL or after segment was truncated but there's remaining content.
         // ExpandFullValue region = the non-URL columns of the string span.
         let str_start = x_offset as u16;
@@ -408,7 +409,7 @@ fn render_plain_string(
         let mut w = 0usize;
         let mut cut = 0usize;
         for (i, ch) in s_safe.char_indices() {
-            let cw = ch.to_string().as_str().width();
+            let cw = UnicodeWidthChar::width(ch).unwrap_or(1);
             if w + cw > budget {
                 break;
             }

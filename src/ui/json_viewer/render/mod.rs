@@ -551,6 +551,31 @@ mod tests {
         );
     }
 
+    /// Regression for C-1: when the `before` segment is truncated (the URL
+    /// comes after a long prefix that overflows), `ExpandFullValue` must still
+    /// be registered. The old buggy guard `url_display_truncated ||
+    /// displayed_after.contains('…')` missed this case because `after` is
+    /// empty when `before` itself exhausts the budget.
+    #[test]
+    fn url_with_long_before_prefix_registers_expand() {
+        // "aaaa...aaaa https://x.com" — `before` fills the budget, so the
+        // entire string is truncated even though `after` is empty.
+        let before = "a".repeat(40);
+        let json = format!("\"{}https://x.com\"", before);
+        let (_lines, cmap) = render_with_map(&json, 20); // narrow: 2 marker + budget 18
+        let has_expand = cmap[0].iter().any(|r| {
+            matches!(
+                &r.action,
+                super::super::action::JsonAction::ExpandFullValue(_)
+            )
+        });
+        assert!(
+            has_expand,
+            "string truncated via `before` segment should register ExpandFullValue: {:?}",
+            cmap[0]
+        );
+    }
+
     #[test]
     fn array_of_objects_alignment() {
         // Screenshot scenario: array with each element an object.
