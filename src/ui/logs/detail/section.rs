@@ -30,13 +30,13 @@ pub enum Section<'a> {
     },
 }
 
-/// Output slot for a renderer: a visual line plus an optional click target.
+/// Output slot for a renderer: a visual line plus zero or more interactive hot regions.
 ///
-/// `click_target` is `Some(node_id)` for foldable JSON rows; `None` for any
-/// inert row (prose, heading, stack frame).
+/// `hot_regions` carries zero or more interactive regions for this row
+/// (fold toggle, copy, URL, expand). Empty for non-interactive rows.
 pub struct RenderRow {
     pub line: Line<'static>,
-    pub click_target: Option<u32>,
+    pub hot_regions: Vec<crate::ui::json_viewer::JsonHotRegion>,
 }
 
 /// Renderers take `&mut DetailState` so stateful renderers (JSON fold,

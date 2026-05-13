@@ -15,9 +15,9 @@ use ratatui::text::Line;
 use super::state::JsonViewerState;
 use super::tree::Tree;
 
-/// Render `tree` into `out`, pushing one `Option<(section_key, node_id)>`
+/// Render `tree` into `out`, pushing one `Vec<JsonHotRegion>`
 /// into `click_map` for each line added. Clickable rows (foldable containers)
-/// get `Some(...)`; leaves and close-brace lines get `None`.
+/// get a single-element vec; leaves and close-brace lines get an empty vec.
 ///
 /// `outer_prefix` is whitespace the caller wants prepended (e.g. `"   "` for
 /// three-space section indent). `max_width` is the total budget INCLUDING
@@ -25,7 +25,7 @@ use super::tree::Tree;
 /// Strings are truncated with `…` when the rendered line would exceed it.
 pub fn append_render(
     out: &mut Vec<Line<'static>>,
-    click_map: &mut Vec<Option<(String, u32)>>,
+    click_map: &mut Vec<Vec<super::action::JsonHotRegion>>,
     tree: &Tree,
     state: &JsonViewerState,
     section_key: &str,
@@ -157,7 +157,8 @@ mod tests {
         let mut cmap = Vec::new();
         append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
         // Empty object: one line, no click target
-        assert_eq!(cmap, vec![None]);
+        assert_eq!(cmap.len(), 1);
+        assert!(cmap[0].is_empty());
         let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(rendered.contains("{}"));
     }
@@ -172,7 +173,8 @@ mod tests {
         let mut cmap = Vec::new();
         append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
         assert_eq!(cmap.len(), 1);
-        assert_eq!(cmap[0], Some(("sec".into(), 0)));
+        assert_eq!(cmap[0].len(), 1);
+        assert!(matches!(cmap[0][0].action, crate::ui::json_viewer::JsonAction::ToggleFold(0)));
     }
 
     #[test]
@@ -277,11 +279,12 @@ mod tests {
         assert!(texts[2].contains("\"b\""));
         assert!(texts[2].contains("hi"));
         assert!(texts[3].trim_end() == "  }");
-        // Click map: opener clickable, children None, closer None
-        assert_eq!(cmap[0], Some(("sec".into(), 0)));
-        assert_eq!(cmap[1], None);
-        assert_eq!(cmap[2], None);
-        assert_eq!(cmap[3], None);
+        // Click map: opener clickable, children empty, closer empty
+        assert_eq!(cmap[0].len(), 1);
+        assert!(matches!(cmap[0][0].action, crate::ui::json_viewer::JsonAction::ToggleFold(0)));
+        assert!(cmap[1].is_empty());
+        assert!(cmap[2].is_empty());
+        assert!(cmap[3].is_empty());
     }
 
     #[test]

@@ -11,7 +11,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::ui::OVERLAY0;
+use crate::ui::{sanitize_for_cell, OVERLAY0};
 
 use super::super::palette::{
     brace_color, key_color, BOOL_COLOR, COMMA_COLOR, FOLD_COLOR, NULL_COLOR, NUM_COLOR, STR_COLOR,
@@ -86,8 +86,9 @@ fn preview_child(tree: &Tree, cid: u32) -> Vec<Span<'static>> {
     let child = tree.node(cid);
     let mut spans: Vec<Span<'static>> = Vec::new();
     if let Some(ref k) = child.key {
+        // UI-046: sanitize user-provided JSON keys.
         spans.push(Span::styled(
-            format!("\"{}\"", k),
+            format!("\"{}\"", sanitize_for_cell(k)),
             Style::default().fg(key_color(child.depth as usize)),
         ));
         spans.push(Span::styled(": ", Style::default().fg(COMMA_COLOR)));
@@ -105,11 +106,13 @@ fn preview_child(tree: &Tree, cid: u32) -> Vec<Span<'static>> {
         )),
         NodeKind::Number(s) => spans.push(Span::styled(s.clone(), Style::default().fg(NUM_COLOR))),
         NodeKind::String(s) => {
+            // UI-046: sanitize user-provided JSON string values.
+            let s = sanitize_for_cell(s);
             // In previews, clip long strings by column width (CJK-aware).
             // Budget = 20 display columns, matching "short summary" intent
             // without letting wide-character strings hog the line.
             const PREVIEW_BUDGET: usize = 20;
-            let full_w = s.as_str().width();
+            let full_w = s.as_ref().width();
             let text = if full_w <= PREVIEW_BUDGET {
                 format!("\"{}\"", s)
             } else {

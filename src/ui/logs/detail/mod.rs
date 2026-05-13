@@ -156,7 +156,7 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .skip(scroll)
         .take(body_height)
-        .map(|r| r.click_target)
+        .map(|r| r.hot_regions.clone())
         .collect();
 
     let visible: Vec<Line<'static>> = body_rows

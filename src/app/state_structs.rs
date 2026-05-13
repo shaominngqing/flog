@@ -89,8 +89,8 @@ pub struct DetailState {
     /// Cached JSON tree for the currently shown entry. `None` until the
     /// renderer parses the first body.
     pub viewer_tree: Option<crate::ui::json_viewer::Tree>,
-    /// Maps body-content row index -> node_id for click-to-fold. Set by renderer.
-    pub viewer_click_map: Vec<Option<u32>>,
+    /// Maps body-content row index -> hot regions for click dispatch. Set by renderer.
+    pub viewer_click_map: Vec<Vec<crate::ui::json_viewer::JsonHotRegion>>,
     /// Fingerprint of the JSON text the viewer_state was built against. Used by
     /// the renderer to detect "selected entry changed" for any code path — not
     /// just the keyboard/mouse handlers that explicitly call

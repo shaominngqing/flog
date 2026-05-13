@@ -25,7 +25,7 @@ const MAUVE: Color = Color::Rgb(198, 160, 246);
 fn row(line: Line<'static>) -> RenderRow {
     RenderRow {
         line,
-        click_target: None,
+        hot_regions: Vec::new(),
     }
 }
 
@@ -253,7 +253,7 @@ impl SectionRenderer for JsonRenderer {
             state.viewer_state = json_viewer::init_state(&tree, 1);
         }
         let mut lines: Vec<Line<'static>> = Vec::new();
-        let mut click_map: Vec<Option<(String, u32)>> = Vec::new();
+        let mut click_map: Vec<Vec<json_viewer::JsonHotRegion>> = Vec::new();
         json_viewer::append_render(
             &mut lines,
             &mut click_map,
@@ -268,9 +268,9 @@ impl SectionRenderer for JsonRenderer {
         lines
             .into_iter()
             .zip(click_map)
-            .map(|(line, slot)| RenderRow {
+            .map(|(line, regions)| RenderRow {
                 line,
-                click_target: slot.map(|(_, id)| id),
+                hot_regions: regions,
             })
             .collect()
     }

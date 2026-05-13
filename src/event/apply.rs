@@ -64,11 +64,25 @@ pub(crate) fn apply_click_region(
         ClickRegion::LogsJumpToBottom => app.go_bottom(),
 
         // ── Logs detail panel ──────────────────────────────────────────
-        ClickRegion::LogsDetailPanel { line_idx, .. } => {
+        ClickRegion::LogsDetailPanel { line_idx, x } => {
             // JSON fold toggle in detail viewer. line_idx is the content
             // row (header already subtracted by detect).
-            if let Some(Some(node_id)) = app.detail.viewer_click_map.get(line_idx).copied() {
-                app.toggle_detail_fold(node_id);
+            if let Some(regions) = app.detail.viewer_click_map.get(line_idx) {
+                for region in regions {
+                    if region.range.contains(&x) {
+                        if let crate::ui::json_viewer::JsonAction::ToggleFold(node_id) = region.action {
+                            app.toggle_detail_fold(node_id);
+                        }
+                        return;
+                    }
+                }
+                // whitespace fallback: first ToggleFold
+                for region in regions {
+                    if let crate::ui::json_viewer::JsonAction::ToggleFold(node_id) = region.action {
+                        app.toggle_detail_fold(node_id);
+                        return;
+                    }
+                }
             }
         }
         ClickRegion::LogsDetailClose => {

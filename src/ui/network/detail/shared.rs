@@ -15,7 +15,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::ui::json_viewer::{self, JsonViewerState};
 
-use super::super::super::{wrap_text, SAPPHIRE, SUBTEXT0};
+use super::super::super::{sanitize_for_cell, wrap_text, SAPPHIRE, SUBTEXT0};
 use super::{KEY_COLOR, STR_COLOR};
 
 // ══════════════════════════════════════
@@ -45,9 +45,13 @@ pub(super) fn push_kv_single(
     key: &str,
     value: &str,
 ) {
+    // UI-046: key/value both come from user data (query params, URL
+    // pieces, general metadata) — sanitize before they reach a Span.
+    let key = sanitize_for_cell(key);
+    let value = sanitize_for_cell(value);
     lines.push(Line::from(vec![
         Span::styled(format!("   {}: ", key), Style::default().fg(KEY_COLOR)),
-        Span::styled(value.to_string(), Style::default().fg(STR_COLOR)),
+        Span::styled(value.into_owned(), Style::default().fg(STR_COLOR)),
     ]));
     section_map.push(None);
     json_click_map.push(None);
@@ -61,6 +65,9 @@ pub(super) fn push_kv_wrapped(
     value: &str,
     max_w: usize,
 ) {
+    // UI-046: user-data in, sanitize before width math / Span body.
+    let key = sanitize_for_cell(key);
+    let value = sanitize_for_cell(value);
     let prefix = format!("   {}: ", key);
     let first_line_w = max_w.saturating_sub(prefix.len());
     let cont_indent = "   ";
@@ -69,12 +76,12 @@ pub(super) fn push_kv_wrapped(
     if value.width() <= first_line_w {
         lines.push(Line::from(vec![
             Span::styled(prefix, Style::default().fg(KEY_COLOR)),
-            Span::styled(value.to_string(), Style::default().fg(STR_COLOR)),
+            Span::styled(value.into_owned(), Style::default().fg(STR_COLOR)),
         ]));
         section_map.push(None);
         json_click_map.push(None);
     } else {
-        let wrapped = wrap_text(value, first_line_w, 20);
+        let wrapped = wrap_text(&value, first_line_w, 20);
         if let Some(first) = wrapped.first() {
             lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(KEY_COLOR)),
@@ -147,15 +154,29 @@ pub(super) fn render_json_section_with_depth(
                 .entry(section_key.to_string())
                 .or_insert_with(|| json_viewer::init_state(&tree, expand_depth));
             let base = lines.len();
+            // append_render now produces Vec<Vec<JsonHotRegion>>. Translate back
+            // to the network-section fold-map format (Option<(section_key, node_id)>)
+            // so callers of this function don't need to change.
+            let mut new_click_map: Vec<Vec<crate::ui::json_viewer::JsonHotRegion>> = Vec::new();
             json_viewer::append_render(
                 lines,
-                json_click_map,
+                &mut new_click_map,
                 &tree,
                 state,
                 section_key,
                 "   ",
                 max_w.saturating_sub(3),
             );
+            for regions in new_click_map {
+                let slot = regions.into_iter().find_map(|r| {
+                    if let crate::ui::json_viewer::JsonAction::ToggleFold(id) = r.action {
+                        Some((section_key.to_string(), id))
+                    } else {
+                        None
+                    }
+                });
+                json_click_map.push(slot);
+            }
             for _ in base..lines.len() {
                 section_map.push(None);
             }

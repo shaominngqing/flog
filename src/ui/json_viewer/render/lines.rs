@@ -12,8 +12,9 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::ui::BLUE;
+use crate::ui::{sanitize_for_cell, BLUE};
 
+use super::super::action::{JsonAction, JsonHotRegion};
 use super::super::palette::{
     brace_color, key_color, BOOL_COLOR, COMMA_COLOR, FOLD_COLOR, NULL_COLOR, NUM_COLOR, STR_COLOR,
 };
@@ -26,7 +27,7 @@ use super::summaries::summarize_container;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_node(
     out: &mut Vec<Line<'static>>,
-    click_map: &mut Vec<Option<(String, u32)>>,
+    click_map: &mut Vec<Vec<JsonHotRegion>>,
     tree: &Tree,
     state: &JsonViewerState,
     section_key: &str,
@@ -91,7 +92,7 @@ pub(super) fn render_node(
 #[allow(clippy::too_many_arguments)]
 fn push_leaf_line(
     out: &mut Vec<Line<'static>>,
-    click_map: &mut Vec<Option<(String, u32)>>,
+    click_map: &mut Vec<Vec<JsonHotRegion>>,
     tree: &Tree,
     _section_key: &str,
     outer_prefix: &str,
@@ -109,8 +110,9 @@ fn push_leaf_line(
 
     // Key part (for object entries)
     if let Some(ref key) = node.key {
+        // UI-046: JSON object keys come from user data too.
         spans.push(Span::styled(
-            format!("\"{}\"", key),
+            format!("\"{}\"", sanitize_for_cell(key)),
             Style::default().fg(key_color(depth as usize)),
         ));
         spans.push(Span::styled(": ", Style::default().fg(COMMA_COLOR)));
@@ -129,7 +131,7 @@ fn push_leaf_line(
     }
 
     out.push(Line::from(spans));
-    click_map.push(None);
+    click_map.push(Vec::new());
 }
 
 fn render_leaf_value(kind: &NodeKind, max_width: usize) -> Vec<Span<'static>> {
@@ -146,14 +148,19 @@ fn render_leaf_value(kind: &NodeKind, max_width: usize) -> Vec<Span<'static>> {
         )],
         NodeKind::Number(s) => vec![Span::styled(s.clone(), Style::default().fg(NUM_COLOR))],
         NodeKind::String(s) => {
-            let quoted = format!("\"{}\"", s);
+            // UI-046: JSON string values come from arbitrary user data
+            // (WS frames, HTTP bodies). Sanitize before measuring and
+            // truncating so the grapheme scan sees the same bytes that
+            // will later land in the Span.
+            let s_safe = sanitize_for_cell(s);
+            let quoted = format!("\"{}\"", s_safe);
             let text = if quoted.width() > max_width && max_width >= 3 {
                 // Output format is `"<content>…"` — three fixed cells
                 // (open quote, ellipsis, close quote).
                 let budget = max_width.saturating_sub(3);
                 let mut w = 0usize;
                 let mut cut = 0usize;
-                for (i, ch) in s.char_indices() {
+                for (i, ch) in s_safe.char_indices() {
                     let cw = ch.to_string().as_str().width();
                     if w + cw > budget {
                         break;
@@ -161,7 +168,7 @@ fn render_leaf_value(kind: &NodeKind, max_width: usize) -> Vec<Span<'static>> {
                     w += cw;
                     cut = i + ch.len_utf8();
                 }
-                format!("\"{}…\"", &s[..cut])
+                format!("\"{}…\"", &s_safe[..cut])
             } else {
                 quoted
             };
@@ -177,9 +184,9 @@ fn render_leaf_value(kind: &NodeKind, max_width: usize) -> Vec<Span<'static>> {
 #[allow(clippy::too_many_arguments)]
 fn push_container_collapsed(
     out: &mut Vec<Line<'static>>,
-    click_map: &mut Vec<Option<(String, u32)>>,
+    click_map: &mut Vec<Vec<JsonHotRegion>>,
     tree: &Tree,
-    section_key: &str,
+    _section_key: &str,
     outer_prefix: &str,
     max_width: usize,
     id: u32,
@@ -202,8 +209,9 @@ fn push_container_collapsed(
 
     // Key
     if let Some(ref key) = node.key {
+        // UI-046: JSON object keys come from user data too.
         spans.push(Span::styled(
-            format!("\"{}\"", key),
+            format!("\"{}\"", sanitize_for_cell(key)),
             Style::default().fg(key_color(depth as usize)),
         ));
         spans.push(Span::styled(": ", Style::default().fg(COMMA_COLOR)));
@@ -235,17 +243,20 @@ fn push_container_collapsed(
 
     out.push(Line::from(spans));
     click_map.push(if empty {
-        None
+        Vec::new()
     } else {
-        Some((section_key.to_string(), id))
+        vec![JsonHotRegion {
+            range: 0..u16::MAX,
+            action: JsonAction::ToggleFold(id),
+        }]
     });
 }
 
 fn push_container_opener(
     out: &mut Vec<Line<'static>>,
-    click_map: &mut Vec<Option<(String, u32)>>,
+    click_map: &mut Vec<Vec<JsonHotRegion>>,
     tree: &Tree,
-    section_key: &str,
+    _section_key: &str,
     outer_prefix: &str,
     id: u32,
 ) {
@@ -262,8 +273,9 @@ fn push_container_opener(
     spans.push(Span::raw(format!("{}{}", outer_prefix, indent)));
     spans.push(Span::styled("▼ ", Style::default().fg(BLUE)));
     if let Some(ref key) = node.key {
+        // UI-046: JSON object keys come from user data too.
         spans.push(Span::styled(
-            format!("\"{}\"", key),
+            format!("\"{}\"", sanitize_for_cell(key)),
             Style::default().fg(key_color(depth as usize)),
         ));
         spans.push(Span::styled(": ", Style::default().fg(COMMA_COLOR)));
@@ -274,12 +286,15 @@ fn push_container_opener(
     ));
 
     out.push(Line::from(spans));
-    click_map.push(Some((section_key.to_string(), id)));
+    click_map.push(vec![JsonHotRegion {
+        range: 0..u16::MAX,
+        action: JsonAction::ToggleFold(id),
+    }]);
 }
 
 fn push_container_closer(
     out: &mut Vec<Line<'static>>,
-    click_map: &mut Vec<Option<(String, u32)>>,
+    click_map: &mut Vec<Vec<JsonHotRegion>>,
     tree: &Tree,
     outer_prefix: &str,
     id: u32,
@@ -305,5 +320,5 @@ fn push_container_closer(
         spans.push(Span::styled(",", Style::default().fg(COMMA_COLOR)));
     }
     out.push(Line::from(spans));
-    click_map.push(None);
+    click_map.push(Vec::new());
 }
