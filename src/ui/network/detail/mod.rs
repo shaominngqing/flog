@@ -62,8 +62,10 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let mut all_lines: Vec<Line> = Vec::new();
     // Track which line indices are section headers (for click toggling)
     let mut section_line_map: Vec<Option<String>> = Vec::new();
-    // Track which line indices map to JSON bracket clicks
-    let mut json_click_map: Vec<Option<(String, u32)>> = Vec::new();
+    // Track which line indices map to JSON hot regions (typed)
+    let mut json_click_map: Vec<Vec<crate::ui::json_viewer::JsonHotRegion>> = Vec::new();
+    // Parallel: section key for each line (for ToggleFold routing in apply)
+    let mut json_section_keys: Vec<Option<String>> = Vec::new();
     app.layout.sse_pill_line = None;
     app.layout.ws_pill_line = None;
 
@@ -93,7 +95,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
                 )));
             }
             section_line_map.push(None);
-            json_click_map.push(None);
+            json_click_map.push(Vec::new());
+            json_section_keys.push(None);
         }
     }
     // Divider line with [Mock] button (VM Service only)
@@ -128,7 +131,8 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         }
         all_lines.push(Line::from(divider_spans));
         section_line_map.push(None);
-        json_click_map.push(None);
+        json_click_map.push(Vec::new());
+        json_section_keys.push(None);
     }
 
     // ── General ──
@@ -136,6 +140,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
+        &mut json_section_keys,
         &entry,
         &app.network.collapsed_sections,
         inner_w,
@@ -146,6 +151,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
+        &mut json_section_keys,
         &entry,
         &app.network.collapsed_sections,
         inner_w,
@@ -156,6 +162,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
+        &mut json_section_keys,
         entry.request_headers.as_ref(),
         "Request Headers",
         "req_headers",
@@ -169,6 +176,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
+        &mut json_section_keys,
         entry.request_body.as_ref(),
         "Request Body",
         "req_body",
@@ -182,6 +190,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
+        &mut json_section_keys,
         entry.response_headers.as_ref(),
         "Response Headers",
         "res_headers",
@@ -195,6 +204,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
+        &mut json_section_keys,
         entry.response_body.as_ref(),
         "Response Body",
         "res_body",
@@ -209,6 +219,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
             &mut all_lines,
             &mut section_line_map,
             &mut json_click_map,
+            &mut json_section_keys,
             app,
             &entry,
             inner_w,
@@ -221,6 +232,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
             &mut all_lines,
             &mut section_line_map,
             &mut json_click_map,
+            &mut json_section_keys,
             app,
             &entry,
             inner_w,
@@ -232,6 +244,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
+        &mut json_section_keys,
         entry.error.as_ref(),
         &app.network.collapsed_sections,
         inner_w,
@@ -240,6 +253,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     // Store maps for click handling
     app.network.detail_section_map = section_line_map;
     app.network.detail_json_click_map = json_click_map;
+    app.network.detail_json_section_keys = json_section_keys;
 
     let total_lines = all_lines.len();
 

@@ -101,19 +101,80 @@ pub(crate) fn offline_devices_hint(device_count: usize, bg: Color) -> (Vec<Span<
 //  Shared Utility Functions
 // ══════════════════════════════════════
 
+/// Strip C0 control characters (except `\t`) and DEL (`\x7f`) from a
+/// string so it is safe to put into a ratatui [`Span`] body.
+///
+/// Audit UI-046. Background: `"\r\n"` is a single Unicode grapheme
+/// cluster (CRLF rule, UAX #29) with `UnicodeWidthStr::width() == 1`.
+/// ratatui's Paragraph renderer filters only zero-width graphemes, so
+/// a width-1 `"\r\n"` reaches the cell buffer, and crossterm's backend
+/// then `Print`s the raw CRLF to the terminal. The physical cursor
+/// jumps, and any subsequent cells drawn by the same widget land on
+/// the wrong row — corrupting unrelated panes drawn earlier in the
+/// frame. Azure Speech WS frames and any embedded HTTP-style headers
+/// routinely contain CRLF.
+///
+/// Replacement policy:
+/// - `\n` and `\r\n` and lone `\r` → single space. Callers that care
+///   about line breaks should split on `\n` *before* sanitizing (see
+///   [`wrap_multiline`]). This preserves the common "one message, one
+///   row" display without changing the column count of a wrapped line.
+/// - Other C0 (`\x00..=\x1f` except `\t`) and DEL (`\x7f`) → dropped.
+///   These would all move the terminal cursor in unexpected ways
+///   (BEL, BS, ESC, ...) and have no useful visual representation.
+/// - Tab is preserved; callers either want it expanded by the terminal
+///   or have already planned around it.
+///
+/// Returns a borrowed [`Cow`] for the common clean-text case so 99%
+/// of calls avoid an allocation. `memchr` fast-path would require a
+/// dependency; the plain byte scan below is already O(n) and small.
+pub fn sanitize_for_cell(s: &str) -> std::borrow::Cow<'_, str> {
+    let needs_fix = s.bytes().any(|b| (b < 0x20 && b != b'\t') || b == 0x7f);
+    if !needs_fix {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' if matches!(chars.peek(), Some('\n')) => {
+                // CRLF is the common framing case → one space so the
+                // two halves stay visually separated on the same row.
+                chars.next();
+                out.push(' ');
+            }
+            '\r' => {
+                // Lone CR (classic terminal overwrite trick) has no
+                // useful rendering on a cell grid — drop it.
+            }
+            '\n' => out.push(' '),
+            '\t' => out.push('\t'),
+            c if (c as u32) < 0x20 => {} // drop other C0
+            '\x7f' => {}                 // drop DEL
+            c => out.push(c),
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 /// Wrap text into lines of at most `max_w` display-width characters.
 /// Returns at most `max_lines` lines. The last line is truncated with "..." if needed.
+///
+/// Output lines are guaranteed cell-safe (see [`sanitize_for_cell`]).
 pub fn wrap_text(s: &str, max_w: usize, max_lines: usize) -> Vec<String> {
     use unicode_width::UnicodeWidthChar;
     if max_w == 0 || max_lines == 0 {
         return vec![String::new()];
     }
 
+    let sanitized = sanitize_for_cell(s);
+    let src: &str = &sanitized;
+
     let mut result: Vec<String> = Vec::new();
     let mut current = String::new();
     let mut current_w: usize = 0;
 
-    for ch in s.chars() {
+    for ch in src.chars() {
         let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
         if current_w + cw > max_w {
             result.push(current);
@@ -192,8 +253,12 @@ pub fn safe_truncate(s: &str, max_w: usize) -> String {
     if max_w == 0 {
         return String::new();
     }
+    // UI-046: callers include raw URL paths / WS previews. Sanitize so
+    // the width() math and the returned String agree, and no callers
+    // have to remember to sanitize separately.
+    let s = sanitize_for_cell(s);
     if s.width() <= max_w {
-        return s.to_string();
+        return s.into_owned();
     }
     let t = max_w.saturating_sub(3);
     let mut r = String::new();
@@ -223,6 +288,10 @@ pub fn draw_separator_rule(f: &mut Frame, area: Rect) {
 }
 
 pub fn safe_pad(s: &str, width: usize) -> String {
+    // UI-046: sanitize once at the boundary. Most callers pass static
+    // column labels or code-constructed strings (Borrowed fast path),
+    // so the cost for well-formed inputs is a single byte scan.
+    let s = sanitize_for_cell(s);
     let w = s.width();
     if w >= width {
         let mut r = String::new();
@@ -241,7 +310,7 @@ pub fn safe_pad(s: &str, width: usize) -> String {
         }
         r
     } else {
-        let mut r = s.to_string();
+        let mut r = s.into_owned();
         for _ in 0..(width - w) {
             r.push(' ');
         }

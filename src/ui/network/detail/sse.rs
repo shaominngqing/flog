@@ -11,6 +11,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::app::App;
 use crate::domain::network::NetworkEntry;
 use crate::domain::sse_merge;
+use crate::ui::json_viewer::JsonHotRegion;
 
 use super::super::super::{wrap_text, MANTLE, OVERLAY0, RED, SAPPHIRE, SUBTEXT0, SURFACE0, TEXT};
 use super::shared::{path_without_query, push_section_header, render_json_section};
@@ -20,7 +21,8 @@ use super::shared::{path_without_query, push_section_header, render_json_section
 pub(super) fn render_sse(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     app: &mut App,
     entry: &NetworkEntry,
     inner_w: usize,
@@ -40,6 +42,7 @@ pub(super) fn render_sse(
             lines,
             section_map,
             json_click_map,
+            json_section_keys,
             app,
             entry,
             &rule_key,
@@ -50,6 +53,7 @@ pub(super) fn render_sse(
             lines,
             section_map,
             json_click_map,
+            json_section_keys,
             app,
             entry,
             has_json_chunks,
@@ -58,10 +62,12 @@ pub(super) fn render_sse(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_merged_mode(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     app: &mut App,
     entry: &NetworkEntry,
     rule_key: &str,
@@ -96,7 +102,8 @@ fn render_merged_mode(
         ]));
         app.layout.sse_pill_line = Some((lines.len() - 1, header_text.width()));
         section_map.push(Some(sec_key.to_string()));
-        json_click_map.push(None);
+        json_click_map.push(Vec::new());
+        json_section_keys.push(None);
     }
 
     if !is_collapsed {
@@ -123,7 +130,8 @@ fn render_merged_mode(
                     style,
                 )));
                 section_map.push(Some(format!("SSE_FIELD#{}", fi)));
-                json_click_map.push(None);
+                json_click_map.push(Vec::new());
+                json_section_keys.push(None);
             }
 
             // Divider
@@ -133,7 +141,8 @@ fn render_merged_mode(
                 Style::default().fg(SURFACE0),
             )));
             section_map.push(None);
-            json_click_map.push(None);
+            json_click_map.push(Vec::new());
+            json_section_keys.push(None);
 
             let merged_text = sse_merge::merge_field(&chunks_data, &rule.field_path);
             if merged_text.is_empty() {
@@ -142,7 +151,8 @@ fn render_merged_mode(
                     Style::default().fg(OVERLAY0),
                 )));
                 section_map.push(None);
-                json_click_map.push(None);
+                json_click_map.push(Vec::new());
+                json_section_keys.push(None);
             } else {
                 for wl in wrap_text(&merged_text, inner_w.saturating_sub(3), 500) {
                     lines.push(Line::from(Span::styled(
@@ -150,20 +160,24 @@ fn render_merged_mode(
                         Style::default().fg(TEXT),
                     )));
                     section_map.push(None);
-                    json_click_map.push(None);
+                    json_click_map.push(Vec::new());
+                    json_section_keys.push(None);
                 }
             }
         }
     }
     lines.push(Line::raw(""));
     section_map.push(None);
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_events_mode(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     app: &mut App,
     entry: &NetworkEntry,
     has_json_chunks: bool,
@@ -195,9 +209,17 @@ fn render_events_mode(
         ]));
         app.layout.sse_pill_line = Some((lines.len() - 1, header_text.width()));
         section_map.push(Some(sec_key.to_string()));
-        json_click_map.push(None);
+        json_click_map.push(Vec::new());
+        json_section_keys.push(None);
     } else {
-        push_section_header(lines, section_map, json_click_map, &sec_name, is_collapsed);
+        push_section_header(
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+            &sec_name,
+            is_collapsed,
+        );
         // Override map entry to use fixed key (strip count)
         if let Some(last) = section_map.last_mut() {
             *last = Some(sec_key.to_string());
@@ -240,12 +262,14 @@ fn render_events_mode(
                 ),
             ]));
             section_map.push(Some(chunk_key.clone()));
-            json_click_map.push(None);
+            json_click_map.push(Vec::new());
+            json_section_keys.push(None);
             if !chunk_collapsed {
                 render_json_section(
                     lines,
                     section_map,
                     json_click_map,
+                    json_section_keys,
                     &chunk.data,
                     &format!("sse_{}", i),
                     &mut app.network.json_viewer_states,
@@ -256,5 +280,6 @@ fn render_events_mode(
     }
     lines.push(Line::raw(""));
     section_map.push(None);
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
 }

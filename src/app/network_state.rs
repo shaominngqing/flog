@@ -23,8 +23,14 @@ pub struct NetworkState {
     /// JSON viewer states keyed by section (e.g., "req_headers", "res_body", "sse_0").
     pub json_viewer_states:
         std::collections::HashMap<String, crate::ui::json_viewer::JsonViewerState>,
-    /// Maps detail panel line index -> (section_key, node_id) for JSON fold click.
-    pub detail_json_click_map: Vec<Option<(String, u32)>>,
+    /// Maps detail panel line index -> hot regions for JSON action dispatch.
+    /// Replaces the old `Vec<Option<(String, u32)>>` format. Set by renderer.
+    pub detail_json_click_map: Vec<Vec<crate::ui::json_viewer::JsonHotRegion>>,
+    /// Maps detail panel line index -> section_key for JSON fold context.
+    /// Parallel to `detail_json_click_map`: `Some(key)` on lines that come
+    /// from a JSON section, `None` otherwise. Needed by apply to route
+    /// `ToggleFold` to the right per-section `json_viewer_states` entry.
+    pub detail_json_section_keys: Vec<Option<String>>,
     /// SSE merge rules: URL path (no query params) → merge rule.
     pub sse_merge_rules: std::collections::HashMap<String, SseMergeRule>,
     /// Whether the current SSE detail is showing Merged mode (true) or Events mode (false).
@@ -132,6 +138,7 @@ impl NetworkState {
             detail_section_map: Vec::new(),
             json_viewer_states: std::collections::HashMap::new(),
             detail_json_click_map: Vec::new(),
+            detail_json_section_keys: Vec::new(),
             sse_merge_rules: std::collections::HashMap::new(),
             sse_merged_mode: false,
             sse_merged_field_idx: 0,

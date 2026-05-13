@@ -13,7 +13,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::ui::json_viewer::{self, JsonViewerState};
+use crate::ui::json_viewer::{self, JsonHotRegion, JsonViewerState};
 
 use super::super::super::{sanitize_for_cell, wrap_text, SAPPHIRE, SUBTEXT0};
 use super::{KEY_COLOR, STR_COLOR};
@@ -25,7 +25,8 @@ use super::{KEY_COLOR, STR_COLOR};
 pub(super) fn push_section_header(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     title: &str,
     collapsed: bool,
 ) {
@@ -35,13 +36,15 @@ pub(super) fn push_section_header(
         Style::default().fg(SAPPHIRE).add_modifier(Modifier::BOLD),
     )));
     section_map.push(Some(title.to_string()));
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
 }
 
 pub(super) fn push_kv_single(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     key: &str,
     value: &str,
 ) {
@@ -54,13 +57,15 @@ pub(super) fn push_kv_single(
         Span::styled(value.into_owned(), Style::default().fg(STR_COLOR)),
     ]));
     section_map.push(None);
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
 }
 
 pub(super) fn push_kv_wrapped(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     key: &str,
     value: &str,
     max_w: usize,
@@ -79,7 +84,8 @@ pub(super) fn push_kv_wrapped(
             Span::styled(value.into_owned(), Style::default().fg(STR_COLOR)),
         ]));
         section_map.push(None);
-        json_click_map.push(None);
+        json_click_map.push(Vec::new());
+        json_section_keys.push(None);
     } else {
         let wrapped = wrap_text(&value, first_line_w, 20);
         if let Some(first) = wrapped.first() {
@@ -88,7 +94,8 @@ pub(super) fn push_kv_wrapped(
                 Span::styled(first.to_string(), Style::default().fg(STR_COLOR)),
             ]));
             section_map.push(None);
-            json_click_map.push(None);
+            json_click_map.push(Vec::new());
+            json_section_keys.push(None);
         }
         for wl in wrapped.iter().skip(1) {
             lines.push(Line::from(Span::styled(
@@ -96,7 +103,8 @@ pub(super) fn push_kv_wrapped(
                 Style::default().fg(STR_COLOR),
             )));
             section_map.push(None);
-            json_click_map.push(None);
+            json_click_map.push(Vec::new());
+            json_section_keys.push(None);
         }
     }
 }
@@ -111,10 +119,12 @@ pub(super) const DEFAULT_JSON_EXPAND_DEPTH: u32 = 1;
 
 /// Render a JSON/Dart-Map section with the default expansion depth.
 /// Callers that need a different depth use [`render_json_section_with_depth`].
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_json_section(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     json_text: &str,
     section_key: &str,
     viewer_states: &mut HashMap<String, JsonViewerState>,
@@ -124,6 +134,7 @@ pub(super) fn render_json_section(
         lines,
         section_map,
         json_click_map,
+        json_section_keys,
         json_text,
         section_key,
         viewer_states,
@@ -140,7 +151,8 @@ pub(super) fn render_json_section(
 pub(super) fn render_json_section_with_depth(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     json_text: &str,
     section_key: &str,
     viewer_states: &mut HashMap<String, JsonViewerState>,
@@ -154,31 +166,20 @@ pub(super) fn render_json_section_with_depth(
                 .entry(section_key.to_string())
                 .or_insert_with(|| json_viewer::init_state(&tree, expand_depth));
             let base = lines.len();
-            // append_render now produces Vec<Vec<JsonHotRegion>>. Translate back
-            // to the network-section fold-map format (Option<(section_key, node_id)>)
-            // so callers of this function don't need to change.
-            let mut new_click_map: Vec<Vec<crate::ui::json_viewer::JsonHotRegion>> = Vec::new();
             json_viewer::append_render(
                 lines,
-                &mut new_click_map,
+                json_click_map,
                 &tree,
                 state,
                 section_key,
                 "   ",
                 max_w.saturating_sub(3),
             );
-            for regions in new_click_map {
-                let slot = regions.into_iter().find_map(|r| {
-                    if let crate::ui::json_viewer::JsonAction::ToggleFold(id) = r.action {
-                        Some((section_key.to_string(), id))
-                    } else {
-                        None
-                    }
-                });
-                json_click_map.push(slot);
-            }
+            // For every rendered line, record the section key (so apply can
+            // route ToggleFold to the right per-section viewer state).
             for _ in base..lines.len() {
                 section_map.push(None);
+                json_section_keys.push(Some(section_key.to_string()));
             }
         }
         None => {
@@ -188,7 +189,8 @@ pub(super) fn render_json_section_with_depth(
                     Style::default().fg(SUBTEXT0),
                 )));
                 section_map.push(None);
-                json_click_map.push(None);
+                json_click_map.push(Vec::new());
+                json_section_keys.push(None);
             }
         }
     }

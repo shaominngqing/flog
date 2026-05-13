@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use ratatui::text::Line;
 
 use crate::domain::network::NetworkEntry;
-use crate::ui::json_viewer::JsonViewerState;
+use crate::ui::json_viewer::{JsonHotRegion, JsonViewerState};
 
 use super::shared::{
     parse_query_params, push_kv_wrapped, push_section_header, render_json_section,
@@ -19,7 +19,8 @@ use super::shared::{
 pub(super) fn render_query_params(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     entry: &NetworkEntry,
     collapsed_sections: &HashSet<String>,
     inner_w: usize,
@@ -30,16 +31,32 @@ pub(super) fn render_query_params(
     }
     let sec = "Query Parameters";
     let is_collapsed = collapsed_sections.contains(sec);
-    push_section_header(lines, section_map, json_click_map, sec, is_collapsed);
+    push_section_header(
+        lines,
+        section_map,
+        json_click_map,
+        json_section_keys,
+        sec,
+        is_collapsed,
+    );
     if is_collapsed {
         return;
     }
     for (key, value) in &query_params {
-        push_kv_wrapped(lines, section_map, json_click_map, key, value, inner_w);
+        push_kv_wrapped(
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+            key,
+            value,
+            inner_w,
+        );
     }
     lines.push(Line::raw(""));
     section_map.push(None);
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
 }
 
 /// Render a "Request Headers" / "Response Headers" section. Headers are
@@ -48,7 +65,8 @@ pub(super) fn render_query_params(
 pub(super) fn render_headers(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     headers: Option<&String>,
     section_title: &str,
     section_key: &str,
@@ -64,6 +82,7 @@ pub(super) fn render_headers(
         lines,
         section_map,
         json_click_map,
+        json_section_keys,
         section_title,
         is_collapsed,
     );
@@ -75,6 +94,7 @@ pub(super) fn render_headers(
             lines,
             section_map,
             json_click_map,
+            json_section_keys,
             hdrs,
             section_key,
             viewer_states,
@@ -84,7 +104,8 @@ pub(super) fn render_headers(
     }
     lines.push(Line::raw(""));
     section_map.push(None);
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
 }
 
 /// Render a "Request Body" / "Response Body" section. Bodies use the
@@ -93,7 +114,8 @@ pub(super) fn render_headers(
 pub(super) fn render_body(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     body: Option<&String>,
     section_title: &str,
     section_key: &str,
@@ -110,6 +132,7 @@ pub(super) fn render_body(
         lines,
         section_map,
         json_click_map,
+        json_section_keys,
         section_title,
         is_collapsed,
     );
@@ -120,6 +143,7 @@ pub(super) fn render_body(
         lines,
         section_map,
         json_click_map,
+        json_section_keys,
         body_ref,
         section_key,
         viewer_states,
@@ -127,5 +151,6 @@ pub(super) fn render_body(
     );
     lines.push(Line::raw(""));
     section_map.push(None);
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
 }

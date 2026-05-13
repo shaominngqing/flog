@@ -97,6 +97,16 @@ fn detect_network_detail(app: &App, x: u16, y: u16) -> Option<ClickRegion> {
             return Some(pill);
         }
 
+        // JSON hot region check (typed dispatch — CopyNode, ToggleFold, etc.)
+        let x_in_panel = x.saturating_sub(app.layout.net_detail_x + 1);
+        if let Some(action) = super::detect::detect_json_action_in_detail(
+            &app.network.detail_json_click_map,
+            line_idx,
+            x_in_panel,
+        ) {
+            return Some(ClickRegion::NetworkDetailJsonAction(action));
+        }
+
         if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
             if let Some(idx_str) = section_key.strip_prefix("SSE_FIELD#") {
                 if let Ok(fi) = idx_str.parse::<usize>() {
@@ -110,14 +120,6 @@ fn detect_network_detail(app: &App, x: u16, y: u16) -> Option<ClickRegion> {
             }
             return Some(ClickRegion::NetworkDetailSectionToggle {
                 section_key: section_key.clone(),
-            });
-        }
-
-        if let Some(Some((section_key, node_id))) =
-            app.network.detail_json_click_map.get(line_idx).cloned()
-        {
-            return Some(ClickRegion::NetworkDetailSectionToggle {
-                section_key: format!("JSON#{section_key}#{node_id}"),
             });
         }
     }

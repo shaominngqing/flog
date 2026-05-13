@@ -9,6 +9,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use crate::ui::json_viewer::JsonHotRegion;
+
 use super::super::super::{wrap_text, RED};
 use super::shared::push_section_header;
 
@@ -17,7 +19,8 @@ use super::shared::push_section_header;
 pub(super) fn render_error(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     error: Option<&String>,
     collapsed_sections: &HashSet<String>,
     inner_w: usize,
@@ -28,7 +31,14 @@ pub(super) fn render_error(
     };
     let sec = "Error";
     let is_collapsed = collapsed_sections.contains(sec);
-    push_section_header(lines, section_map, json_click_map, sec, is_collapsed);
+    push_section_header(
+        lines,
+        section_map,
+        json_click_map,
+        json_section_keys,
+        sec,
+        is_collapsed,
+    );
     if is_collapsed {
         return;
     }
@@ -39,6 +49,7 @@ pub(super) fn render_error(
             Style::default().fg(RED),
         )));
         section_map.push(None);
-        json_click_map.push(None);
+        json_click_map.push(Vec::new());
+        json_section_keys.push(None);
     }
 }

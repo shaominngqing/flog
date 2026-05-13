@@ -14,9 +14,11 @@ use unicode_width::UnicodeWidthStr;
 use crate::app::App;
 use crate::domain::network::{NetworkEntry, WsDirection};
 use crate::domain::ws_chat;
+use crate::ui::json_viewer::JsonHotRegion;
 
 use super::super::super::{
-    wrap_text, BLUE, GREEN, MANTLE, OVERLAY0, SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1, TEXT,
+    safe_truncate, sanitize_for_cell, wrap_text, BLUE, GREEN, MANTLE, OVERLAY0, SAPPHIRE, SUBTEXT0,
+    SURFACE0, SURFACE1, TEXT,
 };
 use super::shared::render_json_section;
 
@@ -25,7 +27,8 @@ use super::shared::render_json_section;
 pub(super) fn render_ws(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     app: &mut App,
     entry: &NetworkEntry,
     inner_w: usize,
@@ -81,25 +84,44 @@ pub(super) fn render_ws(
         ]));
         app.layout.ws_pill_line = Some((lines.len() - 1, header_text.width()));
         section_map.push(Some(sec_key.to_string()));
-        json_click_map.push(None);
+        json_click_map.push(Vec::new());
+        json_section_keys.push(None);
     }
 
     if !is_collapsed {
         if app.network.ws_chat_mode {
-            render_chat_mode(lines, section_map, json_click_map, app, entry, inner_w);
+            render_chat_mode(
+                lines,
+                section_map,
+                json_click_map,
+                json_section_keys,
+                app,
+                entry,
+                inner_w,
+            );
         } else {
-            render_raw_mode(lines, section_map, json_click_map, app, entry, inner_w);
+            render_raw_mode(
+                lines,
+                section_map,
+                json_click_map,
+                json_section_keys,
+                app,
+                entry,
+                inner_w,
+            );
         }
         lines.push(Line::raw(""));
         section_map.push(None);
-        json_click_map.push(None);
+        json_click_map.push(Vec::new());
+        json_section_keys.push(None);
     }
 }
 
 fn render_chat_mode(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     app: &mut App,
     entry: &NetworkEntry,
     inner_w: usize,
@@ -156,7 +178,8 @@ fn render_chat_mode(
                 ),
             ]));
             section_map.push(Some(group_key.clone()));
-            json_click_map.push(None);
+            json_click_map.push(Vec::new());
+            json_section_keys.push(None);
         } else if group.merged_delta.is_some() {
             // Delta group: pill + type + count, merged text below
             lines.push(Line::from(vec![
@@ -167,7 +190,8 @@ fn render_chat_mode(
                 ),
             ]));
             section_map.push(Some(group_key.clone()));
-            json_click_map.push(None);
+            json_click_map.push(Vec::new());
+            json_section_keys.push(None);
 
             // Always show merged text for delta groups
             if let Some(ref merged) = group.merged_delta {
@@ -179,7 +203,8 @@ fn render_chat_mode(
                             Style::default().fg(TEXT),
                         )));
                         section_map.push(None);
-                        json_click_map.push(None);
+                        json_click_map.push(Vec::new());
+                        json_section_keys.push(None);
                     }
                 }
             }
@@ -193,7 +218,8 @@ fn render_chat_mode(
                 ),
             ]));
             section_map.push(Some(group_key.clone()));
-            json_click_map.push(None);
+            json_click_map.push(Vec::new());
+            json_section_keys.push(None);
 
             // Expanded: show individual messages with JSON
             if !group_collapsed {
@@ -208,6 +234,7 @@ fn render_chat_mode(
                             lines,
                             section_map,
                             json_click_map,
+                            json_section_keys,
                             &display_data,
                             &format!("ws_{}", mi),
                             &mut app.network.json_viewer_states,
@@ -232,7 +259,8 @@ fn render_chat_mode(
 fn render_raw_mode(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     app: &mut App,
     entry: &NetworkEntry,
     inner_w: usize,
@@ -252,28 +280,27 @@ fn render_raw_mode(
         };
         let ws_prefix_text = format!("  {} {} ", prefix, arrow);
         let ws_preview_w = inner_w.saturating_sub(ws_prefix_text.len() + 1);
+        // UI-046: preview text comes from user data — sanitize before
+        // putting it in a Span, and use safe_truncate so we don't slice
+        // mid-UTF-8.
+        let preview = if msg_collapsed {
+            safe_truncate(&sanitize_for_cell(&msg.data), ws_preview_w)
+        } else {
+            format!("({} bytes)", msg.size)
+        };
         lines.push(Line::from(vec![
             Span::styled(ws_prefix_text, Style::default().fg(color)),
-            Span::styled(
-                if msg_collapsed {
-                    if msg.data.len() > ws_preview_w {
-                        format!("{}...", &msg.data[..ws_preview_w.saturating_sub(3)])
-                    } else {
-                        msg.data.clone()
-                    }
-                } else {
-                    format!("({} bytes)", msg.size)
-                },
-                Style::default().fg(SUBTEXT0),
-            ),
+            Span::styled(preview, Style::default().fg(SUBTEXT0)),
         ]));
         section_map.push(Some(msg_key.clone()));
-        json_click_map.push(None);
+        json_click_map.push(Vec::new());
+        json_section_keys.push(None);
         if !msg_collapsed {
             render_json_section(
                 lines,
                 section_map,
                 json_click_map,
+                json_section_keys,
                 &msg.data,
                 &format!("ws_{}", i),
                 &mut app.network.json_viewer_states,

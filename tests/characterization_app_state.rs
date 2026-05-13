@@ -758,8 +758,14 @@ fn reset_detail_for_selection_clears_viewer() {
     let mut app = App::new();
     app.detail.scroll = 5;
     app.detail.viewer_click_map = vec![
-        vec![JsonHotRegion { range: 0..u16::MAX, action: JsonAction::ToggleFold(1) }],
-        vec![JsonHotRegion { range: 0..u16::MAX, action: JsonAction::ToggleFold(2) }],
+        vec![JsonHotRegion {
+            range: 0..u16::MAX,
+            action: JsonAction::ToggleFold(1),
+        }],
+        vec![JsonHotRegion {
+            range: 0..u16::MAX,
+            action: JsonAction::ToggleFold(2),
+        }],
     ];
     app.reset_detail_for_selection();
     assert_eq!(app.detail.scroll, 0);

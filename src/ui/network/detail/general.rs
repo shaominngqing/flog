@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::domain::network::{NetworkEntry, NetworkStatus, Protocol};
+use crate::ui::json_viewer::JsonHotRegion;
 
 use super::super::{format_duration, format_size, status_color};
 use super::shared::{http_status_text, push_kv_single, push_kv_wrapped, push_section_header};
@@ -19,14 +20,22 @@ use std::collections::HashSet;
 pub(super) fn render_general(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Option<(String, u32)>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
     entry: &NetworkEntry,
     collapsed_sections: &HashSet<String>,
     inner_w: usize,
 ) {
     let sec = "General";
     let is_collapsed = collapsed_sections.contains(sec);
-    push_section_header(lines, section_map, json_click_map, sec, is_collapsed);
+    push_section_header(
+        lines,
+        section_map,
+        json_click_map,
+        json_section_keys,
+        sec,
+        is_collapsed,
+    );
     if is_collapsed {
         return;
     }
@@ -36,12 +45,20 @@ pub(super) fn render_general(
         lines,
         section_map,
         json_click_map,
+        json_section_keys,
         "URL",
         &entry.url,
         inner_w,
     );
     if !entry.method.is_empty() {
-        push_kv_single(lines, section_map, json_click_map, "Method", &entry.method);
+        push_kv_single(
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+            "Method",
+            &entry.method,
+        );
     }
     let status_str = match entry.status {
         NetworkStatus::Pending => "Pending".to_string(),
@@ -66,15 +83,24 @@ pub(super) fn render_general(
         Span::styled(status_str, Style::default().fg(sc)),
     ]));
     section_map.push(None);
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
     if !entry.timestamp.is_empty() {
-        push_kv_single(lines, section_map, json_click_map, "Time", &entry.timestamp);
+        push_kv_single(
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+            "Time",
+            &entry.timestamp,
+        );
     }
     if let Some(dur) = entry.duration {
         push_kv_single(
             lines,
             section_map,
             json_click_map,
+            json_section_keys,
             "Duration",
             &format_duration(dur),
         );
@@ -85,11 +111,13 @@ pub(super) fn render_general(
             lines,
             section_map,
             json_click_map,
+            json_section_keys,
             "Size",
             &format_size(size),
         );
     }
     lines.push(Line::raw(""));
     section_map.push(None);
-    json_click_map.push(None);
+    json_click_map.push(Vec::new());
+    json_section_keys.push(None);
 }

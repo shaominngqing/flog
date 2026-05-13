@@ -64,9 +64,11 @@ pub(crate) fn apply_click_region(
         ClickRegion::LogsJumpToBottom => app.go_bottom(),
 
         // ── Logs detail panel ──────────────────────────────────────────
-        ClickRegion::LogsDetailJsonAction(action)
-        | ClickRegion::NetworkDetailJsonAction(action) => {
+        ClickRegion::LogsDetailJsonAction(action) => {
             apply_json_action(app, action);
+        }
+        ClickRegion::NetworkDetailJsonAction(action) => {
+            apply_network_json_action(app, action);
         }
         ClickRegion::LogsDetailPanel { line_idx, x } => {
             // Fallback for when detect_json_action_in_detail returned None
@@ -389,6 +391,54 @@ fn apply_json_action(app: &mut App, action: crate::ui::json_viewer::JsonAction) 
             if let Some(text) = super::actions::extract_node_string(&app.detail.viewer_tree, id) {
                 app.enter_full_value_overlay(text, id);
             }
+        }
+    }
+}
+
+/// Handle JSON actions originating from the network detail panel.
+///
+/// `ToggleFold` requires a per-section [`crate::ui::json_viewer::JsonViewerState`]
+/// lookup — the network panel uses `app.network.json_viewer_states` keyed by
+/// section name (e.g. `"res_body"`, `"ws_0"`), which is tracked in the
+/// parallel `detail_json_section_keys` map produced by the renderer.
+///
+/// `CopyNode` / `OpenUrl` / `ExpandFullValue` fall through to the same
+/// helpers as the logs panel (they are action-not-panel-specific).
+fn apply_network_json_action(app: &mut App, action: crate::ui::json_viewer::JsonAction) {
+    use crate::ui::json_viewer::JsonAction;
+    match action {
+        JsonAction::ToggleFold(id) => {
+            // Find the section key for this node by scanning the parallel map.
+            let section_key = app
+                .network
+                .detail_json_click_map
+                .iter()
+                .zip(app.network.detail_json_section_keys.iter())
+                .find_map(|(regions, key)| {
+                    let has_node = regions.iter().any(|r| {
+                        matches!(r.action, crate::ui::json_viewer::JsonAction::ToggleFold(nid) if nid == id)
+                    });
+                    if has_node { key.clone() } else { None }
+                });
+            if let Some(key) = section_key {
+                if let Some(state) = app.network.json_viewer_states.get_mut(&key) {
+                    if let Some(slot) = state.expanded.get_mut(id as usize) {
+                        *slot = !*slot;
+                    }
+                }
+            }
+        }
+        JsonAction::CopyNode(_id) => {
+            // Network panel trees are not cached between frames; CopyNode
+            // for network JSON is deferred to a future task that adds tree caching.
+            app.show_status("Copy node not yet available in network panel".to_string());
+        }
+        JsonAction::OpenUrl(url) => {
+            app.show_status(super::actions::open_url(&url));
+        }
+        JsonAction::ExpandFullValue(id) => {
+            // Stub — same as logs panel until Task 5.
+            let _ = id;
         }
     }
 }
