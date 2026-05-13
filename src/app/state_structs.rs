@@ -103,6 +103,18 @@ pub struct DetailState {
     pub viewer_cursor: Option<usize>,
 }
 
+/// State for the full-value overlay (Task 5).
+///
+/// Shown when the user activates `ExpandFullValue` on a truncated string
+/// node in the JSON detail viewer. The overlay displays the raw string
+/// with scrolling and allows the user to copy it to the clipboard.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FullValueOverlayState {
+    pub text: String,
+    pub node_id: u32,
+    pub scroll: usize,
+}
+
 /// Logs tab view state.
 ///
 /// Phase 3 Step 3.10 (audit UI-003) — introduced for symmetry with

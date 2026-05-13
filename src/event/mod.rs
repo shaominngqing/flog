@@ -1,6 +1,11 @@
 //! Event dispatcher — routes keyboard and mouse events to per-mode
 //! handlers.
 //!
+//! File size: ~570 lines (yellow zone). Justified: this module is a thin
+//! top-level dispatcher; substance lives in `keys`, `apply`, `detect`, and
+//! `actions` submodules. The overlay handlers (Task 5) added here are
+//! short intercepts that don't belong in any existing submodule.
+//!
 //! # Top-level routing (UI-007)
 //!
 //! `handle_key` and `handle_mouse` fan out by `AppMode`:
@@ -74,7 +79,7 @@ use std::time::Instant;
 
 use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 
-use crate::app::{App, AppMode, ViewTab};
+use crate::app::{App, AppMode, FullValueOverlayState, ViewTab};
 
 mod actions;
 mod apply;
@@ -97,20 +102,126 @@ const SCROLL_LINES: usize = 3;
 const DOUBLE_CLICK_MS: u128 = 400;
 
 pub fn handle_key(app: &mut App, key: KeyEvent) {
+    // ── FullValueOverlay intercept (Task 5) ─────────────────────────────
+    // The overlay is a modal that takes priority over every other mode.
+    // It consumes the key and returns before the per-mode fanout below.
+    if matches!(app.mode, AppMode::FullValueOverlay(_)) {
+        handle_full_value_overlay_key(app, key);
+        return;
+    }
+
     match app.mode.clone() {
         AppMode::Normal => handle_normal_key(app, key),
         AppMode::InputActive(field) => handle_input_key(app, field, key),
         AppMode::Help | AppMode::Stats => handle_overlay_key(app, key),
         AppMode::MockRuleEdit => handle_mock_edit_key(app, key),
+        AppMode::FullValueOverlay(_) => unreachable!("handled above"),
     }
 }
 
 pub fn handle_mouse(app: &mut App, mouse: MouseEvent) {
+    // ── FullValueOverlay intercept (Task 5) ─────────────────────────────
+    if matches!(app.mode, AppMode::FullValueOverlay(_)) {
+        handle_full_value_overlay_mouse(app, mouse);
+        return;
+    }
+
     match app.mode.clone() {
         AppMode::Normal => handle_normal_mouse(app, mouse),
         AppMode::InputActive(_) => handle_input_mouse(app, mouse),
         AppMode::Help | AppMode::Stats => handle_overlay_mouse(app, mouse),
         AppMode::MockRuleEdit => handle_mock_edit_mouse(app, mouse),
+        AppMode::FullValueOverlay(_) => unreachable!("handled above"),
+    }
+}
+
+// ══════════════════════════════════════
+//  Full-value overlay — Keyboard + Mouse (Task 5)
+// ══════════════════════════════════════
+
+/// Compute the overlay rect the same way `draw_full_value_overlay` does,
+/// using the last-known terminal size stored in `app.layout`.
+///
+/// Returns `(x, y, w, h)` in terminal-cell coordinates. Used by both the
+/// keyboard handler (which doesn't need it) and the mouse handler (which
+/// needs it to distinguish inside vs. outside clicks).
+fn full_value_overlay_rect(app: &App) -> (u16, u16, u16, u16) {
+    let tw = app.layout.width;
+    let th = app.layout.height;
+    let w = (tw as f32 * 0.70) as u16;
+    let h = (th as f32 * 0.70) as u16;
+    let x = tw.saturating_sub(w) / 2;
+    let y = th.saturating_sub(h) / 2;
+    (x, y, w, h)
+}
+
+/// Keyboard handler for `AppMode::FullValueOverlay`.
+///
+/// Key bindings:
+/// - `Esc`          → exit overlay (no copy)
+/// - `Enter` / `y`  → copy text to clipboard, exit, show "Copied"
+/// - `j` / `Down` / `PgDn` → scroll down
+/// - `k` / `Up`   / `PgUp` → scroll up
+fn handle_full_value_overlay_key(app: &mut App, key: KeyEvent) {
+    use crossterm::event::KeyCode;
+
+    let AppMode::FullValueOverlay(FullValueOverlayState { ref text, .. }) = app.mode else {
+        return;
+    };
+
+    match key.code {
+        KeyCode::Esc => {
+            app.mode = AppMode::Normal;
+        }
+        KeyCode::Enter | KeyCode::Char('y') => {
+            let text = text.clone();
+            let msg = actions::copy_to_clipboard(&text);
+            app.mode = AppMode::Normal;
+            app.show_status(msg);
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.overlay_scroll_down(1);
+        }
+        KeyCode::PageDown => {
+            app.overlay_scroll_down(10);
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.overlay_scroll_up(1);
+        }
+        KeyCode::PageUp => {
+            app.overlay_scroll_up(10);
+        }
+        _ => {}
+    }
+}
+
+/// Mouse handler for `AppMode::FullValueOverlay`.
+///
+/// Left-click inside the overlay → copy text + exit.
+/// Left-click outside the overlay → exit without copy.
+/// Scroll → scroll the overlay content.
+fn handle_full_value_overlay_mouse(app: &mut App, mouse: MouseEvent) {
+    let (ox, oy, ow, oh) = full_value_overlay_rect(app);
+
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            let (x, y) = (mouse.column, mouse.row);
+            let inside = x >= ox && x < ox + ow && y >= oy && y < oy + oh;
+            if let Some(region) = if inside {
+                Some(click_region::ClickRegion::FullValueOverlayInside)
+            } else {
+                Some(click_region::ClickRegion::FullValueOverlayOutside)
+            } {
+                apply::apply_full_value_overlay_click(app, region);
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            app.overlay_scroll_down(SCROLL_LINES);
+        }
+        MouseEventKind::ScrollUp => {
+            app.overlay_scroll_up(SCROLL_LINES);
+        }
+        _ => {}
     }
 }
 

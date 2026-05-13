@@ -53,6 +53,8 @@ pub(crate) async fn run_loop(
                 if app_guard.show_device_picker {
                     ui::device_picker::draw_device_picker(f, &mut app_guard, f.area());
                 }
+                // Full-value overlay (drawn last so it overlays everything)
+                ui::full_value_overlay::draw_full_value_overlay(f, &app_guard);
             })?;
             if app_guard.should_quit {
                 return Ok(());

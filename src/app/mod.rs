@@ -16,7 +16,9 @@ pub use mock_edit::MockEditState;
 pub use multi_app::ConnectedApp;
 pub use network_state::NetworkState;
 pub use sse_merge::{SseMergeRule, SsePathSegment};
-pub use state_structs::{DetailState, InputBuffers, LogsViewState, SearchState, StatsSnapshot};
+pub use state_structs::{
+    DetailState, FullValueOverlayState, InputBuffers, LogsViewState, SearchState, StatsSnapshot,
+};
 
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -62,6 +64,9 @@ pub enum AppMode {
     Help,
     Stats,
     MockRuleEdit,
+    /// Full-value overlay — expands a truncated string node in the JSON
+    /// detail viewer into a scrollable overlay. Task 5.
+    FullValueOverlay(FullValueOverlayState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

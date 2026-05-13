@@ -185,6 +185,14 @@ pub(crate) fn apply_click_region(
             app.network.show_mock_rules_panel = false;
         }
 
+        // ── Full-value overlay (Task 5) ────────────────────────────────
+        ClickRegion::FullValueOverlayInside => {
+            apply_full_value_overlay_click(app, ClickRegion::FullValueOverlayInside);
+        }
+        ClickRegion::FullValueOverlayOutside => {
+            apply_full_value_overlay_click(app, ClickRegion::FullValueOverlayOutside);
+        }
+
         // ── Status bar / misc ──────────────────────────────────────────
         ClickRegion::StatusBar => apply_status_bar(app, x, y),
         ClickRegion::Scrollbar { .. } => {}
@@ -445,6 +453,36 @@ fn apply_network_json_action(
             // Stub — same as logs panel until Task 5.
             let _ = id;
         }
+    }
+}
+
+/// Handle a click on the full-value overlay.
+///
+/// `Inside` → copy text to clipboard, exit overlay, show "Copied".
+/// `Outside` → exit overlay without copy.
+///
+/// Called both from `apply_click_region` (when FullValueOverlay variants
+/// arrive via the normal detect/apply pipeline) and directly from
+/// `handle_full_value_overlay_mouse` for the modal-mode mouse path.
+pub(crate) fn apply_full_value_overlay_click(app: &mut App, region: ClickRegion) {
+    use crate::app::AppMode;
+    let text = if let AppMode::FullValueOverlay(ref state) = app.mode {
+        Some(state.text.clone())
+    } else {
+        None
+    };
+    match region {
+        ClickRegion::FullValueOverlayInside => {
+            if let Some(text) = text {
+                let msg = super::actions::copy_to_clipboard(&text);
+                app.mode = AppMode::Normal;
+                app.show_status(msg);
+            }
+        }
+        ClickRegion::FullValueOverlayOutside => {
+            app.mode = AppMode::Normal;
+        }
+        _ => {}
     }
 }
 

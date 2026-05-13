@@ -355,12 +355,22 @@ pub(super) fn extract_node_json(tree: &Option<crate::ui::json_viewer::Tree>, id:
     }
 }
 
-/// Extract the string value of a leaf node. Stub — real impl in Task 5.
+/// Extract the raw string value of a leaf string node.
+///
+/// Returns `Some(s)` when the node identified by `id` is a
+/// `NodeKind::String`, `None` for any other node kind or when the tree
+/// is absent.
 pub(super) fn extract_node_string(
-    _tree: &Option<crate::ui::json_viewer::Tree>,
-    _id: u32,
+    tree: &Option<crate::ui::json_viewer::Tree>,
+    id: u32,
 ) -> Option<String> {
-    None
+    let tree = tree.as_ref()?;
+    let node = tree.node(id);
+    if let crate::ui::json_viewer::NodeKind::String(s) = &node.kind {
+        Some(s.clone())
+    } else {
+        None
+    }
 }
 
 /// Thin wrapper: delegates to `crate::ui::json_viewer::subtree_to_value`
@@ -399,7 +409,8 @@ pub(super) fn dispatch_enter_action(app: &mut App, row: &[crate::ui::json_viewer
 
     match action {
         JsonAction::ExpandFullValue(node_id) => {
-            app.enter_full_value_overlay(String::new(), node_id);
+            let text = extract_node_string(&app.detail.viewer_tree, node_id).unwrap_or_default();
+            app.enter_full_value_overlay(text, node_id);
         }
         JsonAction::OpenUrl(u) => {
             let msg = open_url(&u);
@@ -428,5 +439,55 @@ pub(super) fn copy_current_log(app: &mut App) {
             let msg = copy_to_clipboard(&text);
             app.show_status(msg);
         }
+    }
+}
+
+#[cfg(test)]
+mod extract_node_string_tests {
+    use super::extract_node_string;
+    use crate::ui::json_viewer::Tree;
+
+    #[test]
+    fn extract_node_string_returns_string_value() {
+        // Build a Tree containing a string leaf.
+        let value = serde_json::json!({"key": "hello world"});
+        let tree = Tree::from_value(&value);
+        // node 0 = root object, node 1 = "key": "hello world"
+        let wrapped = Some(tree);
+
+        let result = extract_node_string(&wrapped, 1);
+        assert_eq!(
+            result,
+            Some("hello world".to_string()),
+            "should extract the string value from a String leaf node"
+        );
+    }
+
+    #[test]
+    fn extract_node_string_returns_none_for_number() {
+        let value = serde_json::json!({"n": 42});
+        let tree = Tree::from_value(&value);
+        let wrapped = Some(tree);
+
+        // node 1 is a Number, not a String
+        let result = extract_node_string(&wrapped, 1);
+        assert_eq!(result, None, "should return None for a Number node");
+    }
+
+    #[test]
+    fn extract_node_string_returns_none_for_object() {
+        let value = serde_json::json!({"obj": {"inner": 1}});
+        let tree = Tree::from_value(&value);
+        let wrapped = Some(tree);
+
+        // node 0 = root object; is Object kind, not String
+        let result = extract_node_string(&wrapped, 0);
+        assert_eq!(result, None, "should return None for an Object node");
+    }
+
+    #[test]
+    fn extract_node_string_returns_none_for_none_tree() {
+        let result = extract_node_string(&None, 0);
+        assert_eq!(result, None, "should return None when tree is absent");
     }
 }

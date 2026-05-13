@@ -10,6 +10,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 pub mod device_picker;
+pub mod full_value_overlay;
 pub mod help;
 pub mod input_field;
 pub mod json_viewer;
@@ -339,6 +340,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     app.layout.tab_bar_y = rows[0].y;
     app.layout.width = full.width;
+    app.layout.height = full.height;
 
     tab_bar::draw_tab_bar(f, app, rows[0]);
 

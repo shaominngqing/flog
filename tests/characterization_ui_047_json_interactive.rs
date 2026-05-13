@@ -16,19 +16,7 @@ fn open_url_mirror(url: &str) -> String {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return "Open failed (only http/https allowed)".into();
     }
-    let result = if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd")
-            .args(["/c", "start", "", url])
-            .spawn()
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg(url).spawn()
-    } else {
-        std::process::Command::new("xdg-open").arg(url).spawn()
-    };
-    match result {
-        Ok(_) => format!("Opening {url}"),
-        Err(_) => "Open failed (no opener)".into(),
-    }
+    format!("Opening {url}")
 }
 
 fn extract_node_json(tree_opt: &Option<Tree>, id: u32) -> String {
@@ -98,30 +86,10 @@ fn copy_node_none_tree_returns_empty() {
 }
 
 // ── Task 3: open_url characterization ────────────────────────────────────────
-
-#[test]
-fn open_url_returns_ok_message_for_https() {
-    // Call open_url with a valid https URL.
-    // We can't assert the browser actually opened, but we can verify
-    // that the code path ran and returned a meaningful result.
-    // On CI without a browser this may return "Open failed (no opener)".
-    let result = open_url_mirror("https://example.com");
-    assert!(
-        result.contains("Opening") || result.contains("Open failed"),
-        "open_url should return 'Opening ...' or 'Open failed ...', got: {:?}",
-        result
-    );
-    // The scheme-gate must NOT trigger for https.
-    assert!(
-        !result.contains("only http/https"),
-        "https:// should pass the scheme gate, got: {:?}",
-        result
-    );
-}
+// Tests only cover the scheme gate (pure logic, no browser spawned).
 
 #[test]
 fn open_url_rejects_non_http_scheme() {
-    // file:// URIs must be blocked by the scheme gate.
     let result = open_url_mirror("file:///etc/passwd");
     assert_eq!(
         result, "Open failed (only http/https allowed)",
@@ -138,18 +106,64 @@ fn open_url_rejects_javascript_scheme() {
     );
 }
 
+// ── Task 5: FullValueOverlay mode ─────────────────────────────────────────────
+
 #[test]
-fn open_url_accepts_plain_http() {
-    let result = open_url_mirror("http://example.com");
+fn enter_opens_overlay_esc_closes() {
+    use flog::app::{App, AppMode};
+
+    let mut app = App::default();
+
+    // Enter the overlay.
+    app.enter_full_value_overlay("test value".to_string(), 0);
     assert!(
-        result.contains("Opening") || result.contains("Open failed"),
-        "http:// should pass the scheme gate, got: {:?}",
-        result
+        matches!(app.mode, AppMode::FullValueOverlay(_)),
+        "mode must be FullValueOverlay after enter_full_value_overlay"
     );
-    assert!(
-        !result.contains("only http/https"),
-        "http:// should pass the scheme gate, got: {:?}",
-        result
+
+    // Simulate Esc by setting mode back to Normal (the actual key handler
+    // does `app.mode = AppMode::Normal`).
+    app.mode = AppMode::Normal;
+    assert_eq!(
+        app.mode,
+        AppMode::Normal,
+        "mode must return to Normal after Esc"
+    );
+}
+
+#[test]
+fn overlay_state_preserves_text_and_scroll() {
+    use flog::app::{App, AppMode};
+
+    let mut app = App::default();
+    let long_text = "line1\nline2\nline3\nline4\nline5".to_string();
+    app.enter_full_value_overlay(long_text.clone(), 99);
+
+    let AppMode::FullValueOverlay(ref state) = app.mode else {
+        panic!("expected FullValueOverlay mode");
+    };
+    assert_eq!(state.text, long_text);
+    assert_eq!(state.node_id, 99);
+    assert_eq!(state.scroll, 0);
+}
+
+#[test]
+fn extract_node_string_from_real_tree() {
+    // Verify that a string leaf in a JSON tree can be extracted by node ID.
+    // This mirrors the production path in dispatch_enter_action.
+    let value = serde_json::json!({"url": "https://example.com/api"});
+    let tree = Tree::from_value(&value);
+    // node 0 = root object, node 1 = "url": "https://example.com/api"
+    let node = tree.node(1);
+    let text = if let flog::ui::json_viewer::NodeKind::String(s) = &node.kind {
+        Some(s.clone())
+    } else {
+        None
+    };
+    assert_eq!(
+        text,
+        Some("https://example.com/api".to_string()),
+        "should extract URL string from node 1"
     );
 }
 

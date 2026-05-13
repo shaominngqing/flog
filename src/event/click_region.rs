@@ -138,6 +138,12 @@ pub(crate) enum ClickRegion {
         line_idx: usize,
     },
 
+    // ── Full-value overlay (Task 5) ───────────────────────────────────
+    /// Click landed inside the overlay content area → copy + exit.
+    FullValueOverlayInside,
+    /// Click landed outside the overlay → exit without copy.
+    FullValueOverlayOutside,
+
     // ── Status bar / other ────────────────────────────────────────────
     StatusBar,
     Scrollbar {

@@ -34,6 +34,10 @@ pub struct LayoutCache {
     pub levels_x: u16,
     pub bottom_buttons: Vec<(&'static str, u16, u16)>,
     pub width: u16,
+    /// Terminal height in rows — stored by the renderer so mouse-region
+    /// calculations (e.g. overlay rect centering) can mirror the renderer's
+    /// geometry without `Frame` access. Set alongside `width` in `ui::draw`.
+    pub height: u16,
     pub last_click: Option<(Instant, u16, u16)>,
     /// Maps each display row (0-based within list area) to a filtered index.
     /// Built during rendering, used by mouse click handler.
