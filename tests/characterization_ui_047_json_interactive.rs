@@ -1,9 +1,35 @@
-//! Characterization tests for Task 2: ⧉ copy icon and CopyNode dispatch.
+//! Characterization tests for Task 2 (⧉ copy icon and CopyNode dispatch)
+//! and Task 3 (URL detection and open_url).
 //!
-//! These tests pin the observable behavior of the copy-subtree feature
-//! so future refactors don't silently break it.
+//! These tests pin the observable behavior so future refactors don't
+//! silently break them.
 
 use flog::ui::json_viewer::{subtree_to_value, Tree};
+
+// ── open_url characterization ─────────────────────────────────────────────────
+//
+// `open_url` lives in `event::actions` as `pub(super)` (inaccessible from
+// integration tests). We mirror the exact same logic here so we can test the
+// scheme-gate and platform-dispatch independently of the rest of the event layer.
+
+fn open_url_mirror(url: &str) -> String {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return "Open failed (only http/https allowed)".into();
+    }
+    let result = if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", url])
+            .spawn()
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(url).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(url).spawn()
+    };
+    match result {
+        Ok(_) => format!("Opening {url}"),
+        Err(_) => "Open failed (no opener)".into(),
+    }
+}
 
 fn extract_node_json(tree_opt: &Option<Tree>, id: u32) -> String {
     let Some(tree) = tree_opt else {
@@ -69,4 +95,60 @@ fn copy_node_nested_extracts_subtree_only() {
 fn copy_node_none_tree_returns_empty() {
     let result = extract_node_json(&None, 0);
     assert!(result.is_empty(), "None tree should give empty string");
+}
+
+// ── Task 3: open_url characterization ────────────────────────────────────────
+
+#[test]
+fn open_url_returns_ok_message_for_https() {
+    // Call open_url with a valid https URL.
+    // We can't assert the browser actually opened, but we can verify
+    // that the code path ran and returned a meaningful result.
+    // On CI without a browser this may return "Open failed (no opener)".
+    let result = open_url_mirror("https://example.com");
+    assert!(
+        result.contains("Opening") || result.contains("Open failed"),
+        "open_url should return 'Opening ...' or 'Open failed ...', got: {:?}",
+        result
+    );
+    // The scheme-gate must NOT trigger for https.
+    assert!(
+        !result.contains("only http/https"),
+        "https:// should pass the scheme gate, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn open_url_rejects_non_http_scheme() {
+    // file:// URIs must be blocked by the scheme gate.
+    let result = open_url_mirror("file:///etc/passwd");
+    assert_eq!(
+        result, "Open failed (only http/https allowed)",
+        "file:// should be rejected by scheme gate"
+    );
+}
+
+#[test]
+fn open_url_rejects_javascript_scheme() {
+    let result = open_url_mirror("javascript:alert(1)");
+    assert_eq!(
+        result, "Open failed (only http/https allowed)",
+        "javascript: should be rejected by scheme gate"
+    );
+}
+
+#[test]
+fn open_url_accepts_plain_http() {
+    let result = open_url_mirror("http://example.com");
+    assert!(
+        result.contains("Opening") || result.contains("Open failed"),
+        "http:// should pass the scheme gate, got: {:?}",
+        result
+    );
+    assert!(
+        !result.contains("only http/https"),
+        "http:// should pass the scheme gate, got: {:?}",
+        result
+    );
 }

@@ -9,7 +9,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use crate::app::{App, AppMode, ViewTab};
 
 use super::actions::{
-    copy_as_curl, copy_current_log, copy_response, mock_from_selected, replay_selected,
+    copy_as_curl, copy_current_log, copy_response, mock_from_selected, open_url, replay_selected,
     trigger_mock_sync,
 };
 
@@ -147,6 +147,28 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
                     }
                 }
             }
+            KeyCode::Char('o') if app.network.show_detail => {
+                // Open the first URL on the cursor row in the JSON detail panel.
+                if let Some(cursor) = app.detail.viewer_cursor {
+                    if let Some(row) = app.detail.viewer_click_map.get(cursor) {
+                        if let Some(url) = row.iter().find_map(|r| {
+                            if let crate::ui::json_viewer::JsonAction::OpenUrl(u) = &r.action {
+                                Some(u.clone())
+                            } else {
+                                None
+                            }
+                        }) {
+                            let msg = open_url(&url);
+                            app.show_status(msg);
+                        } else {
+                            app.show_status("No URL on this line".to_string());
+                        }
+                    } else {
+                        app.show_status("No URL on this line".to_string());
+                    }
+                }
+                // If cursor is None, do nothing (Task 4 wires up J/K navigation).
+            }
             KeyCode::Char('M') => mock_from_selected(app),
             KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.enter_mock_rules();
@@ -199,6 +221,28 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('c') => copy_current_log(app),
         KeyCode::Char('e') => app.export_logs(),
+        KeyCode::Char('o') if app.show_detail_panel => {
+            // Open the first URL on the cursor row in the JSON detail panel.
+            if let Some(cursor) = app.detail.viewer_cursor {
+                if let Some(row) = app.detail.viewer_click_map.get(cursor) {
+                    if let Some(url) = row.iter().find_map(|r| {
+                        if let crate::ui::json_viewer::JsonAction::OpenUrl(u) = &r.action {
+                            Some(u.clone())
+                        } else {
+                            None
+                        }
+                    }) {
+                        let msg = open_url(&url);
+                        app.show_status(msg);
+                    } else {
+                        app.show_status("No URL on this line".to_string());
+                    }
+                } else {
+                    app.show_status("No URL on this line".to_string());
+                }
+            }
+            // If cursor is None, do nothing (Task 4 wires up J/K navigation).
+        }
         KeyCode::Char('?') => app.enter_help(),
         KeyCode::Char('S') => app.enter_stats(),
         KeyCode::Char('1') => app.switch_tab(ViewTab::Logs),

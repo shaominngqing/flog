@@ -320,9 +320,28 @@ pub(super) fn mock_from_selected(app: &mut App) {
     app.show_status(format!("Mock rule added: {}", url_pattern));
 }
 
-/// Open a URL in the system default browser. Stub — real impl in Task 3.
+/// Open a URL in the system default browser.
+///
+/// Non-blocking (no `.wait()`). Only `http://` and `https://` schemes are
+/// accepted as a defense-in-depth guard against accidentally opening
+/// file:// or javascript: URIs from user-supplied JSON data.
 pub(super) fn open_url(url: &str) -> String {
-    format!("Would open: {url}")
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return "Open failed (only http/https allowed)".into();
+    }
+    let result = if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", url])
+            .spawn()
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(url).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(url).spawn()
+    };
+    match result {
+        Ok(_) => format!("Opening {url}"),
+        Err(_) => "Open failed (no opener)".into(),
+    }
 }
 
 /// Extract the subtree rooted at `id` as pretty-printed JSON.

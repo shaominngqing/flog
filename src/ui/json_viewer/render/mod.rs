@@ -416,6 +416,141 @@ mod tests {
         );
     }
 
+    // ── URL detection tests (Task 3) ──────────────────────────────────────
+
+    /// Render a leaf string that contains a URL and return both lines and click_map.
+    fn render_with_map(
+        text: &str,
+        width: usize,
+    ) -> (Vec<String>, Vec<Vec<super::super::action::JsonHotRegion>>) {
+        let t = tree::parse(text).unwrap();
+        let s = state::init_state(&t, 0); // leave root at default (leaf = single node)
+        let mut out = Vec::new();
+        let mut cmap = Vec::new();
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", width);
+        assert_eq!(out.len(), cmap.len(), "out and click_map must stay in sync");
+        let lines = out
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect();
+        (lines, cmap)
+    }
+
+    #[test]
+    fn url_in_string_is_underlined_and_clickable() {
+        // String value containing https://example.com — wide enough to display without truncation.
+        let (lines, cmap) = render_with_map(r#""https://example.com""#, 80);
+        assert_eq!(lines.len(), 1);
+        // 1. The rendered line contains the URL text.
+        assert!(
+            lines[0].contains("https://example.com"),
+            "URL text should appear in line: {:?}",
+            lines[0]
+        );
+        // 2. The click_map has a JsonHotRegion with OpenUrl action.
+        assert!(
+            !cmap[0].is_empty(),
+            "click_map row 0 should be non-empty for URL string"
+        );
+        let has_open_url = cmap[0].iter().any(|r| {
+            matches!(&r.action, super::super::action::JsonAction::OpenUrl(u) if u == "https://example.com")
+        });
+        assert!(
+            has_open_url,
+            "expected OpenUrl(\"https://example.com\") in cmap[0]: {:?}",
+            cmap[0]
+        );
+        // 3. The URL span has UNDERLINED modifier — verify via Span styles in the Line.
+        let t = tree::parse(r#""https://example.com""#).unwrap();
+        let s = state::init_state(&t, 0);
+        let mut out_lines = Vec::new();
+        let mut out_cmap = Vec::new();
+        append_render(&mut out_lines, &mut out_cmap, &t, &s, "sec", "", 80);
+        let url_span = out_lines[0]
+            .spans
+            .iter()
+            .find(|sp| sp.content.contains("https://example.com"));
+        assert!(url_span.is_some(), "no span containing URL text");
+        let style = url_span.unwrap().style;
+        use ratatui::style::Modifier;
+        assert!(
+            style.add_modifier.contains(Modifier::UNDERLINED),
+            "URL span should have UNDERLINED modifier, got: {:?}",
+            style
+        );
+    }
+
+    #[test]
+    fn truncated_url_action_carries_full_url() {
+        // Use a very long URL that will overflow a narrow width.
+        let long_url = "https://example.com/very/long/path/that/definitely/exceeds/narrow/width/abcdefghijklmnopqrstuvwxyz";
+        let json = format!("\"{}\"", long_url);
+        let (_lines, cmap) = render_with_map(&json, 30); // narrow enough to truncate
+        assert!(
+            !cmap[0].is_empty(),
+            "click_map row 0 should have regions for URL string"
+        );
+        let open_url_action = cmap[0].iter().find_map(|r| {
+            if let super::super::action::JsonAction::OpenUrl(u) = &r.action {
+                Some(u.clone())
+            } else {
+                None
+            }
+        });
+        assert!(
+            open_url_action.is_some(),
+            "expected OpenUrl action in cmap[0]"
+        );
+        assert_eq!(
+            open_url_action.unwrap(),
+            long_url,
+            "OpenUrl action must carry the FULL URL, not the truncated display version"
+        );
+    }
+
+    #[test]
+    fn non_url_string_no_url_region() {
+        // Plain string without any URL.
+        let (_lines, cmap) = render_with_map(r#""hello world""#, 80);
+        assert_eq!(lines_count_check(&cmap), 1);
+        let has_url = cmap[0]
+            .iter()
+            .any(|r| matches!(&r.action, super::super::action::JsonAction::OpenUrl(_)));
+        assert!(
+            !has_url,
+            "plain string should not have OpenUrl region: {:?}",
+            cmap[0]
+        );
+    }
+
+    fn lines_count_check(cmap: &[Vec<super::super::action::JsonHotRegion>]) -> usize {
+        cmap.len()
+    }
+
+    #[test]
+    fn truncated_non_url_string_registers_expand() {
+        // Long plain string that will be truncated — should register ExpandFullValue.
+        let long_str = "abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_1234567890";
+        let json = format!("\"{}\"", long_str);
+        let (_lines, cmap) = render_with_map(&json, 20); // narrow enough to truncate
+        let has_expand = cmap[0].iter().any(|r| {
+            matches!(
+                &r.action,
+                super::super::action::JsonAction::ExpandFullValue(_)
+            )
+        });
+        assert!(
+            has_expand,
+            "truncated non-URL string should register ExpandFullValue: {:?}",
+            cmap[0]
+        );
+    }
+
     #[test]
     fn array_of_objects_alignment() {
         // Screenshot scenario: array with each element an object.

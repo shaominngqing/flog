@@ -96,6 +96,11 @@ pub struct DetailState {
     /// just the keyboard/mouse handlers that explicitly call
     /// `reset_detail_for_selection`.
     pub viewer_text_fingerprint: u64,
+    /// Currently highlighted row in the JSON viewer (keyboard cursor).
+    /// `None` = no cursor / cursor not yet initialised.
+    /// Task 4 wires up the J/K navigation that changes this; Task 3 reads
+    /// it for the `o` (open URL) shortcut.
+    pub viewer_cursor: Option<usize>,
 }
 
 /// Logs tab view state.
