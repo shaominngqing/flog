@@ -320,6 +320,73 @@ pub(super) fn mock_from_selected(app: &mut App) {
     app.show_status(format!("Mock rule added: {}", url_pattern));
 }
 
+/// Open a URL in the system default browser. Stub — real impl in Task 3.
+pub(super) fn open_url(url: &str) -> String {
+    format!("Would open: {url}")
+}
+
+/// Extract the subtree rooted at `id` as pretty-printed JSON.
+pub(super) fn extract_node_json(tree: &Option<crate::ui::json_viewer::Tree>, id: u32) -> String {
+    let Some(tree) = tree else {
+        return String::new();
+    };
+    match subtree_to_value(tree, id) {
+        Some(val) => serde_json::to_string_pretty(&val).unwrap_or_default(),
+        None => String::new(),
+    }
+}
+
+/// Extract the string value of a leaf node. Stub — real impl in Task 5.
+pub(super) fn extract_node_string(
+    _tree: &Option<crate::ui::json_viewer::Tree>,
+    _id: u32,
+) -> Option<String> {
+    None
+}
+
+/// Reconstruct a `serde_json::Value` for the subtree rooted at `id`.
+fn subtree_to_value(tree: &crate::ui::json_viewer::Tree, id: u32) -> Option<serde_json::Value> {
+    use crate::ui::json_viewer::NodeKind;
+
+    let node = tree.node(id);
+    let val = match &node.kind {
+        NodeKind::Null => serde_json::Value::Null,
+        NodeKind::Bool(b) => serde_json::Value::Bool(*b),
+        NodeKind::Number(s) => {
+            // Re-parse the stored number string into a serde_json::Number.
+            // from_str parses the JSON literal; fall back to string on error.
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+                v
+            } else {
+                serde_json::Value::String(s.clone())
+            }
+        }
+        NodeKind::String(s) => serde_json::Value::String(s.clone()),
+        NodeKind::Object => {
+            let children = node.children.clone();
+            let mut map = serde_json::Map::new();
+            for cid in children {
+                let child_key = tree.node(cid).key.clone().unwrap_or_default();
+                if let Some(child_val) = subtree_to_value(tree, cid) {
+                    map.insert(child_key, child_val);
+                }
+            }
+            serde_json::Value::Object(map)
+        }
+        NodeKind::Array => {
+            let children = node.children.clone();
+            let mut arr = Vec::new();
+            for cid in children {
+                if let Some(child_val) = subtree_to_value(tree, cid) {
+                    arr.push(child_val);
+                }
+            }
+            serde_json::Value::Array(arr)
+        }
+    };
+    Some(val)
+}
+
 pub(super) fn copy_current_log(app: &mut App) {
     if let Some(idx) = app.selected_store_index() {
         if let Some(entry) = app.store.get(idx) {

@@ -42,10 +42,12 @@ pub(super) fn summarize_container(tree: &Tree, id: u32, max_width: usize) -> Vec
     } else {
         String::new()
     };
-    // Reserve for: close + count_suffix + possible ", …" tail (3 cols).
-    // Over-reserves by 2 when nothing truncates, which is acceptable — the
-    // summary just gets slightly narrower, and the total line always fits.
-    let reserved = close.width() + count_suffix.width() + 3;
+    // Reserve for: close + count_suffix + possible ", …" tail (3 cols) + " ⧉" (2 cols).
+    // The +2 reserves space for the copy icon appended after the summary in
+    // push_container_collapsed. Over-reserves when nothing truncates, which is
+    // acceptable — the summary just gets slightly narrower, and the total line
+    // always fits.
+    let reserved = close.width() + count_suffix.width() + 3 + 2;
     let budget = max_width.saturating_sub(1 + reserved); // -1 for open already pushed
 
     let mut used = 0usize;

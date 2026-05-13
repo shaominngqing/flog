@@ -121,12 +121,42 @@ fn detect_logs_detail_panel(app: &App, x: u16, y: u16) -> Option<ClickRegion> {
     let header = app.detail.header_lines.max(2) as u16;
     if panel_row >= header {
         let content_row = (panel_row - header) as usize;
+        if let Some(action) =
+            detect_json_action_in_detail(&app.detail.viewer_click_map, content_row, x)
+        {
+            return Some(ClickRegion::LogsDetailJsonAction(action));
+        }
         return Some(ClickRegion::LogsDetailPanel {
             line_idx: content_row,
             x,
         });
     }
     None
+}
+
+/// Look up the `JsonAction` for a click at `(line_idx, x_in_panel)` in the
+/// viewer click map. Returns the action if the x coordinate falls within a
+/// registered hot region, or falls back to the first `ToggleFold` on that
+/// line if no region matches.
+pub(super) fn detect_json_action_in_detail(
+    click_map: &[Vec<crate::ui::json_viewer::JsonHotRegion>],
+    line_idx: usize,
+    x_in_panel: u16,
+) -> Option<crate::ui::json_viewer::JsonAction> {
+    let row = click_map.get(line_idx)?;
+    for r in row {
+        if r.range.contains(&x_in_panel) {
+            return Some(r.action.clone());
+        }
+    }
+    // whitespace fallback: return first ToggleFold if any
+    row.iter().find_map(|r| {
+        if matches!(r.action, crate::ui::json_viewer::JsonAction::ToggleFold(_)) {
+            Some(r.action.clone())
+        } else {
+            None
+        }
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────

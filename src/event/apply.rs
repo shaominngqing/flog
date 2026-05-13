@@ -64,13 +64,19 @@ pub(crate) fn apply_click_region(
         ClickRegion::LogsJumpToBottom => app.go_bottom(),
 
         // ── Logs detail panel ──────────────────────────────────────────
+        ClickRegion::LogsDetailJsonAction(action)
+        | ClickRegion::NetworkDetailJsonAction(action) => {
+            apply_json_action(app, action);
+        }
         ClickRegion::LogsDetailPanel { line_idx, x } => {
-            // JSON fold toggle in detail viewer. line_idx is the content
-            // row (header already subtracted by detect).
+            // Fallback for when detect_json_action_in_detail returned None
+            // (e.g. click on a leaf row with no hot regions). Kept for safety.
             if let Some(regions) = app.detail.viewer_click_map.get(line_idx) {
                 for region in regions {
                     if region.range.contains(&x) {
-                        if let crate::ui::json_viewer::JsonAction::ToggleFold(node_id) = region.action {
+                        if let crate::ui::json_viewer::JsonAction::ToggleFold(node_id) =
+                            region.action
+                        {
                             app.toggle_detail_fold(node_id);
                         }
                         return;
@@ -363,6 +369,25 @@ fn apply_network_detail_section_toggle(app: &mut App, section_key: &str) {
                 app.network.collapsed_sections.remove(&key);
             } else {
                 app.network.collapsed_sections.insert(key);
+            }
+        }
+    }
+}
+
+fn apply_json_action(app: &mut App, action: crate::ui::json_viewer::JsonAction) {
+    use crate::ui::json_viewer::JsonAction;
+    match action {
+        JsonAction::ToggleFold(id) => app.toggle_detail_fold(id),
+        JsonAction::CopyNode(id) => {
+            let text = super::actions::extract_node_json(&app.detail.viewer_tree, id);
+            app.show_status(super::actions::copy_to_clipboard(&text));
+        }
+        JsonAction::OpenUrl(url) => {
+            app.show_status(super::actions::open_url(&url));
+        }
+        JsonAction::ExpandFullValue(id) => {
+            if let Some(text) = super::actions::extract_node_string(&app.detail.viewer_tree, id) {
+                app.enter_full_value_overlay(text, id);
             }
         }
     }

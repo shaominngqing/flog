@@ -173,8 +173,16 @@ mod tests {
         let mut cmap = Vec::new();
         append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
         assert_eq!(cmap.len(), 1);
-        assert_eq!(cmap[0].len(), 1);
-        assert!(matches!(cmap[0][0].action, crate::ui::json_viewer::JsonAction::ToggleFold(0)));
+        // Non-empty container: ToggleFold + CopyNode
+        assert_eq!(cmap[0].len(), 2);
+        assert!(matches!(
+            cmap[0][0].action,
+            crate::ui::json_viewer::JsonAction::ToggleFold(0)
+        ));
+        assert!(matches!(
+            cmap[0][1].action,
+            crate::ui::json_viewer::JsonAction::CopyNode(0)
+        ));
     }
 
     #[test]
@@ -279,9 +287,16 @@ mod tests {
         assert!(texts[2].contains("\"b\""));
         assert!(texts[2].contains("hi"));
         assert!(texts[3].trim_end() == "  }");
-        // Click map: opener clickable, children empty, closer empty
-        assert_eq!(cmap[0].len(), 1);
-        assert!(matches!(cmap[0][0].action, crate::ui::json_viewer::JsonAction::ToggleFold(0)));
+        // Click map: opener has ToggleFold + CopyNode; children empty; closer empty.
+        assert_eq!(cmap[0].len(), 2);
+        assert!(matches!(
+            cmap[0][0].action,
+            crate::ui::json_viewer::JsonAction::ToggleFold(0)
+        ));
+        assert!(matches!(
+            cmap[0][1].action,
+            crate::ui::json_viewer::JsonAction::CopyNode(0)
+        ));
         assert!(cmap[1].is_empty());
         assert!(cmap[2].is_empty());
         assert!(cmap[3].is_empty());
@@ -315,6 +330,90 @@ mod tests {
         assert_eq!(leading_spaces(&texts[0]), 0);
         assert_eq!(leading_spaces(&texts[1]), 2);
         assert_eq!(leading_spaces(&texts[2]), 4);
+    }
+
+    #[test]
+    fn collapsed_non_empty_container_has_copy_icon() {
+        // Build a Tree with a non-empty object, force it collapsed, render,
+        // verify ⧉ appears in the line text AND a CopyNode region exists.
+        let t = tree::parse(r#"{"a": 1, "b": 2}"#).unwrap();
+        let mut s = state::init_state(&t, 0);
+        s.expanded[0] = false; // force collapsed
+        let mut out = Vec::new();
+        let mut cmap = Vec::new();
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        assert_eq!(out.len(), 1);
+        let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            rendered.contains('⧉'),
+            "expected ⧉ in collapsed non-empty container: {:?}",
+            rendered
+        );
+        // Click map must have at least 2 regions: ToggleFold + CopyNode
+        assert!(
+            cmap[0].len() >= 2,
+            "expected ToggleFold + CopyNode regions, got {:?}",
+            cmap[0]
+        );
+        let has_copy = cmap[0]
+            .iter()
+            .any(|r| matches!(r.action, crate::ui::json_viewer::JsonAction::CopyNode(0)));
+        assert!(has_copy, "expected CopyNode(0) region: {:?}", cmap[0]);
+    }
+
+    #[test]
+    fn empty_container_has_no_copy_icon() {
+        let t = tree::parse("{}").unwrap();
+        let s = state::init_state(&t, 0);
+        let mut out = Vec::new();
+        let mut cmap = Vec::new();
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        assert_eq!(out.len(), 1);
+        let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            !rendered.contains('⧉'),
+            "empty container should have no ⧉: {:?}",
+            rendered
+        );
+        assert!(
+            cmap[0].is_empty(),
+            "empty container should have no regions: {:?}",
+            cmap[0]
+        );
+    }
+
+    #[test]
+    fn expanded_opener_has_copy_icon() {
+        // Root expanded: opener line should have ⧉ and a CopyNode region.
+        let t = tree::parse(r#"{"a": 1}"#).unwrap();
+        let s = state::init_state(&t, 1); // depth 1 → root expanded
+        let mut out = Vec::new();
+        let mut cmap = Vec::new();
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        // opener line is out[0]
+        let opener: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            opener.contains('⧉'),
+            "expanded opener should have ⧉: {:?}",
+            opener
+        );
+        let has_copy = cmap[0]
+            .iter()
+            .any(|r| matches!(r.action, crate::ui::json_viewer::JsonAction::CopyNode(0)));
+        assert!(
+            has_copy,
+            "opener click map should have CopyNode(0): {:?}",
+            cmap[0]
+        );
+        // ToggleFold should also be there
+        let has_toggle = cmap[0]
+            .iter()
+            .any(|r| matches!(r.action, crate::ui::json_viewer::JsonAction::ToggleFold(0)));
+        assert!(
+            has_toggle,
+            "opener click map should have ToggleFold(0): {:?}",
+            cmap[0]
+        );
     }
 
     #[test]

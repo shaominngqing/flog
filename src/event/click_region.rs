@@ -19,6 +19,7 @@
 
 use crate::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
 use crate::domain::LogLevel;
+use crate::ui::json_viewer::JsonAction;
 
 /// Vertical scroll direction for wheel / arrow / pagination primitives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +99,10 @@ pub(crate) enum ClickRegion {
     MockRuleDelete { index: usize },
     MockRuleAdd,
     MockRuleClose,
+
+    // ── Detail panel JSON actions ─────────────────────────────────────
+    LogsDetailJsonAction(JsonAction),
+    NetworkDetailJsonAction(JsonAction),
 
     // ── Status bar / other ────────────────────────────────────────────
     StatusBar,

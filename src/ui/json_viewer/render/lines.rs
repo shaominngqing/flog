@@ -12,7 +12,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::ui::{sanitize_for_cell, BLUE};
+use crate::ui::{sanitize_for_cell, BLUE, OVERLAY0};
 
 use super::super::action::{JsonAction, JsonHotRegion};
 use super::super::palette::{
@@ -241,15 +241,28 @@ fn push_container_collapsed(
         spans.push(Span::styled(",", Style::default().fg(COMMA_COLOR)));
     }
 
-    out.push(Line::from(spans));
-    click_map.push(if empty {
+    // Append ⧉ copy icon for non-empty containers.
+    let mut hot_regions = if empty {
         Vec::new()
     } else {
         vec![JsonHotRegion {
             range: 0..u16::MAX,
             action: JsonAction::ToggleFold(id),
         }]
-    });
+    };
+
+    if !empty {
+        let line_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        let line_w = line_text.width() as u16;
+        spans.push(Span::styled(" ⧉", Style::default().fg(OVERLAY0)));
+        hot_regions.push(JsonHotRegion {
+            range: line_w..line_w + 2,
+            action: JsonAction::CopyNode(id),
+        });
+    }
+
+    out.push(Line::from(spans));
+    click_map.push(hot_regions);
 }
 
 fn push_container_opener(
@@ -285,11 +298,24 @@ fn push_container_opener(
         Style::default().fg(brace_color(depth as usize)),
     ));
 
-    out.push(Line::from(spans));
-    click_map.push(vec![JsonHotRegion {
+    let child_count = node.children.len();
+    let mut hot_regions = vec![JsonHotRegion {
         range: 0..u16::MAX,
         action: JsonAction::ToggleFold(id),
-    }]);
+    }];
+
+    if child_count > 0 {
+        let line_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        let line_w = line_text.width() as u16;
+        spans.push(Span::styled(" ⧉", Style::default().fg(OVERLAY0)));
+        hot_regions.push(JsonHotRegion {
+            range: line_w..line_w + 2,
+            action: JsonAction::CopyNode(id),
+        });
+    }
+
+    out.push(Line::from(spans));
+    click_map.push(hot_regions);
 }
 
 fn push_container_closer(

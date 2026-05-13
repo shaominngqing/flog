@@ -28,4 +28,9 @@ impl App {
     pub fn detail_scroll_down(&mut self, n: usize) {
         self.detail.scroll += n;
     }
+
+    /// Stub — real full-value overlay is implemented in Task 5.
+    pub fn enter_full_value_overlay(&mut self, text: String, id: u32) {
+        let _ = (text, id); // no-op until Task 5
+    }
 }
