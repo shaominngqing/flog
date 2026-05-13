@@ -261,6 +261,18 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let scroll = app.network.detail_scroll;
     let mut visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(inner_h).collect();
 
+    // Populate app.detail.viewer_click_map from the visible slice so that
+    // detail_cursor_down/up clamp correctly and the Enter/o handlers in
+    // keys.rs can read a single authoritative map for both tabs.
+    app.detail.viewer_click_map = app
+        .network
+        .detail_json_click_map
+        .iter()
+        .skip(scroll)
+        .take(inner_h)
+        .cloned()
+        .collect();
+
     // Highlight the cursor row with SURFACE0 background.
     // viewer_cursor is relative to the visible window (same indexing as viewer_click_map).
     if let Some(cursor) = app.detail.viewer_cursor {

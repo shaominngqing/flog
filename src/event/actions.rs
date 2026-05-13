@@ -370,6 +370,57 @@ fn subtree_to_value(tree: &crate::ui::json_viewer::Tree, id: u32) -> Option<serd
     crate::ui::json_viewer::subtree_to_value(tree, id)
 }
 
+/// Activate the highest-priority action found in a click-map row.
+///
+/// Priority: `ExpandFullValue` > `OpenUrl` > `CopyNode` > `ToggleFold`.
+/// Used by the `Enter` key handler for both the Logs and Network detail
+/// panels (both panels now write into `app.detail.viewer_click_map`).
+pub(super) fn dispatch_enter_action(app: &mut App, row: &[crate::ui::json_viewer::JsonHotRegion]) {
+    use crate::ui::json_viewer::JsonAction;
+
+    let action = row
+        .iter()
+        .find(|r| matches!(r.action, JsonAction::ExpandFullValue(_)))
+        .or_else(|| {
+            row.iter()
+                .find(|r| matches!(r.action, JsonAction::OpenUrl(_)))
+        })
+        .or_else(|| {
+            row.iter()
+                .find(|r| matches!(r.action, JsonAction::CopyNode(_)))
+        })
+        .or_else(|| {
+            row.iter()
+                .find(|r| matches!(r.action, JsonAction::ToggleFold(_)))
+        })
+        .map(|r| r.action.clone());
+
+    let Some(action) = action else { return };
+
+    match action {
+        JsonAction::ExpandFullValue(node_id) => {
+            app.enter_full_value_overlay(String::new(), node_id);
+        }
+        JsonAction::OpenUrl(u) => {
+            let msg = open_url(&u);
+            app.show_status(msg);
+        }
+        JsonAction::CopyNode(node_id) => {
+            let text_opt = app.detail.viewer_tree.as_ref().and_then(|tree| {
+                crate::ui::json_viewer::subtree_to_value(tree, node_id)
+                    .and_then(|v| serde_json::to_string_pretty(&v).ok())
+            });
+            if let Some(text) = text_opt {
+                let msg = copy_to_clipboard(&text);
+                app.show_status(msg);
+            }
+        }
+        JsonAction::ToggleFold(node_id) => {
+            app.toggle_detail_fold(node_id);
+        }
+    }
+}
+
 pub(super) fn copy_current_log(app: &mut App) {
     if let Some(idx) = app.selected_store_index() {
         if let Some(entry) = app.store.get(idx) {

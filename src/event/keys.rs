@@ -9,8 +9,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use crate::app::{App, AppMode, ViewTab};
 
 use super::actions::{
-    copy_as_curl, copy_current_log, copy_response, mock_from_selected, open_url, replay_selected,
-    trigger_mock_sync,
+    copy_as_curl, copy_current_log, copy_response, dispatch_enter_action, mock_from_selected,
+    open_url, replay_selected, trigger_mock_sync,
 };
 
 // ══════════════════════════════════════
@@ -159,52 +159,8 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
                 // With a cursor active: activate best action on cursor row.
                 // Without a cursor: toggle detail panel closed (same as original behavior).
                 if let Some(cursor) = app.detail.viewer_cursor {
-                    let action = app
-                        .network
-                        .detail_json_click_map
-                        .get(cursor)
-                        .and_then(|row| {
-                            use crate::ui::json_viewer::JsonAction;
-                            row.iter()
-                                .find(|r| matches!(r.action, JsonAction::ExpandFullValue(_)))
-                                .or_else(|| {
-                                    row.iter()
-                                        .find(|r| matches!(r.action, JsonAction::OpenUrl(_)))
-                                })
-                                .or_else(|| {
-                                    row.iter()
-                                        .find(|r| matches!(r.action, JsonAction::CopyNode(_)))
-                                })
-                                .or_else(|| {
-                                    row.iter()
-                                        .find(|r| matches!(r.action, JsonAction::ToggleFold(_)))
-                                })
-                                .map(|r| r.action.clone())
-                        });
-                    if let Some(action) = action {
-                        use crate::ui::json_viewer::JsonAction;
-                        match action {
-                            JsonAction::ExpandFullValue(node_id) => {
-                                app.enter_full_value_overlay(String::new(), node_id);
-                            }
-                            JsonAction::OpenUrl(u) => {
-                                let msg = open_url(&u);
-                                app.show_status(msg);
-                            }
-                            JsonAction::CopyNode(node_id) => {
-                                let text_opt = app.detail.viewer_tree.as_ref().and_then(|tree| {
-                                    crate::ui::json_viewer::subtree_to_value(tree, node_id)
-                                        .and_then(|v| serde_json::to_string_pretty(&v).ok())
-                                });
-                                if let Some(text) = text_opt {
-                                    let msg = super::actions::copy_to_clipboard(&text);
-                                    app.show_status(msg);
-                                }
-                            }
-                            JsonAction::ToggleFold(node_id) => {
-                                app.toggle_detail_fold(node_id);
-                            }
-                        }
+                    if let Some(row) = app.detail.viewer_click_map.get(cursor).cloned() {
+                        dispatch_enter_action(app, &row);
                     }
                 } else {
                     // No cursor active: close the detail panel.
@@ -219,8 +175,7 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::Char('o') if app.network.show_detail => {
                 // Open the first URL on the cursor row in the JSON detail panel.
                 if let Some(cursor) = app.detail.viewer_cursor {
-                    let click_map = app.network.detail_json_click_map.clone();
-                    if let Some(row) = click_map.get(cursor) {
+                    if let Some(row) = app.detail.viewer_click_map.get(cursor) {
                         if let Some(url) = row.iter().find_map(|r| {
                             if let crate::ui::json_viewer::JsonAction::OpenUrl(u) = &r.action {
                                 Some(u.clone())
@@ -297,48 +252,8 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
             // Activate best action on cursor row: ExpandFullValue > OpenUrl > CopyNode > ToggleFold.
             // If cursor is None, fall through to toggle the panel.
             if let Some(cursor) = app.detail.viewer_cursor {
-                let action = app.detail.viewer_click_map.get(cursor).and_then(|row| {
-                    use crate::ui::json_viewer::JsonAction;
-                    row.iter()
-                        .find(|r| matches!(r.action, JsonAction::ExpandFullValue(_)))
-                        .or_else(|| {
-                            row.iter()
-                                .find(|r| matches!(r.action, JsonAction::OpenUrl(_)))
-                        })
-                        .or_else(|| {
-                            row.iter()
-                                .find(|r| matches!(r.action, JsonAction::CopyNode(_)))
-                        })
-                        .or_else(|| {
-                            row.iter()
-                                .find(|r| matches!(r.action, JsonAction::ToggleFold(_)))
-                        })
-                        .map(|r| r.action.clone())
-                });
-                if let Some(action) = action {
-                    use crate::ui::json_viewer::JsonAction;
-                    match action {
-                        JsonAction::ExpandFullValue(node_id) => {
-                            app.enter_full_value_overlay(String::new(), node_id);
-                        }
-                        JsonAction::OpenUrl(u) => {
-                            let msg = open_url(&u);
-                            app.show_status(msg);
-                        }
-                        JsonAction::CopyNode(node_id) => {
-                            let text_opt = app.detail.viewer_tree.as_ref().and_then(|tree| {
-                                crate::ui::json_viewer::subtree_to_value(tree, node_id)
-                                    .and_then(|v| serde_json::to_string_pretty(&v).ok())
-                            });
-                            if let Some(text) = text_opt {
-                                let msg = super::actions::copy_to_clipboard(&text);
-                                app.show_status(msg);
-                            }
-                        }
-                        JsonAction::ToggleFold(node_id) => {
-                            app.toggle_detail_fold(node_id);
-                        }
-                    }
+                if let Some(row) = app.detail.viewer_click_map.get(cursor).cloned() {
+                    dispatch_enter_action(app, &row);
                 }
             } else {
                 app.toggle_detail_panel();
