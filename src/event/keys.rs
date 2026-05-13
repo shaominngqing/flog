@@ -93,6 +93,12 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
                     super::apply::apply_sse_field_selection(app, new_idx);
                 }
             }
+            KeyCode::Up if app.network.show_detail => {
+                app.detail_cursor_up();
+            }
+            KeyCode::Down if app.network.show_detail => {
+                app.detail_cursor_down();
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 app.network.select_up(1);
             }
@@ -264,6 +270,12 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.should_quit = true
+        }
+        KeyCode::Up if app.show_detail_panel => {
+            app.detail_cursor_up();
+        }
+        KeyCode::Down if app.show_detail_panel => {
+            app.detail_cursor_down();
         }
         KeyCode::Up | KeyCode::Char('k') => app.select_up(1),
         KeyCode::Down | KeyCode::Char('j') => app.select_down(1),
