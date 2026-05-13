@@ -385,7 +385,14 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
 
 - **Purpose:** small sub-state structs.
 - **Key types:** `SearchState`, `InputBuffers`, `StatsSnapshot`,
-  `DetailState`, `LogsViewState`.
+  `DetailState`, `LogsViewState`, `FullValueOverlayState`.
+- **Notable fields:**
+  - `DetailState::viewer_cursor: Option<usize>` — row-level keyboard
+    cursor for the JSON viewer; `None` means inactive. Navigation
+    (`J`/`K`) sets this; `Enter`/`o`/`y` act on the pointed-to region.
+  - `FullValueOverlayState { text, node_id, scroll, line_count }` —
+    state for `AppMode::FullValueOverlay`. `line_count` is pre-computed
+    at open time so scroll clamping is O(1).
 
 ### `src/app/network_state.rs`
 
@@ -662,6 +669,29 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
   raw-text JSON syntax highlighter for inline snippets in log messages.
 - **Key types:** `Tree`, `JsonViewerState`, `RenderOutput`.
 - **Key functions:** `parse_and_render`, `colorize_json_text`.
+
+### `src/ui/json_viewer/action.rs`
+
+- **Purpose:** action types for interactive hot regions in the JSON viewer.
+  Each rendered row owns a list of `JsonHotRegion`s — non-overlapping
+  column ranges each mapped to a `JsonAction`. The detect phase looks up
+  `(line_idx, x)` in this list; the apply phase executes the action.
+  Follows the two-phase detect/apply pattern used throughout the event
+  layer (audit UI-009).
+- **Key types:**
+  - `JsonAction { ToggleFold(u32) | CopyNode(u32) | OpenUrl(String) | ExpandFullValue(u32) }`
+  - `JsonHotRegion { range: Range<u16>, action: JsonAction }`
+- **Dependencies:** `std::ops::Range` only.
+
+### `src/ui/full_value_overlay.rs`
+
+- **Purpose:** renders the `FullValueOverlay` modal on top of the current
+  frame. Activated when `app.mode` is `AppMode::FullValueOverlay`; reads
+  `FullValueOverlayState` (text, scroll, node_id) and draws a 70 × 70 %
+  centred modal with scroll. Must be called last in the draw pass so it
+  covers all other widgets.
+- **Key functions:** `draw_full_value_overlay(&mut Frame, &App)`.
+- **Dependencies:** `ratatui`, `app::{App, AppMode}`, palette constants.
 
 ### `src/ui/input_field/` (+ `tests.rs`)
 

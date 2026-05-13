@@ -7,11 +7,7 @@
 use std::ops::Range;
 
 /// Actions associated with interactive hot regions in the JSON viewer.
-///
-/// Future variants (`CopyNode`, `OpenUrl`, `ExpandFullValue`) are defined now
-/// so later tasks can wire them up without changing the type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // CopyNode/OpenUrl/ExpandFullValue used in upcoming tasks
 pub enum JsonAction {
     /// Toggle fold state for a container node.
     ToggleFold(u32),

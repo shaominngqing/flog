@@ -349,6 +349,7 @@ pub enum AppMode {
     Help,
     Stats,
     MockRuleEdit,
+    FullValueOverlay(FullValueOverlayState),  // expanded string viewer (JSON detail)
 }
 ```
 
@@ -452,7 +453,19 @@ projection) and produces widgets. The layer is organised as:
   state keyed by node id, depth-aware rendering with DevTools-style
   collapsed summaries (`{k: v, …}` / `[v, …] (N)`), fixed-width ▼/▶
   markers, CJK-aware truncation. Used by both Logs detail and Network
-  detail.
+  detail. Interactive features added in 2026-05:
+  - `action.rs` — `JsonAction` enum (`ToggleFold` / `CopyNode` / `OpenUrl` /
+    `ExpandFullValue`) and `JsonHotRegion` (column range + action); the
+    render phase populates a per-frame click map, the detect/apply
+    two-phase pattern is used for JSON actions exactly as it is for
+    all other mouse clicks (audit UI-009).
+  - `viewer_cursor` on `DetailState` — row-level keyboard cursor for
+    the JSON viewer; `J`/`K` navigate rows, `Enter` activates the best
+    action, `o` opens a URL, `y` copies the node.
+  - `AppMode::FullValueOverlay(FullValueOverlayState)` — full-screen
+    overlay that displays a truncated string value in a 70 × 70 %
+    centred modal with scroll, Enter/click to copy, Esc to close.
+    Renderer lives in `ui/full_value_overlay.rs`.
 - `input_field/` — **Shared** single-line input widget with cursor +
   viewport scroll. Used by the 5 unified input fields.
 - `text_editor/` — **Shared** multi-line text editor. Used by the
