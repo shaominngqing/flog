@@ -185,14 +185,6 @@ pub(crate) fn apply_click_region(
             app.network.show_mock_rules_panel = false;
         }
 
-        // ── Full-value overlay (Task 5) ────────────────────────────────
-        ClickRegion::FullValueOverlayInside => {
-            apply_full_value_overlay_click(app, ClickRegion::FullValueOverlayInside);
-        }
-        ClickRegion::FullValueOverlayOutside => {
-            apply_full_value_overlay_click(app, ClickRegion::FullValueOverlayOutside);
-        }
-
         // ── Status bar / misc ──────────────────────────────────────────
         ClickRegion::StatusBar => apply_status_bar(app, x, y),
         ClickRegion::Scrollbar { .. } => {}
@@ -449,41 +441,38 @@ fn apply_network_json_action(
         JsonAction::OpenUrl(url) => {
             app.show_status(super::actions::open_url(&url));
         }
-        JsonAction::ExpandFullValue(id) => {
-            // Stub — same as logs panel until Task 5.
-            let _ = id;
+        JsonAction::ExpandFullValue(_id) => {
+            // Network panel trees are not cached between frames; ExpandFullValue
+            // for network JSON is deferred to a future task that adds tree caching.
+            // Show a status message so the user knows the action was received
+            // (consistent with the CopyNode stub above — M-3 fix).
+            app.show_status("Expand not available in network panel".to_string());
         }
     }
 }
 
-/// Handle a click on the full-value overlay.
+/// Copy the overlay text to the clipboard and exit the overlay.
 ///
-/// `Inside` → copy text to clipboard, exit overlay, show "Copied".
-/// `Outside` → exit overlay without copy.
-///
-/// Called both from `apply_click_region` (when FullValueOverlay variants
-/// arrive via the normal detect/apply pipeline) and directly from
-/// `handle_full_value_overlay_mouse` for the modal-mode mouse path.
-pub(crate) fn apply_full_value_overlay_click(app: &mut App, region: ClickRegion) {
+/// Called from `handle_full_value_overlay_mouse` (inside-click) and from
+/// the keyboard handler (Enter / y). The `ClickRegion::FullValueOverlay*`
+/// variants were removed (I-2); the overlay mouse path calls these helpers
+/// directly instead of going through the detect→apply pipeline.
+pub(crate) fn copy_and_exit_overlay(app: &mut App) {
     use crate::app::AppMode;
-    let text = if let AppMode::FullValueOverlay(ref state) = app.mode {
-        Some(state.text.clone())
-    } else {
-        None
-    };
-    match region {
-        ClickRegion::FullValueOverlayInside => {
-            if let Some(text) = text {
-                let msg = super::actions::copy_to_clipboard(&text);
-                app.mode = AppMode::Normal;
-                app.show_status(msg);
-            }
-        }
-        ClickRegion::FullValueOverlayOutside => {
-            app.mode = AppMode::Normal;
-        }
-        _ => {}
+    if let AppMode::FullValueOverlay(ref state) = app.mode {
+        let text = state.text.clone();
+        let msg = super::actions::copy_to_clipboard(&text);
+        app.mode = AppMode::Normal;
+        app.show_status(msg);
     }
+}
+
+/// Exit the full-value overlay without copying.
+///
+/// Called from `handle_full_value_overlay_mouse` on an outside-click.
+pub(crate) fn exit_overlay(app: &mut App) {
+    use crate::app::AppMode;
+    app.mode = AppMode::Normal;
 }
 
 fn apply_mock_rule_row(app: &mut App, row_idx: usize, class: ClickClass) {

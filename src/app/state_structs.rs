@@ -113,6 +113,10 @@ pub struct FullValueOverlayState {
     pub text: String,
     pub node_id: u32,
     pub scroll: usize,
+    /// Total number of logical lines in `text` (computed once on entry).
+    /// Used by `overlay_scroll_down` to clamp scroll so the user cannot
+    /// scroll past the last line into blank space.
+    pub line_count: usize,
 }
 
 /// Logs tab view state.

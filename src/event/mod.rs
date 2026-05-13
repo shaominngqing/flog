@@ -79,7 +79,7 @@ use std::time::Instant;
 
 use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 
-use crate::app::{App, AppMode, FullValueOverlayState, ViewTab};
+use crate::app::{App, AppMode, ViewTab};
 
 mod actions;
 mod apply;
@@ -165,7 +165,7 @@ fn full_value_overlay_rect(app: &App) -> (u16, u16, u16, u16) {
 fn handle_full_value_overlay_key(app: &mut App, key: KeyEvent) {
     use crossterm::event::KeyCode;
 
-    let AppMode::FullValueOverlay(FullValueOverlayState { ref text, .. }) = app.mode else {
+    let AppMode::FullValueOverlay(ref state) = app.mode else {
         return;
     };
 
@@ -174,7 +174,7 @@ fn handle_full_value_overlay_key(app: &mut App, key: KeyEvent) {
             app.mode = AppMode::Normal;
         }
         KeyCode::Enter | KeyCode::Char('y') => {
-            let text = text.clone();
+            let text = state.text.clone();
             let msg = actions::copy_to_clipboard(&text);
             app.mode = AppMode::Normal;
             app.show_status(msg);
@@ -200,6 +200,10 @@ fn handle_full_value_overlay_key(app: &mut App, key: KeyEvent) {
 /// Left-click inside the overlay → copy text + exit.
 /// Left-click outside the overlay → exit without copy.
 /// Scroll → scroll the overlay content.
+///
+/// The overlay intercepts mouse events before `handle_normal_mouse`, so
+/// `detect_click_region` is never called here. Logic is inlined directly
+/// rather than going through the `ClickRegion` enum (I-2 fix).
 fn handle_full_value_overlay_mouse(app: &mut App, mouse: MouseEvent) {
     let (ox, oy, ow, oh) = full_value_overlay_rect(app);
 
@@ -207,12 +211,10 @@ fn handle_full_value_overlay_mouse(app: &mut App, mouse: MouseEvent) {
         MouseEventKind::Down(MouseButton::Left) => {
             let (x, y) = (mouse.column, mouse.row);
             let inside = x >= ox && x < ox + ow && y >= oy && y < oy + oh;
-            if let Some(region) = if inside {
-                Some(click_region::ClickRegion::FullValueOverlayInside)
+            if inside {
+                apply::copy_and_exit_overlay(app);
             } else {
-                Some(click_region::ClickRegion::FullValueOverlayOutside)
-            } {
-                apply::apply_full_value_overlay_click(app, region);
+                apply::exit_overlay(app);
             }
         }
         MouseEventKind::ScrollDown => {

@@ -52,18 +52,28 @@ impl App {
     ///
     /// Sets `app.mode` to `AppMode::FullValueOverlay`; the overlay renderer
     /// in `ui/full_value_overlay.rs` reads the state on the next frame.
+    /// `line_count` is computed once here so `overlay_scroll_down` can clamp
+    /// without rescanning the text on every keypress.
     pub fn enter_full_value_overlay(&mut self, text: String, id: u32) {
+        let line_count = text.lines().count();
         self.mode = AppMode::FullValueOverlay(FullValueOverlayState {
             text,
             node_id: id,
             scroll: 0,
+            line_count,
         });
     }
 
-    /// Scroll the full-value overlay down by `n` lines.
+    /// Scroll the full-value overlay down by `n` lines, clamped to the last line.
+    ///
+    /// Without the upper bound the user could scroll indefinitely into blank
+    /// space below the content (I-1 fix).
     pub fn overlay_scroll_down(&mut self, n: usize) {
         if let AppMode::FullValueOverlay(ref mut state) = self.mode {
-            state.scroll = state.scroll.saturating_add(n);
+            state.scroll = state
+                .scroll
+                .saturating_add(n)
+                .min(state.line_count.saturating_sub(1));
         }
     }
 
@@ -93,19 +103,28 @@ mod full_value_overlay_tests {
     #[test]
     fn enter_full_value_overlay_stores_text_and_node_id() {
         let mut app = App::default();
-        app.enter_full_value_overlay("world".to_string(), 7);
+        app.enter_full_value_overlay("world\nline2\nline3".to_string(), 7);
         let AppMode::FullValueOverlay(ref state) = app.mode else {
             panic!("expected FullValueOverlay mode");
         };
-        assert_eq!(state.text, "world");
+        assert_eq!(state.text, "world\nline2\nline3");
         assert_eq!(state.node_id, 7);
         assert_eq!(state.scroll, 0, "initial scroll must be 0");
+        assert_eq!(
+            state.line_count, 3,
+            "line_count must equal text.lines().count()"
+        );
     }
 
     #[test]
     fn overlay_scroll_down_increments_scroll() {
         let mut app = App::default();
-        app.enter_full_value_overlay("text".to_string(), 0);
+        // 10-line text so clamping does not prevent a scroll of 3
+        let text = (0..10)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        app.enter_full_value_overlay(text, 0);
         app.overlay_scroll_down(3);
         let AppMode::FullValueOverlay(ref state) = app.mode else {
             panic!("expected FullValueOverlay mode");
@@ -114,9 +133,39 @@ mod full_value_overlay_tests {
     }
 
     #[test]
+    fn overlay_scroll_down_clamps_at_last_line() {
+        let mut app = App::default();
+        // 5 lines → max scroll = 4 (line_count - 1)
+        let text = "a\nb\nc\nd\ne".to_string();
+        app.enter_full_value_overlay(text, 0);
+        app.overlay_scroll_down(100);
+        let AppMode::FullValueOverlay(ref state) = app.mode else {
+            panic!("expected FullValueOverlay mode");
+        };
+        assert_eq!(
+            state.scroll, 4,
+            "scroll must clamp at line_count - 1 (4 for 5-line text)"
+        );
+    }
+
+    #[test]
+    fn overlay_scroll_down_clamps_on_single_line_text() {
+        let mut app = App::default();
+        app.enter_full_value_overlay("only one line".to_string(), 0);
+        app.overlay_scroll_down(99);
+        let AppMode::FullValueOverlay(ref state) = app.mode else {
+            panic!("expected FullValueOverlay mode");
+        };
+        assert_eq!(
+            state.scroll, 0,
+            "single-line text: scroll must stay at 0 (line_count.saturating_sub(1) == 0)"
+        );
+    }
+
+    #[test]
     fn overlay_scroll_up_saturates_at_zero() {
         let mut app = App::default();
-        app.enter_full_value_overlay("text".to_string(), 0);
+        app.enter_full_value_overlay("line1\nline2\nline3".to_string(), 0);
         // scroll is 0; going up should clamp at 0
         app.overlay_scroll_up(5);
         let AppMode::FullValueOverlay(ref state) = app.mode else {
@@ -128,7 +177,12 @@ mod full_value_overlay_tests {
     #[test]
     fn overlay_scroll_down_then_up() {
         let mut app = App::default();
-        app.enter_full_value_overlay("text".to_string(), 0);
+        // 20 lines so scrolling by 10 then backing up by 3 lands at 7
+        let text = (0..20)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        app.enter_full_value_overlay(text, 0);
         app.overlay_scroll_down(10);
         app.overlay_scroll_up(3);
         let AppMode::FullValueOverlay(ref state) = app.mode else {
