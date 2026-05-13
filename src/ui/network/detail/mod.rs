@@ -259,7 +259,23 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Apply scroll
     let scroll = app.network.detail_scroll;
-    let visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(inner_h).collect();
+    let mut visible_lines: Vec<Line> = all_lines.into_iter().skip(scroll).take(inner_h).collect();
+
+    // Highlight the cursor row with SURFACE0 background.
+    // viewer_cursor is relative to the visible window (same indexing as viewer_click_map).
+    if let Some(cursor) = app.detail.viewer_cursor {
+        if let Some(line) = visible_lines.get_mut(cursor) {
+            let highlighted_spans: Vec<ratatui::text::Span<'static>> = line
+                .spans
+                .iter()
+                .map(|s| {
+                    let style = s.style.patch(Style::default().bg(SURFACE0));
+                    ratatui::text::Span::styled(s.content.clone(), style)
+                })
+                .collect();
+            *line = Line::from(highlighted_spans);
+        }
+    }
 
     let block = Block::default()
         .title(" Details ")

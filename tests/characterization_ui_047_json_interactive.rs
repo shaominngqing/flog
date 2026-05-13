@@ -152,3 +152,60 @@ fn open_url_accepts_plain_http() {
         result
     );
 }
+
+// ── Task 4: viewer_cursor J/K clamp ───────────────────────────────────────────
+
+#[test]
+fn viewer_cursor_j_k_clamp() {
+    use flog::app::App;
+
+    let mut app = App::default();
+
+    // Populate viewer_click_map with 5 empty rows so cursor bounds are exercised.
+    app.detail.viewer_click_map = vec![Vec::new(); 5];
+
+    // Call detail_cursor_down() 10 times — should clamp at 4 (max = len - 1).
+    for _ in 0..10 {
+        app.detail_cursor_down();
+    }
+    assert_eq!(
+        app.detail.viewer_cursor,
+        Some(4),
+        "cursor must clamp at len-1 (4) after 10 down moves on a 5-row map"
+    );
+
+    // Call detail_cursor_up() 10 times — should clamp at 0.
+    for _ in 0..10 {
+        app.detail_cursor_up();
+    }
+    assert_eq!(
+        app.detail.viewer_cursor,
+        Some(0),
+        "cursor must clamp at 0 after 10 up moves"
+    );
+}
+
+#[test]
+fn viewer_cursor_starts_at_none() {
+    use flog::app::App;
+    let app = App::default();
+    assert_eq!(
+        app.detail.viewer_cursor, None,
+        "viewer_cursor must be None in a fresh App"
+    );
+}
+
+#[test]
+fn viewer_cursor_reset_on_selection_change() {
+    use flog::app::App;
+
+    let mut app = App::default();
+    app.detail.viewer_click_map = vec![Vec::new(); 5];
+    app.detail.viewer_cursor = Some(3);
+
+    app.reset_detail_for_selection();
+    assert_eq!(
+        app.detail.viewer_cursor, None,
+        "reset_detail_for_selection must clear viewer_cursor"
+    );
+}

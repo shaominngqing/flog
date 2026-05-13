@@ -159,12 +159,28 @@ pub fn draw_side_panel(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|r| r.hot_regions.clone())
         .collect();
 
-    let visible: Vec<Line<'static>> = body_rows
+    let mut visible: Vec<Line<'static>> = body_rows
         .into_iter()
         .skip(scroll)
         .take(body_height)
         .map(|r| r.line)
         .collect();
+
+    // Highlight the cursor row with SURFACE0 background.
+    if let Some(cursor) = app.detail.viewer_cursor {
+        if let Some(line) = visible.get_mut(cursor) {
+            let highlighted_spans: Vec<ratatui::text::Span<'static>> = line
+                .spans
+                .iter()
+                .map(|s| {
+                    let style = s.style.patch(Style::default().bg(SURFACE0));
+                    ratatui::text::Span::styled(s.content.clone(), style)
+                })
+                .collect();
+            *line = Line::from(highlighted_spans);
+        }
+    }
+
     all_lines.extend(visible);
 
     let total_content = app.detail.header_lines + full_body_len;

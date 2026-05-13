@@ -171,6 +171,12 @@ pub(in crate::ui::help) fn lines() -> Vec<Line<'static>> {
     lines.push(blank());
 
     lines.push(subheading("\u{1f4cb} Detail Panel"));
+    lines.push(kv("J / K", "Move cursor down/up in JSON viewer"));
+    lines.push(kv(
+        "Enter",
+        "Activate action on cursor row (expand/open/copy/fold)",
+    ));
+    lines.push(kv("o", "Open URL on cursor row in browser"));
     lines.push(Line::from(vec![
         Span::raw("    "),
         dim("JSON content is rendered as a collapsible tree:"),

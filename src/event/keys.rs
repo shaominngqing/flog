@@ -113,10 +113,6 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
             KeyCode::End => {
                 app.network.go_bottom();
             }
-            KeyCode::Enter => {
-                app.network.show_detail = !app.network.show_detail;
-                app.network.detail_scroll = 0;
-            }
             KeyCode::Char('/') => app.enter_input_field(crate::app::InputField::NetSearch),
             KeyCode::Char('\\') => app.enter_input_field(crate::app::InputField::NetExclude),
             KeyCode::Char('s') => {
@@ -147,10 +143,78 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
                     }
                 }
             }
+            KeyCode::Char('J') if app.network.show_detail => {
+                app.detail_cursor_down();
+            }
+            KeyCode::Char('K') if app.network.show_detail => {
+                app.detail_cursor_up();
+            }
+            KeyCode::Enter if app.network.show_detail => {
+                // With a cursor active: activate best action on cursor row.
+                // Without a cursor: toggle detail panel closed (same as original behavior).
+                if let Some(cursor) = app.detail.viewer_cursor {
+                    let action = app
+                        .network
+                        .detail_json_click_map
+                        .get(cursor)
+                        .and_then(|row| {
+                            use crate::ui::json_viewer::JsonAction;
+                            row.iter()
+                                .find(|r| matches!(r.action, JsonAction::ExpandFullValue(_)))
+                                .or_else(|| {
+                                    row.iter()
+                                        .find(|r| matches!(r.action, JsonAction::OpenUrl(_)))
+                                })
+                                .or_else(|| {
+                                    row.iter()
+                                        .find(|r| matches!(r.action, JsonAction::CopyNode(_)))
+                                })
+                                .or_else(|| {
+                                    row.iter()
+                                        .find(|r| matches!(r.action, JsonAction::ToggleFold(_)))
+                                })
+                                .map(|r| r.action.clone())
+                        });
+                    if let Some(action) = action {
+                        use crate::ui::json_viewer::JsonAction;
+                        match action {
+                            JsonAction::ExpandFullValue(node_id) => {
+                                app.enter_full_value_overlay(String::new(), node_id);
+                            }
+                            JsonAction::OpenUrl(u) => {
+                                let msg = open_url(&u);
+                                app.show_status(msg);
+                            }
+                            JsonAction::CopyNode(node_id) => {
+                                let text_opt = app.detail.viewer_tree.as_ref().and_then(|tree| {
+                                    crate::ui::json_viewer::subtree_to_value(tree, node_id)
+                                        .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                                });
+                                if let Some(text) = text_opt {
+                                    let msg = super::actions::copy_to_clipboard(&text);
+                                    app.show_status(msg);
+                                }
+                            }
+                            JsonAction::ToggleFold(node_id) => {
+                                app.toggle_detail_fold(node_id);
+                            }
+                        }
+                    }
+                } else {
+                    // No cursor active: close the detail panel.
+                    app.network.show_detail = false;
+                    app.network.detail_scroll = 0;
+                }
+            }
+            KeyCode::Enter if !app.network.show_detail => {
+                app.network.show_detail = true;
+                app.network.detail_scroll = 0;
+            }
             KeyCode::Char('o') if app.network.show_detail => {
                 // Open the first URL on the cursor row in the JSON detail panel.
                 if let Some(cursor) = app.detail.viewer_cursor {
-                    if let Some(row) = app.detail.viewer_click_map.get(cursor) {
+                    let click_map = app.network.detail_json_click_map.clone();
+                    if let Some(row) = click_map.get(cursor) {
                         if let Some(url) = row.iter().find_map(|r| {
                             if let crate::ui::json_viewer::JsonAction::OpenUrl(u) = &r.action {
                                 Some(u.clone())
@@ -167,7 +231,7 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
                         app.show_status("No URL on this line".to_string());
                     }
                 }
-                // If cursor is None, do nothing (Task 4 wires up J/K navigation).
+                // If cursor is None, do nothing.
             }
             KeyCode::Char('M') => mock_from_selected(app),
             KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -211,6 +275,63 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('\\') => app.enter_input_field(crate::app::InputField::LogExclude),
         KeyCode::Char('n') => app.next_match(),
         KeyCode::Char('N') => app.prev_match(),
+        KeyCode::Char('J') if app.show_detail_panel => {
+            app.detail_cursor_down();
+        }
+        KeyCode::Char('K') if app.show_detail_panel => {
+            app.detail_cursor_up();
+        }
+        KeyCode::Enter if app.show_detail_panel => {
+            // Activate best action on cursor row: ExpandFullValue > OpenUrl > CopyNode > ToggleFold.
+            // If cursor is None, fall through to toggle the panel.
+            if let Some(cursor) = app.detail.viewer_cursor {
+                let action = app.detail.viewer_click_map.get(cursor).and_then(|row| {
+                    use crate::ui::json_viewer::JsonAction;
+                    row.iter()
+                        .find(|r| matches!(r.action, JsonAction::ExpandFullValue(_)))
+                        .or_else(|| {
+                            row.iter()
+                                .find(|r| matches!(r.action, JsonAction::OpenUrl(_)))
+                        })
+                        .or_else(|| {
+                            row.iter()
+                                .find(|r| matches!(r.action, JsonAction::CopyNode(_)))
+                        })
+                        .or_else(|| {
+                            row.iter()
+                                .find(|r| matches!(r.action, JsonAction::ToggleFold(_)))
+                        })
+                        .map(|r| r.action.clone())
+                });
+                if let Some(action) = action {
+                    use crate::ui::json_viewer::JsonAction;
+                    match action {
+                        JsonAction::ExpandFullValue(node_id) => {
+                            app.enter_full_value_overlay(String::new(), node_id);
+                        }
+                        JsonAction::OpenUrl(u) => {
+                            let msg = open_url(&u);
+                            app.show_status(msg);
+                        }
+                        JsonAction::CopyNode(node_id) => {
+                            let text_opt = app.detail.viewer_tree.as_ref().and_then(|tree| {
+                                crate::ui::json_viewer::subtree_to_value(tree, node_id)
+                                    .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                            });
+                            if let Some(text) = text_opt {
+                                let msg = super::actions::copy_to_clipboard(&text);
+                                app.show_status(msg);
+                            }
+                        }
+                        JsonAction::ToggleFold(node_id) => {
+                            app.toggle_detail_fold(node_id);
+                        }
+                    }
+                }
+            } else {
+                app.toggle_detail_panel();
+            }
+        }
         KeyCode::Enter => app.toggle_detail_panel(),
         KeyCode::Char('s') => {
             app.select_mode = true;
@@ -241,7 +362,7 @@ pub(super) fn handle_normal_key(app: &mut App, key: KeyEvent) {
                     app.show_status("No URL on this line".to_string());
                 }
             }
-            // If cursor is None, do nothing (Task 4 wires up J/K navigation).
+            // If cursor is None, do nothing.
         }
         KeyCode::Char('?') => app.enter_help(),
         KeyCode::Char('S') => app.enter_stats(),

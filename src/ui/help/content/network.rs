@@ -30,6 +30,15 @@ pub(in crate::ui::help) fn lines() -> Vec<Line<'static>> {
     lines.push(kv("Ctrl+m", "Open Mock rules management panel"));
     lines.push(kv("E", "Expand all JSON sections"));
     lines.push(kv("C", "Collapse all JSON sections (keep root)"));
+    lines.push(kv(
+        "J / K",
+        "Move cursor down/up in JSON viewer (detail open)",
+    ));
+    lines.push(kv(
+        "Enter",
+        "Activate action on cursor row (expand/open/copy/fold)",
+    ));
+    lines.push(kv("o", "Open URL on cursor row in browser"));
     lines.push(kv("S", "Performance stats"));
     lines.push(kv("s", "Select mode (text selection)"));
     lines.push(kv("Esc", "Clear all filters"));
