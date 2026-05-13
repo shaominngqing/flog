@@ -64,6 +64,51 @@ impl Tree {
     }
 }
 
+/// Reconstruct a `serde_json::Value` for the subtree rooted at `id`.
+///
+/// Used by `event::actions::extract_node_json` (and tests that characterize it)
+/// to copy a JSON subtree to the clipboard. The implementation is placed here
+/// so the integration test can call it via the already-public `json_viewer` path
+/// without duplicating the logic.
+pub fn subtree_to_value(tree: &Tree, id: u32) -> Option<Value> {
+    let node = tree.node(id);
+    let val = match &node.kind {
+        NodeKind::Null => Value::Null,
+        NodeKind::Bool(b) => Value::Bool(*b),
+        NodeKind::Number(s) => {
+            // Re-parse the stored number string back into a serde_json::Number.
+            if let Ok(v) = serde_json::from_str::<Value>(s) {
+                v
+            } else {
+                Value::String(s.clone())
+            }
+        }
+        NodeKind::String(s) => Value::String(s.clone()),
+        NodeKind::Object => {
+            let children = node.children.clone();
+            let mut map = serde_json::Map::new();
+            for cid in children {
+                let child_key = tree.node(cid).key.clone().unwrap_or_default();
+                if let Some(child_val) = subtree_to_value(tree, cid) {
+                    map.insert(child_key, child_val);
+                }
+            }
+            Value::Object(map)
+        }
+        NodeKind::Array => {
+            let children = node.children.clone();
+            let mut arr = Vec::new();
+            for cid in children {
+                if let Some(child_val) = subtree_to_value(tree, cid) {
+                    arr.push(child_val);
+                }
+            }
+            Value::Array(arr)
+        }
+    };
+    Some(val)
+}
+
 /// Strict-JSON convenience wrapper. Test-only — runtime callers go through
 /// `domain::structured_parser::parse` + `Tree::from_value`.
 #[cfg(test)]

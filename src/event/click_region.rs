@@ -57,8 +57,12 @@ pub(crate) enum ClickClass {
 pub(crate) enum ClickRegion {
     // ── Device picker overlay ─────────────────────────────────────────
     DevicePickerOutside,
-    DevicePickerItem { index: usize },
-    DevicePickerScroll { direction: ScrollDir },
+    DevicePickerItem {
+        index: usize,
+    },
+    DevicePickerScroll {
+        direction: ScrollDir,
+    },
 
     // ── Tab bar ───────────────────────────────────────────────────────
     LogsTab,
@@ -69,9 +73,14 @@ pub(crate) enum ClickRegion {
     LogsToolbarSearch,
     LogsToolbarTag,
     LogsToolbarExclude,
-    LogsListRow { row: u16 },
+    LogsListRow {
+        row: u16,
+    },
     LogsJumpToBottom,
-    LogsDetailPanel { line_idx: usize, x: u16 },
+    LogsDetailPanel {
+        line_idx: usize,
+        x: u16,
+    },
     LogsDetailClose,
 
     // ── Network view ──────────────────────────────────────────────────
@@ -81,32 +90,60 @@ pub(crate) enum ClickRegion {
     NetworkMethodPill(MethodFilter),
     NetworkStatusPill(StatusFilter),
     NetworkMockRulesBtn,
-    NetworkListRow { row: u16 },
-    NetworkDetailPanel { line_idx: usize, x: u16 },
+    NetworkListRow {
+        row: u16,
+    },
+    NetworkDetailPanel {
+        line_idx: usize,
+        x: u16,
+    },
     NetworkDetailSseEventsPill,
     NetworkDetailSseMergedPill,
-    NetworkDetailSseFieldPill { idx: usize },
+    NetworkDetailSseFieldPill {
+        idx: usize,
+    },
     NetworkDetailWsChatPill,
-    NetworkDetailSectionToggle { section_key: String },
+    NetworkDetailSectionToggle {
+        section_key: String,
+    },
     NetworkDetailMockBtn,
     NetworkDetailReplayBtn,
     NetworkDetailClose,
 
     // ── Mock rules side panel ─────────────────────────────────────────
-    MockRuleRow { index: usize },
-    MockRuleEditBtn { index: usize },
-    MockRuleToggle { index: usize },
-    MockRuleDelete { index: usize },
+    MockRuleRow {
+        index: usize,
+    },
+    MockRuleEditBtn {
+        index: usize,
+    },
+    MockRuleToggle {
+        index: usize,
+    },
+    MockRuleDelete {
+        index: usize,
+    },
     MockRuleAdd,
     MockRuleClose,
 
     // ── Detail panel JSON actions ─────────────────────────────────────
     LogsDetailJsonAction(JsonAction),
-    NetworkDetailJsonAction(JsonAction),
+    /// JSON action from the network detail panel. `line_idx` is the
+    /// rendered-line index (scroll-adjusted) so `apply` can do an O(1)
+    /// `detail_json_section_keys[line_idx]` lookup for ToggleFold routing
+    /// instead of a linear scan (which would pick the wrong section when
+    /// multiple sections share node id 0).
+    NetworkDetailJsonAction {
+        action: JsonAction,
+        line_idx: usize,
+    },
 
     // ── Status bar / other ────────────────────────────────────────────
     StatusBar,
-    Scrollbar { axis: Axis, direction: ScrollDir },
+    Scrollbar {
+        axis: Axis,
+        direction: ScrollDir,
+    },
 }
 
 #[cfg(test)]

@@ -344,47 +344,11 @@ pub(super) fn extract_node_string(
     None
 }
 
-/// Reconstruct a `serde_json::Value` for the subtree rooted at `id`.
+/// Thin wrapper: delegates to `crate::ui::json_viewer::subtree_to_value`
+/// which lives in `tree.rs` and is re-exported from the public `json_viewer`
+/// path so integration tests can call it without duplicating the logic.
 fn subtree_to_value(tree: &crate::ui::json_viewer::Tree, id: u32) -> Option<serde_json::Value> {
-    use crate::ui::json_viewer::NodeKind;
-
-    let node = tree.node(id);
-    let val = match &node.kind {
-        NodeKind::Null => serde_json::Value::Null,
-        NodeKind::Bool(b) => serde_json::Value::Bool(*b),
-        NodeKind::Number(s) => {
-            // Re-parse the stored number string into a serde_json::Number.
-            // from_str parses the JSON literal; fall back to string on error.
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                v
-            } else {
-                serde_json::Value::String(s.clone())
-            }
-        }
-        NodeKind::String(s) => serde_json::Value::String(s.clone()),
-        NodeKind::Object => {
-            let children = node.children.clone();
-            let mut map = serde_json::Map::new();
-            for cid in children {
-                let child_key = tree.node(cid).key.clone().unwrap_or_default();
-                if let Some(child_val) = subtree_to_value(tree, cid) {
-                    map.insert(child_key, child_val);
-                }
-            }
-            serde_json::Value::Object(map)
-        }
-        NodeKind::Array => {
-            let children = node.children.clone();
-            let mut arr = Vec::new();
-            for cid in children {
-                if let Some(child_val) = subtree_to_value(tree, cid) {
-                    arr.push(child_val);
-                }
-            }
-            serde_json::Value::Array(arr)
-        }
-    };
-    Some(val)
+    crate::ui::json_viewer::subtree_to_value(tree, id)
 }
 
 pub(super) fn copy_current_log(app: &mut App) {

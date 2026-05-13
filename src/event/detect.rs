@@ -117,18 +117,24 @@ fn detect_logs_detail_panel(app: &App, x: u16, y: u16) -> Option<ClickRegion> {
             return Some(ClickRegion::LogsDetailClose);
         }
     }
+    // Hot region ranges are relative to column 0 of the rendered line (i.e.
+    // relative to the content area inside the panel border). Translate the
+    // absolute screen x by subtracting the panel's left edge plus the 1-cell
+    // border so the coordinate matches the ranges stored in viewer_click_map.
+    let panel_start = (app.layout.width as u32 * (100 - app.detail_panel_pct as u32) / 100) as u16;
+    let x_in_panel = x.saturating_sub(panel_start + 1);
     let panel_row = y.saturating_sub(app.layout.list_y);
     let header = app.detail.header_lines.max(2) as u16;
     if panel_row >= header {
         let content_row = (panel_row - header) as usize;
         if let Some(action) =
-            detect_json_action_in_detail(&app.detail.viewer_click_map, content_row, x)
+            detect_json_action_in_detail(&app.detail.viewer_click_map, content_row, x_in_panel)
         {
             return Some(ClickRegion::LogsDetailJsonAction(action));
         }
         return Some(ClickRegion::LogsDetailPanel {
             line_idx: content_row,
-            x,
+            x: x_in_panel,
         });
     }
     None

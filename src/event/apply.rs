@@ -7,6 +7,10 @@
 //! Each match arm mirrors one branch of the original handler so the net
 //! behavior is preserved (verified by the 108 mouse characterization
 //! tests in Task 5 once the dispatcher is rewired).
+//!
+//! File size: ~580 lines (yellow zone). Justified: this is a single-responsibility
+//! match dispatcher; splitting it into sub-files would distribute cohesive
+//! mutation logic without reducing complexity or improving readability.
 
 use crate::app::{App, InputField, ViewTab};
 
@@ -67,8 +71,8 @@ pub(crate) fn apply_click_region(
         ClickRegion::LogsDetailJsonAction(action) => {
             apply_json_action(app, action);
         }
-        ClickRegion::NetworkDetailJsonAction(action) => {
-            apply_network_json_action(app, action);
+        ClickRegion::NetworkDetailJsonAction { action, line_idx } => {
+            apply_network_json_action(app, action, line_idx);
         }
         ClickRegion::LogsDetailPanel { line_idx, x } => {
             // Fallback for when detect_json_action_in_detail returned None
@@ -397,29 +401,30 @@ fn apply_json_action(app: &mut App, action: crate::ui::json_viewer::JsonAction) 
 
 /// Handle JSON actions originating from the network detail panel.
 ///
-/// `ToggleFold` requires a per-section [`crate::ui::json_viewer::JsonViewerState`]
-/// lookup — the network panel uses `app.network.json_viewer_states` keyed by
-/// section name (e.g. `"res_body"`, `"ws_0"`), which is tracked in the
-/// parallel `detail_json_section_keys` map produced by the renderer.
+/// `ToggleFold` uses `line_idx` for an O(1) lookup into
+/// `detail_json_section_keys` to find the owning section, then toggles
+/// the right entry in `app.network.json_viewer_states`. This avoids the
+/// linear-scan bug where multiple sections share node id 0 (each section's
+/// tree is numbered from 0 by `Tree::from_value`, so a scan from the front
+/// would always toggle the first section — e.g. `req_body` — instead of
+/// the clicked one).
 ///
-/// `CopyNode` / `OpenUrl` / `ExpandFullValue` fall through to the same
-/// helpers as the logs panel (they are action-not-panel-specific).
-fn apply_network_json_action(app: &mut App, action: crate::ui::json_viewer::JsonAction) {
+/// `CopyNode` / `OpenUrl` / `ExpandFullValue` are action-not-panel-specific
+/// stubs pending tree-caching work.
+fn apply_network_json_action(
+    app: &mut App,
+    action: crate::ui::json_viewer::JsonAction,
+    line_idx: usize,
+) {
     use crate::ui::json_viewer::JsonAction;
     match action {
         JsonAction::ToggleFold(id) => {
-            // Find the section key for this node by scanning the parallel map.
+            // O(1) section key lookup using the line index provided by detect.
             let section_key = app
                 .network
-                .detail_json_click_map
-                .iter()
-                .zip(app.network.detail_json_section_keys.iter())
-                .find_map(|(regions, key)| {
-                    let has_node = regions.iter().any(|r| {
-                        matches!(r.action, crate::ui::json_viewer::JsonAction::ToggleFold(nid) if nid == id)
-                    });
-                    if has_node { key.clone() } else { None }
-                });
+                .detail_json_section_keys
+                .get(line_idx)
+                .and_then(|k| k.clone());
             if let Some(key) = section_key {
                 if let Some(state) = app.network.json_viewer_states.get_mut(&key) {
                     if let Some(slot) = state.expanded.get_mut(id as usize) {

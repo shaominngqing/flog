@@ -3,49 +3,7 @@
 //! These tests pin the observable behavior of the copy-subtree feature
 //! so future refactors don't silently break it.
 
-use flog::ui::json_viewer::{NodeKind, Tree};
-
-/// Reconstruct a `serde_json::Value` for the subtree rooted at `id`.
-/// This mirrors the logic in `event::actions::subtree_to_value` so the
-/// characterization test can verify it end-to-end without depending on
-/// private visibility.
-fn subtree_to_value(tree: &Tree, id: u32) -> Option<serde_json::Value> {
-    let node = tree.node(id);
-    let val = match &node.kind {
-        NodeKind::Null => serde_json::Value::Null,
-        NodeKind::Bool(b) => serde_json::Value::Bool(*b),
-        NodeKind::Number(s) => {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
-                v
-            } else {
-                serde_json::Value::String(s.clone())
-            }
-        }
-        NodeKind::String(s) => serde_json::Value::String(s.clone()),
-        NodeKind::Object => {
-            let children = node.children.clone();
-            let mut map = serde_json::Map::new();
-            for cid in children {
-                let child_key = tree.node(cid).key.clone().unwrap_or_default();
-                if let Some(child_val) = subtree_to_value(tree, cid) {
-                    map.insert(child_key, child_val);
-                }
-            }
-            serde_json::Value::Object(map)
-        }
-        NodeKind::Array => {
-            let children = node.children.clone();
-            let mut arr = Vec::new();
-            for cid in children {
-                if let Some(child_val) = subtree_to_value(tree, cid) {
-                    arr.push(child_val);
-                }
-            }
-            serde_json::Value::Array(arr)
-        }
-    };
-    Some(val)
-}
+use flog::ui::json_viewer::{subtree_to_value, Tree};
 
 fn extract_node_json(tree_opt: &Option<Tree>, id: u32) -> String {
     let Some(tree) = tree_opt else {

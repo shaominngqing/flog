@@ -104,7 +104,7 @@ fn detect_network_detail(app: &App, x: u16, y: u16) -> Option<ClickRegion> {
             line_idx,
             x_in_panel,
         ) {
-            return Some(ClickRegion::NetworkDetailJsonAction(action));
+            return Some(ClickRegion::NetworkDetailJsonAction { action, line_idx });
         }
 
         if let Some(Some(section_key)) = app.network.detail_section_map.get(line_idx) {
