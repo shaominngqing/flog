@@ -33,6 +33,15 @@ pub(super) fn render_ws(
     entry: &NetworkEntry,
     inner_w: usize,
 ) {
+    let copied_ids: std::collections::HashSet<u32> = {
+        let threshold = std::time::Duration::from_secs(2);
+        app.detail
+            .copied_node_feedback
+            .iter()
+            .filter(|(_, t)| t.elapsed() < threshold)
+            .map(|(&id, _)| id)
+            .collect()
+    };
     let sent = entry
         .ws_messages
         .iter()
@@ -98,6 +107,7 @@ pub(super) fn render_ws(
                 app,
                 entry,
                 inner_w,
+                &copied_ids,
             );
         } else {
             render_raw_mode(
@@ -108,6 +118,7 @@ pub(super) fn render_ws(
                 app,
                 entry,
                 inner_w,
+                &copied_ids,
             );
         }
         lines.push(Line::raw(""));
@@ -125,6 +136,7 @@ fn render_chat_mode(
     app: &mut App,
     entry: &NetworkEntry,
     inner_w: usize,
+    copied_ids: &std::collections::HashSet<u32>,
 ) {
     // ── Chat mode: compact timeline with direction pills ──
     let msgs: Vec<(crate::domain::network::WsDirection, &str, u64)> = entry
@@ -230,7 +242,7 @@ fn render_chat_mode(
                         } else {
                             msg.data.clone()
                         };
-                        render_json_section(
+                        if let Some((k, t)) = render_json_section(
                             lines,
                             section_map,
                             json_click_map,
@@ -239,7 +251,10 @@ fn render_chat_mode(
                             &format!("ws_{}", mi),
                             &mut app.network.json_viewer_states,
                             inner_w,
-                        );
+                            &copied_ids,
+                        ) {
+                            app.network.detail_json_trees.insert(k, t);
+                        }
                     }
                 }
             }
@@ -264,6 +279,7 @@ fn render_raw_mode(
     app: &mut App,
     entry: &NetworkEntry,
     inner_w: usize,
+    copied_ids: &std::collections::HashSet<u32>,
 ) {
     // ── Raw mode (original behavior) ──
     for (i, msg) in entry.ws_messages.iter().enumerate() {
@@ -296,7 +312,7 @@ fn render_raw_mode(
         json_click_map.push(Vec::new());
         json_section_keys.push(None);
         if !msg_collapsed {
-            render_json_section(
+            if let Some((k, t)) = render_json_section(
                 lines,
                 section_map,
                 json_click_map,
@@ -305,7 +321,10 @@ fn render_raw_mode(
                 &format!("ws_{}", i),
                 &mut app.network.json_viewer_states,
                 inner_w,
-            );
+                &copied_ids,
+            ) {
+                app.network.detail_json_trees.insert(k, t);
+            }
         }
     }
 }

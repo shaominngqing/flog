@@ -31,6 +31,7 @@ pub fn append_render(
     section_key: &str,
     outer_prefix: &str,
     max_width: usize,
+    copied_ids: &std::collections::HashSet<u32>,
 ) {
     lines::render_node(
         out,
@@ -42,6 +43,7 @@ pub fn append_render(
         max_width,
         0,
         false, // root never has a trailing comma
+        copied_ids,
     );
 }
 
@@ -59,7 +61,7 @@ mod tests {
         }
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", width);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", width, &std::collections::HashSet::new());
         assert_eq!(out.len(), cmap.len(), "out and click_map must stay in sync");
         out.iter()
             .map(|l| {
@@ -155,7 +157,7 @@ mod tests {
         let s = state::init_state(&t, 0);
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         // Empty object: one line, no click target
         assert_eq!(cmap.len(), 1);
         assert!(cmap[0].is_empty());
@@ -171,7 +173,7 @@ mod tests {
         s.expanded[0] = false;
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         assert_eq!(cmap.len(), 1);
         // Non-empty container: ToggleFold + CopyNode
         assert_eq!(cmap[0].len(), 2);
@@ -195,7 +197,7 @@ mod tests {
         s.expanded[0] = false; // force root collapsed
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         assert_eq!(out.len(), 1);
         let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
@@ -215,7 +217,7 @@ mod tests {
         for max_w in 20..=80 {
             let mut out = Vec::new();
             let mut cmap = Vec::new();
-            append_render(&mut out, &mut cmap, &t, &s, "sec", "", max_w);
+            append_render(&mut out, &mut cmap, &t, &s, "sec", "", max_w, &std::collections::HashSet::new());
             assert_eq!(out.len(), 1);
             let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
             let w = unicode_width::UnicodeWidthStr::width(rendered.as_str());
@@ -240,7 +242,7 @@ mod tests {
         for max_w in 10..=80 {
             let mut out = Vec::new();
             let mut cmap = Vec::new();
-            append_render(&mut out, &mut cmap, &t, &s, "sec", "", max_w);
+            append_render(&mut out, &mut cmap, &t, &s, "sec", "", max_w, &std::collections::HashSet::new());
             assert_eq!(out.len(), 1);
             let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
             let w = unicode_width::UnicodeWidthStr::width(rendered.as_str());
@@ -261,7 +263,7 @@ mod tests {
         let s = state::init_state(&t, 1);
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         // Expected lines: ▼ {, "a": 1,, "b": "hi", }
         assert_eq!(
             out.len(),
@@ -309,7 +311,7 @@ mod tests {
         let s = state::init_state(&t, 1);
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         let texts: Vec<String> = out
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
@@ -341,7 +343,7 @@ mod tests {
         s.expanded[0] = false; // force collapsed
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         assert_eq!(out.len(), 1);
         let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
@@ -367,7 +369,7 @@ mod tests {
         let s = state::init_state(&t, 0);
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         assert_eq!(out.len(), 1);
         let rendered: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
@@ -389,7 +391,7 @@ mod tests {
         let s = state::init_state(&t, 1); // depth 1 → root expanded
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         // opener line is out[0]
         let opener: String = out[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
@@ -427,7 +429,7 @@ mod tests {
         let s = state::init_state(&t, 0); // leave root at default (leaf = single node)
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", width);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", width, &std::collections::HashSet::new());
         assert_eq!(out.len(), cmap.len(), "out and click_map must stay in sync");
         let lines = out
             .iter()
@@ -470,7 +472,7 @@ mod tests {
         let s = state::init_state(&t, 0);
         let mut out_lines = Vec::new();
         let mut out_cmap = Vec::new();
-        append_render(&mut out_lines, &mut out_cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out_lines, &mut out_cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         let url_span = out_lines[0]
             .spans
             .iter()
@@ -585,7 +587,7 @@ mod tests {
         // items is at depth 1, so already expanded. Array entries (depth 2) stay collapsed.
         let mut out = Vec::new();
         let mut cmap = Vec::new();
-        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80);
+        append_render(&mut out, &mut cmap, &t, &s, "sec", "", 80, &std::collections::HashSet::new());
         let texts: Vec<String> = out
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())

@@ -101,6 +101,9 @@ pub struct DetailState {
     /// Task 4 wires up the J/K navigation that changes this; Task 3 reads
     /// it for the `o` (open URL) shortcut.
     pub viewer_cursor: Option<usize>,
+    /// Tracks when each node was last copied so the renderer can show ✓
+    /// instead of ⧉ for ~2 seconds after a successful copy.
+    pub copied_node_feedback: std::collections::HashMap<u32, std::time::Instant>,
 }
 
 /// State for the full-value overlay (Task 5).

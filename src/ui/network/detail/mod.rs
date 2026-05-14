@@ -66,6 +66,21 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     let mut json_click_map: Vec<Vec<crate::ui::json_viewer::JsonHotRegion>> = Vec::new();
     // Parallel: section key for each line (for ToggleFold routing in apply)
     let mut json_section_keys: Vec<Option<String>> = Vec::new();
+    // Parsed Trees keyed by section — populated below, stored in app.network.
+    // Clear first so stale trees from a previous entry don't persist.
+    app.network.detail_json_trees.clear();
+    let mut new_trees: std::collections::HashMap<String, crate::ui::json_viewer::Tree> =
+        std::collections::HashMap::new();
+    // Build the set of recently-copied node IDs for the ✓ feedback icon.
+    let copied_ids: std::collections::HashSet<u32> = {
+        let threshold = std::time::Duration::from_secs(2);
+        app.detail
+            .copied_node_feedback
+            .iter()
+            .filter(|(_, t)| t.elapsed() < threshold)
+            .map(|(&id, _)| id)
+            .collect()
+    };
     app.layout.sse_pill_line = None;
     app.layout.ws_pill_line = None;
 
@@ -158,7 +173,7 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
     );
 
     // ── Request Headers ──
-    http_body::render_headers(
+    if let Some((k, t)) = http_body::render_headers(
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
@@ -169,10 +184,13 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &app.network.collapsed_sections,
         &mut app.network.json_viewer_states,
         inner_w,
-    );
+        &copied_ids,
+    ) {
+        new_trees.insert(k, t);
+    }
 
     // ── Request Body ──
-    http_body::render_body(
+    if let Some((k, t)) = http_body::render_body(
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
@@ -183,10 +201,13 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &app.network.collapsed_sections,
         &mut app.network.json_viewer_states,
         inner_w,
-    );
+        &copied_ids,
+    ) {
+        new_trees.insert(k, t);
+    }
 
     // ── Response Headers ──
-    http_body::render_headers(
+    if let Some((k, t)) = http_body::render_headers(
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
@@ -197,10 +218,13 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &app.network.collapsed_sections,
         &mut app.network.json_viewer_states,
         inner_w,
-    );
+        &copied_ids,
+    ) {
+        new_trees.insert(k, t);
+    }
 
     // ── Response Body ──
-    http_body::render_body(
+    if let Some((k, t)) = http_body::render_body(
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,
@@ -211,7 +235,10 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         &app.network.collapsed_sections,
         &mut app.network.json_viewer_states,
         inner_w,
-    );
+        &copied_ids,
+    ) {
+        new_trees.insert(k, t);
+    }
 
     // ── SSE Stream Events ──
     if entry.protocol == Protocol::Sse && !entry.sse_chunks.is_empty() {
@@ -250,10 +277,13 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
         inner_w,
     );
 
-    // Store maps for click handling
+    // Store maps for click handling and tree caching
     app.network.detail_section_map = section_line_map;
     app.network.detail_json_click_map = json_click_map;
     app.network.detail_json_section_keys = json_section_keys;
+    // Merge new trees; SSE/WS sections insert directly into app.network.detail_json_trees
+    // during render_sse/render_ws, so we only need to merge the HTTP section trees here.
+    app.network.detail_json_trees.extend(new_trees);
 
     let total_lines = all_lines.len();
 

@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use ratatui::text::Line;
 
 use crate::domain::network::NetworkEntry;
-use crate::ui::json_viewer::{JsonHotRegion, JsonViewerState};
+use crate::ui::json_viewer::{self, JsonHotRegion, JsonViewerState};
 
 use super::shared::{
     parse_query_params, push_kv_wrapped, push_section_header, render_json_section,
@@ -61,6 +61,7 @@ pub(super) fn render_query_params(
 
 /// Render a "Request Headers" / "Response Headers" section. Headers are
 /// rendered with expand_depth=0 (root only expanded) to save space.
+/// Returns the parsed Tree for the section (if rendered), keyed by `section_key`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_headers(
     lines: &mut Vec<Line<'static>>,
@@ -73,9 +74,10 @@ pub(super) fn render_headers(
     collapsed_sections: &HashSet<String>,
     viewer_states: &mut HashMap<String, JsonViewerState>,
     inner_w: usize,
-) {
+    copied_ids: &std::collections::HashSet<u32>,
+) -> Option<(String, json_viewer::Tree)> {
     if headers.is_none() {
-        return;
+        return None;
     }
     let is_collapsed = collapsed_sections.contains(section_title);
     push_section_header(
@@ -87,9 +89,9 @@ pub(super) fn render_headers(
         is_collapsed,
     );
     if is_collapsed {
-        return;
+        return None;
     }
-    if let Some(hdrs) = headers {
+    let tree_entry = if let Some(hdrs) = headers {
         render_json_section_with_depth(
             lines,
             section_map,
@@ -100,16 +102,21 @@ pub(super) fn render_headers(
             viewer_states,
             inner_w,
             0,
-        );
-    }
+            copied_ids,
+        )
+    } else {
+        None
+    };
     lines.push(Line::raw(""));
     section_map.push(None);
     json_click_map.push(Vec::new());
     json_section_keys.push(None);
+    tree_entry
 }
 
 /// Render a "Request Body" / "Response Body" section. Bodies use the
 /// default expand depth (root + direct children expanded).
+/// Returns the parsed Tree for the section (if rendered), keyed by `section_key`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_body(
     lines: &mut Vec<Line<'static>>,
@@ -122,10 +129,11 @@ pub(super) fn render_body(
     collapsed_sections: &HashSet<String>,
     viewer_states: &mut HashMap<String, JsonViewerState>,
     inner_w: usize,
-) {
+    copied_ids: &std::collections::HashSet<u32>,
+) -> Option<(String, json_viewer::Tree)> {
     let body_ref = match body {
         Some(b) if !b.is_empty() => b,
-        _ => return,
+        _ => return None,
     };
     let is_collapsed = collapsed_sections.contains(section_title);
     push_section_header(
@@ -137,9 +145,9 @@ pub(super) fn render_body(
         is_collapsed,
     );
     if is_collapsed {
-        return;
+        return None;
     }
-    render_json_section(
+    let tree_entry = render_json_section(
         lines,
         section_map,
         json_click_map,
@@ -148,9 +156,11 @@ pub(super) fn render_body(
         section_key,
         viewer_states,
         inner_w,
+        copied_ids,
     );
     lines.push(Line::raw(""));
     section_map.push(None);
     json_click_map.push(Vec::new());
     json_section_keys.push(None);
+    tree_entry
 }

@@ -387,6 +387,7 @@ fn apply_json_action(app: &mut App, action: crate::ui::json_viewer::JsonAction) 
         JsonAction::CopyNode(id) => {
             let text = super::actions::extract_node_json(&app.detail.viewer_tree, id);
             app.show_status(super::actions::copy_to_clipboard(&text));
+            app.detail.copied_node_feedback.insert(id, std::time::Instant::now());
         }
         JsonAction::OpenUrl(url) => {
             app.show_status(super::actions::open_url(&url));
@@ -407,10 +408,6 @@ fn apply_json_action(app: &mut App, action: crate::ui::json_viewer::JsonAction) 
 /// linear-scan bug where multiple sections share node id 0 (each section's
 /// tree is numbered from 0 by `Tree::from_value`, so a scan from the front
 /// would always toggle the first section — e.g. `req_body` — instead of
-/// the clicked one).
-///
-/// `CopyNode` / `OpenUrl` / `ExpandFullValue` are action-not-panel-specific
-/// stubs pending tree-caching work.
 fn apply_network_json_action(
     app: &mut App,
     action: crate::ui::json_viewer::JsonAction,
@@ -433,20 +430,36 @@ fn apply_network_json_action(
                 }
             }
         }
-        JsonAction::CopyNode(_id) => {
-            // Network panel trees are not cached between frames; CopyNode
-            // for network JSON is deferred to a future task that adds tree caching.
-            app.show_status("Copy node not yet available in network panel".to_string());
+        JsonAction::CopyNode(id) => {
+            let section_key = app
+                .network
+                .detail_json_section_keys
+                .get(line_idx)
+                .and_then(|k| k.clone());
+            if let Some(key) = section_key {
+                if let Some(tree) = app.network.detail_json_trees.get(&key) {
+                    let text = super::actions::extract_node_json_from_tree(tree, id);
+                    app.show_status(super::actions::copy_to_clipboard(&text));
+                    app.detail.copied_node_feedback.insert(id, std::time::Instant::now());
+                }
+            }
         }
         JsonAction::OpenUrl(url) => {
             app.show_status(super::actions::open_url(&url));
         }
-        JsonAction::ExpandFullValue(_id) => {
-            // Network panel trees are not cached between frames; ExpandFullValue
-            // for network JSON is deferred to a future task that adds tree caching.
-            // Show a status message so the user knows the action was received
-            // (consistent with the CopyNode stub above — M-3 fix).
-            app.show_status("Expand not available in network panel".to_string());
+        JsonAction::ExpandFullValue(id) => {
+            let section_key = app
+                .network
+                .detail_json_section_keys
+                .get(line_idx)
+                .and_then(|k| k.clone());
+            if let Some(key) = section_key {
+                if let Some(tree) = app.network.detail_json_trees.get(&key) {
+                    if let Some(text) = super::actions::extract_node_string_from_tree(tree, id) {
+                        app.enter_full_value_overlay(text, id);
+                    }
+                }
+            }
         }
     }
 }

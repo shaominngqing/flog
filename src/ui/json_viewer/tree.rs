@@ -31,6 +31,7 @@ pub struct FlatNode {
     pub key: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct Tree {
     pub nodes: Vec<FlatNode>,
 }

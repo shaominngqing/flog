@@ -380,6 +380,32 @@ fn subtree_to_value(tree: &crate::ui::json_viewer::Tree, id: u32) -> Option<serd
     crate::ui::json_viewer::subtree_to_value(tree, id)
 }
 
+/// Variant of [`extract_node_json`] that takes `&Tree` directly.
+/// Used by `apply_network_json_action` which has the tree from the cache.
+pub(super) fn extract_node_json_from_tree(
+    tree: &crate::ui::json_viewer::Tree,
+    id: u32,
+) -> String {
+    match subtree_to_value(tree, id) {
+        Some(val) => serde_json::to_string_pretty(&val).unwrap_or_default(),
+        None => String::new(),
+    }
+}
+
+/// Variant of [`extract_node_string`] that takes `&Tree` directly.
+/// Used by `apply_network_json_action` which has the tree from the cache.
+pub(super) fn extract_node_string_from_tree(
+    tree: &crate::ui::json_viewer::Tree,
+    id: u32,
+) -> Option<String> {
+    let node = tree.node(id);
+    if let crate::ui::json_viewer::NodeKind::String(s) = &node.kind {
+        Some(s.clone())
+    } else {
+        None
+    }
+}
+
 /// Activate the highest-priority action found in a click-map row.
 ///
 /// Priority: `ExpandFullValue` > `OpenUrl` > `CopyNode` > `ToggleFold`.
@@ -424,6 +450,7 @@ pub(super) fn dispatch_enter_action(app: &mut App, row: &[crate::ui::json_viewer
             if let Some(text) = text_opt {
                 let msg = copy_to_clipboard(&text);
                 app.show_status(msg);
+                app.detail.copied_node_feedback.insert(node_id, std::time::Instant::now());
             }
         }
         JsonAction::ToggleFold(node_id) => {

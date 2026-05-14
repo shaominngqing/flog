@@ -31,6 +31,10 @@ pub struct NetworkState {
     /// from a JSON section, `None` otherwise. Needed by apply to route
     /// `ToggleFold` to the right per-section `json_viewer_states` entry.
     pub detail_json_section_keys: Vec<Option<String>>,
+    /// Parsed JSON trees keyed by section (e.g., "req_body", "res_body").
+    /// Populated by the renderer each frame so that `CopyNode` and
+    /// `ExpandFullValue` can walk the subtree without re-parsing.
+    pub detail_json_trees: std::collections::HashMap<String, crate::ui::json_viewer::Tree>,
     /// SSE merge rules: URL path (no query params) → merge rule.
     pub sse_merge_rules: std::collections::HashMap<String, SseMergeRule>,
     /// Whether the current SSE detail is showing Merged mode (true) or Events mode (false).
@@ -68,6 +72,7 @@ impl NetworkState {
             self.scroll_offset = self.selected;
         }
         self.json_viewer_states.clear();
+        self.detail_json_trees.clear();
     }
 
     /// Move selection down (j/Down). Renderer adjusts viewport.
@@ -77,6 +82,7 @@ impl NetworkState {
         }
         self.selected = (self.selected + n).min(count - 1);
         self.json_viewer_states.clear();
+        self.detail_json_trees.clear();
     }
 
     pub fn go_top(&mut self) {
@@ -84,11 +90,13 @@ impl NetworkState {
         self.selected = 0;
         self.scroll_offset = 0;
         self.json_viewer_states.clear();
+        self.detail_json_trees.clear();
     }
 
     pub fn go_bottom(&mut self) {
         self.auto_scroll = true;
         self.json_viewer_states.clear();
+        self.detail_json_trees.clear();
     }
 
     /// Set WS Chat/Raw mode and purge stale collapse keys + viewer states
@@ -139,6 +147,7 @@ impl NetworkState {
             json_viewer_states: std::collections::HashMap::new(),
             detail_json_click_map: Vec::new(),
             detail_json_section_keys: Vec::new(),
+            detail_json_trees: std::collections::HashMap::new(),
             sse_merge_rules: std::collections::HashMap::new(),
             sse_merged_mode: false,
             sse_merged_field_idx: 0,

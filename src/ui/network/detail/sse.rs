@@ -27,6 +27,15 @@ pub(super) fn render_sse(
     entry: &NetworkEntry,
     inner_w: usize,
 ) {
+    let copied_ids: std::collections::HashSet<u32> = {
+        let threshold = std::time::Duration::from_secs(2);
+        app.detail
+            .copied_node_feedback
+            .iter()
+            .filter(|(_, t)| t.elapsed() < threshold)
+            .map(|(&id, _)| id)
+            .collect()
+    };
     let rule_key = path_without_query(&entry.path).to_string();
     let has_rule = app.network.sse_merge_rules.contains_key(&rule_key);
 
@@ -58,6 +67,7 @@ pub(super) fn render_sse(
             entry,
             has_json_chunks,
             inner_w,
+            &copied_ids,
         );
     }
 }
@@ -182,6 +192,7 @@ fn render_events_mode(
     entry: &NetworkEntry,
     has_json_chunks: bool,
     inner_w: usize,
+    copied_ids: &std::collections::HashSet<u32>,
 ) {
     let sec_name = format!("SSE Events ({})", entry.sse_chunks.len());
     let sec_key = "SSE Events";
@@ -265,7 +276,7 @@ fn render_events_mode(
             json_click_map.push(Vec::new());
             json_section_keys.push(None);
             if !chunk_collapsed {
-                render_json_section(
+                if let Some((k, t)) = render_json_section(
                     lines,
                     section_map,
                     json_click_map,
@@ -274,7 +285,10 @@ fn render_events_mode(
                     &format!("sse_{}", i),
                     &mut app.network.json_viewer_states,
                     inner_w,
-                );
+                    &copied_ids,
+                ) {
+                    app.network.detail_json_trees.insert(k, t);
+                }
             }
         }
     }

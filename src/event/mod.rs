@@ -197,8 +197,9 @@ fn handle_full_value_overlay_key(app: &mut App, key: KeyEvent) {
 
 /// Mouse handler for `AppMode::FullValueOverlay`.
 ///
-/// Left-click inside the overlay → copy text + exit.
+/// Left-click on `[ ✓ Copy ]` button → copy text + exit.
 /// Left-click outside the overlay → exit without copy.
+/// Left-click anywhere else inside the overlay → no action.
 /// Scroll → scroll the overlay content.
 ///
 /// The overlay intercepts mouse events before `handle_normal_mouse`, so
@@ -210,12 +211,26 @@ fn handle_full_value_overlay_mouse(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => {
             let (x, y) = (mouse.column, mouse.row);
-            let inside = x >= ox && x < ox + ow && y >= oy && y < oy + oh;
-            if inside {
-                apply::copy_and_exit_overlay(app);
-            } else {
+            let outside = x < ox || x >= ox + ow || y < oy || y >= oy + oh;
+            if outside {
                 apply::exit_overlay(app);
+                return;
             }
+            // Inner area starts 1 cell inside the border on each side.
+            let inner_h = oh.saturating_sub(2);
+            // Button row is at the last row of the inner area (offset 2 from modal top).
+            if inner_h >= 4 {
+                let btn_y = oy + 1 + inner_h - 1; // oy + 1 (border) + (inner_h - 1)
+                let btn_x_start = ox + 1 + crate::ui::full_value_overlay::COPY_BTN_X_OFFSET;
+                let btn_w = crate::ui::full_value_overlay::COPY_BTN_TEXT
+                    .chars()
+                    .count() as u16;
+                let btn_x_end = btn_x_start + btn_w;
+                if y == btn_y && x >= btn_x_start && x < btn_x_end {
+                    apply::copy_and_exit_overlay(app);
+                }
+            }
+            // Any other inside click → no action (text selection in future).
         }
         MouseEventKind::ScrollDown => {
             app.overlay_scroll_down(SCROLL_LINES);

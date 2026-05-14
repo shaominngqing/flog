@@ -14,6 +14,7 @@ impl App {
         self.detail.viewer_tree = None;
         self.detail.viewer_click_map.clear();
         self.detail.viewer_cursor = None;
+        self.detail.copied_node_feedback.clear();
     }
 
     /// Move the JSON viewer cursor down one row, clamped to the last row.

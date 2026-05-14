@@ -19,7 +19,7 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::ui::{sanitize_for_cell, BLUE, LAVENDER, OVERLAY0};
+use crate::ui::{sanitize_for_cell, BLUE, GREEN, LAVENDER, OVERLAY0};
 
 use super::super::action::{JsonAction, JsonHotRegion};
 use super::super::palette::{
@@ -37,8 +37,23 @@ fn url_regex() -> &'static regex::Regex {
     URL_RE.get_or_init(|| regex::Regex::new(r#"https?://[^\s"'<>]+"#).unwrap())
 }
 
+/// Returns the copy icon span text and style for a container node.
+/// Shows ✓ (GREEN) when the node was recently copied; ⧉ (OVERLAY0) otherwise.
+fn copy_icon_for(
+    id: u32,
+    copied_ids: &std::collections::HashSet<u32>,
+) -> (&'static str, Style) {
+    if copied_ids.contains(&id) {
+        (" ✓", Style::default().fg(GREEN))
+    } else {
+        (" ⧉", Style::default().fg(OVERLAY0))
+    }
+}
+
 /// Render node `id` and its subtree. `trailing_comma` says whether to append
 /// a comma after this node's value (used for non-last siblings).
+/// `copied_ids` is the set of node IDs that were recently copied — those
+/// containers show ✓ instead of ⧉ for ~2 seconds.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_node(
     out: &mut Vec<Line<'static>>,
@@ -50,6 +65,7 @@ pub(super) fn render_node(
     max_width: usize,
     id: u32,
     trailing_comma: bool,
+    copied_ids: &std::collections::HashSet<u32>,
 ) {
     let node = tree.node(id);
     let is_container = matches!(node.kind, NodeKind::Object | NodeKind::Array);
@@ -79,13 +95,14 @@ pub(super) fn render_node(
             max_width,
             id,
             trailing_comma,
+            copied_ids,
         );
         return;
     }
 
     // Recursion safety: `tree::parse` uses `serde_json::from_str` which has
     // a default nesting cap of 128. Any JSON that parses is safe to recurse on.
-    push_container_opener(out, click_map, tree, section_key, outer_prefix, id);
+    push_container_opener(out, click_map, tree, section_key, outer_prefix, id, copied_ids);
     let child_count = node.children.len();
     for (i, &cid) in node.children.iter().enumerate() {
         let child_trailing = i + 1 < child_count;
@@ -99,6 +116,7 @@ pub(super) fn render_node(
             max_width,
             cid,
             child_trailing,
+            copied_ids,
         );
     }
     push_container_closer(out, click_map, tree, outer_prefix, id, trailing_comma);
@@ -446,6 +464,7 @@ fn push_container_collapsed(
     max_width: usize,
     id: u32,
     trailing_comma: bool,
+    copied_ids: &std::collections::HashSet<u32>,
 ) {
     let node = tree.node(id);
     let depth = node.depth;
@@ -497,19 +516,20 @@ fn push_container_collapsed(
     }
 
     // Append ⧉ copy icon for non-empty containers.
-    let mut hot_regions = if empty {
-        Vec::new()
-    } else {
-        vec![JsonHotRegion {
-            range: 0..u16::MAX,
-            action: JsonAction::ToggleFold(id),
-        }]
-    };
+    // ToggleFold covers only the content columns (0..line_w); CopyNode covers
+    // the ⧉ icon columns (line_w..line_w+2). Both regions are specific so
+    // detect_json_action_in_detail matches the correct action at the clicked x.
+    let mut hot_regions = Vec::new();
 
     if !empty {
         let line_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         let line_w = line_text.width() as u16;
-        spans.push(Span::styled(" ⧉", Style::default().fg(OVERLAY0)));
+        hot_regions.push(JsonHotRegion {
+            range: 0..line_w,
+            action: JsonAction::ToggleFold(id),
+        });
+        let (icon, icon_style) = copy_icon_for(id, copied_ids);
+        spans.push(Span::styled(icon, icon_style));
         hot_regions.push(JsonHotRegion {
             range: line_w..line_w + 2,
             action: JsonAction::CopyNode(id),
@@ -527,6 +547,7 @@ fn push_container_opener(
     _section_key: &str,
     outer_prefix: &str,
     id: u32,
+    copied_ids: &std::collections::HashSet<u32>,
 ) {
     let node = tree.node(id);
     let depth = node.depth;
@@ -553,21 +574,23 @@ fn push_container_opener(
         Style::default().fg(brace_color(depth as usize)),
     ));
 
-    let child_count = node.children.len();
-    let mut hot_regions = vec![JsonHotRegion {
-        range: 0..u16::MAX,
-        action: JsonAction::ToggleFold(id),
-    }];
+    // ToggleFold covers only the content columns (0..line_w); CopyNode covers
+    // the ⧉ icon columns (line_w..line_w+2) so clicks on the icon copy, not fold.
+    let mut hot_regions = Vec::new();
 
-    if child_count > 0 {
-        let line_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
-        let line_w = line_text.width() as u16;
-        spans.push(Span::styled(" ⧉", Style::default().fg(OVERLAY0)));
-        hot_regions.push(JsonHotRegion {
-            range: line_w..line_w + 2,
-            action: JsonAction::CopyNode(id),
-        });
-    }
+    // push_container_opener is only called when child_count > 0 (see render_node).
+    let line_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+    let line_w = line_text.width() as u16;
+    hot_regions.push(JsonHotRegion {
+        range: 0..line_w,
+        action: JsonAction::ToggleFold(id),
+    });
+    let (icon, icon_style) = copy_icon_for(id, copied_ids);
+    spans.push(Span::styled(icon, icon_style));
+    hot_regions.push(JsonHotRegion {
+        range: line_w..line_w + 2,
+        action: JsonAction::CopyNode(id),
+    });
 
     out.push(Line::from(spans));
     click_map.push(hot_regions);

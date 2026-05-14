@@ -118,7 +118,8 @@ pub(super) fn push_kv_wrapped(
 pub(super) const DEFAULT_JSON_EXPAND_DEPTH: u32 = 1;
 
 /// Render a JSON/Dart-Map section with the default expansion depth.
-/// Callers that need a different depth use [`render_json_section_with_depth`].
+/// Returns the parsed `Tree` (keyed by `section_key`) so callers can cache
+/// it for `CopyNode`/`ExpandFullValue` dispatch; returns `None` on parse failure.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_json_section(
     lines: &mut Vec<Line<'static>>,
@@ -129,7 +130,8 @@ pub(super) fn render_json_section(
     section_key: &str,
     viewer_states: &mut HashMap<String, JsonViewerState>,
     max_w: usize,
-) {
+    copied_ids: &std::collections::HashSet<u32>,
+) -> Option<(String, json_viewer::Tree)> {
     render_json_section_with_depth(
         lines,
         section_map,
@@ -140,7 +142,8 @@ pub(super) fn render_json_section(
         viewer_states,
         max_w,
         DEFAULT_JSON_EXPAND_DEPTH,
-    );
+        copied_ids,
+    )
 }
 
 /// Like [`render_json_section`] but overrides the initial expansion depth.
@@ -158,7 +161,8 @@ pub(super) fn render_json_section_with_depth(
     viewer_states: &mut HashMap<String, JsonViewerState>,
     max_w: usize,
     expand_depth: u32,
-) {
+    copied_ids: &std::collections::HashSet<u32>,
+) -> Option<(String, json_viewer::Tree)> {
     match crate::domain::structured_parser::parse_whole(json_text) {
         Some(value) => {
             let tree = json_viewer::Tree::from_value(&value);
@@ -174,6 +178,7 @@ pub(super) fn render_json_section_with_depth(
                 section_key,
                 "   ",
                 max_w.saturating_sub(3),
+                copied_ids,
             );
             // For every rendered line, record the section key (so apply can
             // route ToggleFold to the right per-section viewer state).
@@ -181,6 +186,7 @@ pub(super) fn render_json_section_with_depth(
                 section_map.push(None);
                 json_section_keys.push(Some(section_key.to_string()));
             }
+            Some((section_key.to_string(), tree))
         }
         None => {
             for wl in wrap_text(json_text, max_w.saturating_sub(3), 100) {
@@ -192,6 +198,7 @@ pub(super) fn render_json_section_with_depth(
                 json_click_map.push(Vec::new());
                 json_section_keys.push(None);
             }
+            None
         }
     }
 }

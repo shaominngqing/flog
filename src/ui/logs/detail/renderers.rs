@@ -22,6 +22,19 @@ const YELLOW: Color = Color::Rgb(238, 212, 159);
 const RED: Color = Color::Rgb(237, 135, 150);
 const MAUVE: Color = Color::Rgb(198, 160, 246);
 
+/// Build the set of node IDs that were copied within the last 2 seconds,
+/// for the `copied_ids` parameter of `append_render`.
+fn recently_copied_ids(
+    feedback: &std::collections::HashMap<u32, std::time::Instant>,
+) -> std::collections::HashSet<u32> {
+    let threshold = std::time::Duration::from_secs(2);
+    feedback
+        .iter()
+        .filter(|(_, t)| t.elapsed() < threshold)
+        .map(|(&id, _)| id)
+        .collect()
+}
+
 fn row(line: Line<'static>) -> RenderRow {
     RenderRow {
         line,
@@ -254,6 +267,7 @@ impl SectionRenderer for JsonRenderer {
         }
         let mut lines: Vec<Line<'static>> = Vec::new();
         let mut click_map: Vec<Vec<json_viewer::JsonHotRegion>> = Vec::new();
+        let copied_ids = recently_copied_ids(&state.copied_node_feedback);
         json_viewer::append_render(
             &mut lines,
             &mut click_map,
@@ -262,6 +276,7 @@ impl SectionRenderer for JsonRenderer {
             "log_detail",
             "",
             inner_w,
+            &copied_ids,
         );
         state.viewer_tree = Some(tree);
 
