@@ -36,6 +36,93 @@ class FlogWebSocket {
     _initFromChannel(url);
   }
 
+  /// Establishes a WebSocket connection and registers it with the flog network
+  /// panel.
+  ///
+  /// On success, emits an `open` frame and returns the wrapped socket.
+  /// On failure, emits an `err` frame with [uri], the error message, and the
+  /// elapsed duration, then rethrows the original exception unchanged.
+  static Future<FlogWebSocket> connect(
+    Uri uri, {
+    Iterable<String>? protocols,
+  }) {
+    return _connectAndWrap(
+      () async => WebSocketChannel.connect(uri, protocols: protocols),
+      url: uri.toString(),
+    );
+  }
+
+  /// Wraps any WebSocket connection factory so that flog can observe the
+  /// handshake phase.
+  ///
+  /// [connect] is an async factory that must return an already-established
+  /// [WebSocketChannel]. Use this when you build the channel yourself (e.g.
+  /// `dart:io WebSocket.connect` with custom headers):
+  ///
+  /// ```dart
+  /// final ws = await FlogWebSocket.wrap(
+  ///   () async {
+  ///     final socket = await WebSocket.connect(url, headers: {...});
+  ///     return IOWebSocketChannel(socket);
+  ///   },
+  ///   url: url,
+  /// );
+  /// ```
+  ///
+  /// On success, emits an `open` frame and returns the wrapped socket.
+  /// On failure, emits an `err` frame and rethrows the original exception.
+  static Future<FlogWebSocket> wrap(
+    Future<WebSocketChannel> Function() connect, {
+    required String url,
+  }) {
+    return _connectAndWrap(connect, url: url);
+  }
+
+  /// Shared implementation for [connect] and [wrap].
+  ///
+  /// Calls [connect] to obtain a [WebSocketChannel], then awaits
+  /// [WebSocketChannel.ready] to surface handshake errors. Emits an `open`
+  /// frame on success and an `err` frame (with duration) on failure, then
+  /// rethrows.
+  static Future<FlogWebSocket> _connectAndWrap(
+    Future<WebSocketChannel> Function() connect, {
+    required String url,
+  }) async {
+    final id = nextNetId();
+    final start = DateTime.now();
+
+    WebSocketChannel channel;
+    try {
+      channel = await connect();
+      await channel.ready;
+    } catch (e) {
+      if (flogEnabled) {
+        emitNet({
+          'id': id,
+          't': 'err',
+          'p': 'ws',
+          'url': url,
+          'error': e.toString(),
+          'duration': DateTime.now().difference(start).inMilliseconds,
+        });
+      }
+      rethrow;
+    }
+
+    final ws = FlogWebSocket._fromConnected(channel, id: id, start: start);
+    ws._initFromChannel(url);
+    return ws;
+  }
+
+  /// Private constructor used by [_connectAndWrap] after a successful
+  /// handshake. Does NOT call [_initFromChannel] — the caller does that.
+  FlogWebSocket._fromConnected(
+    this._channel, {
+    required int id,
+    required DateTime start,
+  })  : _id = id,
+        _start = start;
+
   /// Shared wiring for both constructors: emit the `open` flog_net frame,
   /// then install a broadcast stream so callers who read the dartdoc can
   /// attach multiple listeners without a `Stream has already been listened
