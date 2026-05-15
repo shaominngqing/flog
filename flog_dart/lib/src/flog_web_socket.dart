@@ -26,25 +26,6 @@ class FlogWebSocket {
   /// Broadcast stream of incoming messages with flog_net instrumentation.
   late final Stream<dynamic> stream;
 
-  /// Creates a [FlogWebSocket] that connects to [uri].
-  ///
-  /// Optional [protocols] are forwarded to [WebSocketChannel.connect].
-  FlogWebSocket(Uri uri, {Iterable<String>? protocols})
-      : _channel = WebSocketChannel.connect(uri, protocols: protocols),
-        _id = nextNetId(),
-        _start = DateTime.now() {
-    if (flogEnabled) {
-      emitNet({
-        'id': _id,
-        't': 'open',
-        'p': 'ws',
-        'url': uri.toString(),
-      });
-    }
-
-    _initFromChannel(uri.toString());
-  }
-
   /// Creates a [FlogWebSocket] from an existing [WebSocketChannel].
   ///
   /// Use this when you already have a connected channel (e.g. from a server
