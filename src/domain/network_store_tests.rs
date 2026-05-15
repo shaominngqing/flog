@@ -881,3 +881,24 @@ fn open_without_prior_connecting_still_creates_active_entry() {
     assert_eq!(e.id, 42);
     assert_eq!(e.status, NetworkStatus::Active);
 }
+
+#[test]
+fn connecting_twice_same_id_creates_two_pending_entries() {
+    // Mirrors dom_002_second_req_with_same_id_creates_new_entry.
+    // Duplicate connecting frames (e.g., Dart bug or reconnect reusing same id)
+    // each push a new Pending entry. The subsequent open upgrades only the
+    // most-recent one; the first remains Pending indefinitely.
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Connecting {
+        id: 55,
+        url: Some("wss://host/ws".into()),
+        ts: None,
+    });
+    store.process_message(FlogNetKind::Connecting {
+        id: 55,
+        url: Some("wss://host/ws".into()),
+        ts: None,
+    });
+    assert_eq!(store.len(), 2);
+    assert!(store.iter().all(|e| e.status == NetworkStatus::Pending));
+}
