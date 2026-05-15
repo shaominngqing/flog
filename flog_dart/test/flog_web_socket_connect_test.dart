@@ -202,17 +202,12 @@ void main() {
 
   group('FlogWebSocket.wrap — connecting frame ordering', () {
     test('emits connecting frame before open on success', () async {
-      FlogStore.instance.clear();
-      FlogServer.instance.start(port: 19754);
-
       await FlogWebSocket.wrap(
         () async => _SucceedingChannel(),
         url: 'wss://success.example.com/ws',
       );
 
-      final frames = FlogStore.instance.snapshotForTesting
-          .where((f) => f['type'] == 'net' && f['p'] == 'ws')
-          .toList();
+      final frames = _nets().where((f) => f['p'] == 'ws').toList();
 
       final connectingIdx = frames.indexWhere((f) => f['t'] == 'connecting');
       final openIdx = frames.indexWhere((f) => f['t'] == 'open');
@@ -226,18 +221,14 @@ void main() {
     });
 
     test('emits connecting frame before err on failure', () async {
-      FlogStore.instance.clear();
-      FlogServer.instance.start(port: 19755);
       final err = Exception('refused');
 
       await expectLater(
         FlogWebSocket.wrap(() async => throw err, url: 'wss://fail.example.com/ws'),
-        throwsA(isA<Exception>()),
+        throwsA(same(err)),
       );
 
-      final frames = FlogStore.instance.snapshotForTesting
-          .where((f) => f['type'] == 'net' && f['p'] == 'ws')
-          .toList();
+      final frames = _nets().where((f) => f['p'] == 'ws').toList();
 
       final connectingIdx = frames.indexWhere((f) => f['t'] == 'connecting');
       final errIdx = frames.indexWhere((f) => f['t'] == 'err');
