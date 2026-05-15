@@ -30,6 +30,9 @@ class FlogWebSocket {
   ///
   /// Use this when you already have a connected channel (e.g. from a server
   /// upgrade). The [url] parameter is used for logging only.
+  ///
+  /// No `connecting` frame is emitted — the handshake is already complete at
+  /// the call site. Only an `open` frame is emitted via [_initFromChannel].
   FlogWebSocket.fromChannel(this._channel, {required String url})
       : _id = nextNetId(),
         _start = DateTime.now() {

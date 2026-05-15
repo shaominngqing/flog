@@ -218,6 +218,12 @@ void main() {
           reason: 'open frame must exist');
       expect(connectingIdx, lessThan(openIdx),
           reason: 'connecting must come before open');
+
+      final connectingFrame = frames[connectingIdx];
+      expect(connectingFrame['url'], equals('wss://success.example.com/ws'),
+          reason: 'connecting frame must carry the correct url');
+      expect(connectingFrame['id'], isA<int>(),
+          reason: 'connecting frame must carry a numeric id');
     });
 
     test('emits connecting frame before err on failure', () async {
