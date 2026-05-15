@@ -3,6 +3,66 @@
 All notable changes to `flog_dart`. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.9.0 — 2026-05-15
+
+**Breaking release.** `FlogWebSocket` API redesigned for full handshake-phase coverage.
+
+### Breaking changes
+
+- **`FlogWebSocket(Uri)` removed.** The synchronous constructor could not await the
+  WebSocket handshake, so connection failures were invisible to the flog network panel.
+  Replace with the new async APIs (see Migration below).
+- **`nextNetId`, `emitNet`, `flogEnabled` no longer exported** from
+  `package:flog_dart/flog_dart.dart`. These were internal helpers never intended for
+  public use. They remain accessible inside `src/flog_net.dart` for flog_dart's own
+  implementation.
+
+### What's new
+
+- **`FlogWebSocket.connect(Uri uri, {Iterable<String>? protocols})`** — async static
+  factory. Establishes the WebSocket connection, awaits the handshake, and registers
+  the connection with the flog network panel. Emits a `connecting` frame immediately
+  (TUI shows Pending), then `open` on success or `err` on failure with URL, error
+  message, and elapsed duration.
+- **`FlogWebSocket.wrap(Future<WebSocketChannel> Function() connect, {required String url})`** —
+  wraps any custom WebSocket factory (e.g. `dart:io WebSocket.connect` with custom
+  headers). Same lifecycle tracking as `connect()`.
+- **WS "connecting" state.** Both `connect()` and `wrap()` now emit a `connecting`
+  frame the moment the handshake begins. The flog TUI immediately shows a Pending
+  entry — you see connections in-progress, not just after they succeed or fail.
+
+### Migration
+
+```dart
+// Before (0.8.x) — sync constructor, no handshake-failure coverage:
+final ws = FlogWebSocket(Uri.parse('wss://example.com/ws'));
+
+// After (0.9.0) — async, full coverage:
+final ws = await FlogWebSocket.connect(Uri.parse('wss://example.com/ws'));
+```
+
+For `dart:io WebSocket` with custom headers (e.g. Azure TTS/STT):
+
+```dart
+// Before (0.8.x):
+final socket = await WebSocket.connect(url, headers: {'Authorization': 'Bearer $token'});
+final channel = IOWebSocketChannel(socket);
+final flogWs = FlogWebSocket.fromChannel(channel, url: url);
+
+// After (0.9.0) — one call, full handshake coverage:
+final flogWs = await FlogWebSocket.wrap(
+  () async {
+    final socket = await WebSocket.connect(url, headers: {'Authorization': 'Bearer $token'});
+    return IOWebSocketChannel(socket);
+  },
+  url: url,
+);
+```
+
+`FlogWebSocket.fromChannel` is unchanged — use it when you already hold an established channel.
+
+---
+
 ## 0.8.0 — 2026-04-27
 
 **Breaking release.** The SSE subsystem is redesigned into three
