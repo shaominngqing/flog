@@ -7,6 +7,8 @@
 ///   - connect symbol exists (API-shape assertion)
 ///   - wrap symbol exists (API-shape assertion)
 ///   - fromChannel is still present (smoke / back-compat)
+///   - connecting frame emitted before open on success
+///   - connecting frame emitted before err on failure
 library;
 
 import 'dart:async';
@@ -51,6 +53,30 @@ class _FailingReadyChannel implements WebSocketChannel {
 
   @override
   String? get protocol => null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// A [WebSocketChannel] whose [ready] future completes normally.
+class _SucceedingChannel implements WebSocketChannel {
+  @override
+  Future<void> get ready => Future.value();
+
+  @override
+  Stream<dynamic> get stream => const Stream.empty();
+
+  @override
+  WebSocketSink get sink => _NullSink();
+
+  @override
+  String? get protocol => null;
+
+  @override
+  int? get closeCode => null;
+
+  @override
+  String? get closeReason => null;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -167,6 +193,61 @@ void main() {
       expect(errs.first['url'], testUrl);
       expect(errs.first['error'], contains('TLS handshake failed'));
       expect(errs.first['duration'], isA<int>());
+    });
+  });
+
+  // =========================================================================
+  // connecting frame ordering
+  // =========================================================================
+
+  group('FlogWebSocket.wrap — connecting frame ordering', () {
+    test('emits connecting frame before open on success', () async {
+      FlogStore.instance.clear();
+      FlogServer.instance.start(port: 19754);
+
+      await FlogWebSocket.wrap(
+        () async => _SucceedingChannel(),
+        url: 'wss://success.example.com/ws',
+      );
+
+      final frames = FlogStore.instance.snapshotForTesting
+          .where((f) => f['type'] == 'net' && f['p'] == 'ws')
+          .toList();
+
+      final connectingIdx = frames.indexWhere((f) => f['t'] == 'connecting');
+      final openIdx = frames.indexWhere((f) => f['t'] == 'open');
+
+      expect(connectingIdx, greaterThanOrEqualTo(0),
+          reason: 'connecting frame must exist');
+      expect(openIdx, greaterThanOrEqualTo(0),
+          reason: 'open frame must exist');
+      expect(connectingIdx, lessThan(openIdx),
+          reason: 'connecting must come before open');
+    });
+
+    test('emits connecting frame before err on failure', () async {
+      FlogStore.instance.clear();
+      FlogServer.instance.start(port: 19755);
+      final err = Exception('refused');
+
+      await expectLater(
+        FlogWebSocket.wrap(() async => throw err, url: 'wss://fail.example.com/ws'),
+        throwsA(isA<Exception>()),
+      );
+
+      final frames = FlogStore.instance.snapshotForTesting
+          .where((f) => f['type'] == 'net' && f['p'] == 'ws')
+          .toList();
+
+      final connectingIdx = frames.indexWhere((f) => f['t'] == 'connecting');
+      final errIdx = frames.indexWhere((f) => f['t'] == 'err');
+
+      expect(connectingIdx, greaterThanOrEqualTo(0),
+          reason: 'connecting frame must exist');
+      expect(errIdx, greaterThanOrEqualTo(0),
+          reason: 'err frame must exist');
+      expect(connectingIdx, lessThan(errIdx),
+          reason: 'connecting must come before err');
     });
   });
 

@@ -91,6 +91,10 @@ class FlogWebSocket {
     final id = nextNetId();
     final start = DateTime.now();
 
+    if (flogEnabled) {
+      emitNet({'id': id, 't': 'connecting', 'p': 'ws', 'url': url});
+    }
+
     WebSocketChannel channel;
     try {
       channel = await connect();
