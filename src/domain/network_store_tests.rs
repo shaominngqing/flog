@@ -795,6 +795,11 @@ fn dom_006_flog_net_kind_id_helper_covers_all_variants() {
             url: None,
             ts: None,
         },
+        FlogNetKind::Connecting {
+            id: 7,
+            url: None,
+            ts: None,
+        },
         send_msg(7, ""),
         recv_msg(7, ""),
         FlogNetKind::Close {
