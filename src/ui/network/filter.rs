@@ -223,31 +223,42 @@ pub fn draw_network_op2(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// Column header row above the request list.
-/// Mirrors row layout: cursor(1) + PROTO(6) + " " + METHOD(8) + " " + URL(flex) + STATUS(10) + " " + TIME(8) + " " + SIZE(8).
+/// Uses the same Table widget constraints as draw_table_body so columns are
+/// guaranteed to align regardless of protocol pill widths.
 pub fn draw_network_column_header(f: &mut Frame, area: Rect) {
-    const PROTO_W: usize = 6;
-    const METHOD_W: usize = 8;
-    const STATUS_W: usize = 10;
-    const TIME_W: usize = 8;
-    const SIZE_W: usize = 8;
+    use ratatui::{
+        layout::Constraint,
+        widgets::{Cell, Row, Table},
+    };
+    use super::{METHOD_W, PROTO_W, SIZE_W, STATUS_W, TIME_W};
 
-    let header_style = Style::default().fg(OVERLAY0).bg(MANTLE);
-    let w = area.width as usize;
-    let fixed = 1 + PROTO_W + 1 + METHOD_W + 1 + STATUS_W + 1 + TIME_W + 1 + SIZE_W;
-    let url_w = w.saturating_sub(fixed);
-    let text = format!(
-        "{}{} {} {}{} {} {}",
-        " ",                                     // cursor (1)
-        crate::ui::safe_pad("PROTO", PROTO_W),   // 6
-        crate::ui::safe_pad("METHOD", METHOD_W), // 8
-        crate::ui::safe_pad("URL", url_w),       // flex
-        crate::ui::safe_pad("STATUS", STATUS_W), // 10
-        crate::ui::safe_pad("TIME", TIME_W),     // 8
-        crate::ui::safe_pad("SIZE", SIZE_W),     // 8
-    );
-    let line = Line::from(Span::styled(text, header_style));
+    let h = Style::default().fg(OVERLAY0).bg(MANTLE);
+    let header = Row::new([
+        Cell::from(""),       // cursor col
+        Cell::from("PROTO"),
+        Cell::from("METHOD"),
+        Cell::from("URL"),
+        Cell::from("STATUS"),
+        Cell::from("TIME"),
+        Cell::from("SIZE"),
+    ])
+    .style(h);
+
+    let widths = [
+        Constraint::Length(1),
+        Constraint::Length(PROTO_W as u16),
+        Constraint::Length(METHOD_W as u16),
+        Constraint::Fill(1),
+        Constraint::Length(STATUS_W as u16),
+        Constraint::Length(TIME_W as u16),
+        Constraint::Length(SIZE_W as u16),
+    ];
+
     f.render_widget(
-        Paragraph::new(line).style(Style::default().bg(MANTLE)),
+        Table::new(Vec::<Row>::new(), widths)
+            .header(header)
+            .style(Style::default().bg(MANTLE))
+            .column_spacing(1),
         area,
     );
 }

@@ -31,6 +31,7 @@ use table::draw_table_body;
 /// so this is a real fixed-window `(start, end)`. Kept separate from
 /// `ui/logs::compute_visible_entry_start` because logs uses variable-
 /// height rows (see UI-006 for the unification question).
+#[allow(dead_code)]
 pub(crate) fn compute_visible_network_range(
     total_filtered: usize,
     offset: usize,
