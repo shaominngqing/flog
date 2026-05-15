@@ -1,6 +1,6 @@
 [package]
 name = "flog"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "Flutter Log Viewer — see your logs, finally."
 license = "MIT"
