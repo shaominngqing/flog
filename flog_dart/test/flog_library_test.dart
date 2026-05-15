@@ -122,12 +122,17 @@ void main() {
   // ═══════════════════════════════════════════════════════════════
   // Top-level export surface lock (DART-021 cross-reference)
   // ═══════════════════════════════════════════════════════════════
+  //
+  // DART-021: nextNetId, emitNet, and flogEnabled have been removed from the
+  // public API of package:flog_dart/flog_dart.dart. They are internal helpers
+  // in lib/src/flog_net.dart and are not re-exported. The tests that previously
+  // verified those symbols were importable have been removed along with the
+  // export. See flog_dart.dart for the current public surface.
 
   group('Top-level export surface', () {
     test('Flog, FlogLogger, FlogServer, FlogStore, FlogDio, FlogMockRule, '
         'FlogMockInterceptor, FlogHttpInterceptor, FlogSseParser, '
-        'FlogWebSocket, FlogHttpConfig, SseResponse, flogEnabled, '
-        'nextNetId, emitNet are all reachable from '
+        'FlogWebSocket, FlogHttpConfig, SseResponse are all reachable from '
         'package:flog_dart/flog_dart.dart', () {
       // This test exists purely to pin the current public export set.
       // Any removal becomes a compile error here, forcing an intentional
@@ -144,9 +149,6 @@ void main() {
       expect(FlogWebSocket, isNotNull);
       expect(FlogHttpConfig, isNotNull);
       expect(SseResponse, isNotNull);
-      expect(flogEnabled, isA<bool>());
-      expect(nextNetId, isA<Function>());
-      expect(emitNet, isA<Function>());
     });
   });
 }

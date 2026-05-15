@@ -123,7 +123,7 @@ class FlogWebSocket {
   })  : _id = id,
         _start = start;
 
-  /// Shared wiring for both constructors: emit the `open` flog_net frame,
+  /// Shared wiring used by every entry point: emit the `open` flog_net frame,
   /// then install a broadcast stream so callers who read the dartdoc can
   /// attach multiple listeners without a `Stream has already been listened
   /// to` error.

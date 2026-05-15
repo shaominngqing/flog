@@ -136,22 +136,15 @@ void main() {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // DART-021: public export of nextNetId + emitNet
+  // DART-021: nextNetId / emitNet removed from public API
   // ═══════════════════════════════════════════════════════════════
+  //
+  // DART-021: nextNetId and emitNet are internal to flog_dart and are no
+  // longer exported from package:flog_dart/flog_dart.dart. The tests that
+  // previously called those symbols via the public import have been removed.
+  // FlogHttpConfig and SseResponse remain part of the public API.
 
   group('DART-021 public exports from package:flog_dart/flog_dart.dart', () {
-    test('nextNetId and emitNet are importable as top-level symbols', () {
-      // If they were not exported, this file would not compile.
-      // DART-021 locks the current (leaky) export surface. When Phase 3
-      // un-exports them, the `import` at the top of this file needs a
-      // relative path instead — the failing import will break this test
-      // and alert to the public-API breaking change.
-      final id = nextNetId();
-      expect(id, isA<int>());
-      // Call emitNet to prove the symbol is reachable.
-      emitNet(<String, dynamic>{'id': id, 't': 'req', 'p': 'http'});
-    });
-
     test('FlogHttpConfig and SseResponse are exported', () {
       const c = FlogHttpConfig();
       expect(c.includeRequestHeaders, isTrue);
