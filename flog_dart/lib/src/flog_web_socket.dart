@@ -8,7 +8,7 @@ import 'flog_net.dart' show flogEnabled, nextNetId, emitNet;
 /// WebSocket traffic (open, send, receive, close).
 ///
 /// ```dart
-/// final ws = FlogWebSocket(Uri.parse('wss://example.com/ws'));
+/// final ws = await FlogWebSocket.connect(Uri.parse('wss://example.com/ws'));
 /// ws.stream.listen((message) => print(message));
 /// ws.send('hello');
 /// await ws.close();
