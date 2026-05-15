@@ -68,6 +68,7 @@ impl NetworkStore {
                 ts: _,
             } => self.handle_done(id, duration),
             FlogNetKind::Open { id, url, ts } => self.handle_open(id, url, ts),
+            FlogNetKind::Connecting { id, url, ts } => self.handle_connecting(id, url, ts),
             FlogNetKind::Send {
                 id,
                 data,
@@ -238,10 +239,35 @@ impl NetworkStore {
     }
 
     fn handle_open(&mut self, id: u64, url: Option<String>, ts: Option<u64>) {
-        self.ensure_capacity();
+        if let Some(entry) = self.find_by_id_mut(id) {
+            // Upgrade a Pending entry created by a prior `connecting` frame.
+            entry.status = NetworkStatus::Active;
+            if let Some(u) = url {
+                if !u.is_empty() {
+                    entry.url = u;
+                }
+            }
+            if let Some(t) = ts {
+                entry.timestamp = format_ts(t);
+            }
+        } else {
+            // Backward-compat: `fromChannel` or old Dart that emits `open`
+            // without a prior `connecting` frame.
+            self.ensure_capacity();
+            let url = url.unwrap_or_default();
+            let mut entry = NetworkEntry::new_ws(id, url, String::new());
+            if let Some(t) = ts {
+                entry.timestamp = format_ts(t);
+            }
+            self.entries.push_back(entry);
+        }
+    }
 
+    fn handle_connecting(&mut self, id: u64, url: Option<String>, ts: Option<u64>) {
+        self.ensure_capacity();
         let url = url.unwrap_or_default();
         let mut entry = NetworkEntry::new_ws(id, url, String::new());
+        entry.status = NetworkStatus::Pending;
         if let Some(t) = ts {
             entry.timestamp = format_ts(t);
         }

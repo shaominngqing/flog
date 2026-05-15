@@ -809,3 +809,55 @@ fn dom_006_flog_net_kind_id_helper_covers_all_variants() {
         assert_eq!(v.id(), 7);
     }
 }
+
+// ---- WS connecting state (2026-05-15 spec) -----------------------
+
+#[test]
+fn connecting_creates_pending_ws_entry() {
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Connecting {
+        id: 99,
+        url: Some("wss://host/ws".into()),
+        ts: None,
+    });
+    assert_eq!(store.len(), 1);
+    let e = store.get(0).unwrap();
+    assert_eq!(e.id, 99);
+    assert_eq!(e.protocol, Protocol::Ws);
+    assert_eq!(e.status, NetworkStatus::Pending);
+    assert_eq!(e.url, "wss://host/ws");
+}
+
+#[test]
+fn open_after_connecting_upgrades_to_active() {
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Connecting {
+        id: 99,
+        url: Some("wss://host/ws".into()),
+        ts: None,
+    });
+    store.process_message(FlogNetKind::Open {
+        id: 99,
+        url: Some("wss://host/ws".into()),
+        ts: None,
+    });
+    // Must not create a second entry
+    assert_eq!(store.len(), 1);
+    let e = store.get(0).unwrap();
+    assert_eq!(e.status, NetworkStatus::Active);
+}
+
+#[test]
+fn open_without_prior_connecting_still_creates_active_entry() {
+    // Backward-compat: fromChannel / old Dart that emits open without connecting.
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Open {
+        id: 42,
+        url: Some("wss://host/ws".into()),
+        ts: None,
+    });
+    assert_eq!(store.len(), 1);
+    let e = store.get(0).unwrap();
+    assert_eq!(e.id, 42);
+    assert_eq!(e.status, NetworkStatus::Active);
+}

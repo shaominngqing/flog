@@ -336,6 +336,15 @@ pub enum FlogNetKind {
         #[serde(default)]
         ts: Option<u64>,
     },
+    /// WebSocket handshake started — not yet complete.
+    /// TUI shows a Pending entry. Followed by `Open` (success) or `Err` (failure).
+    Connecting {
+        id: u64,
+        #[serde(default)]
+        url: Option<String>,
+        #[serde(default)]
+        ts: Option<u64>,
+    },
     /// WebSocket outbound message.
     Send {
         id: u64,
@@ -380,6 +389,7 @@ impl FlogNetKind {
             | Self::Chunk { id, .. }
             | Self::Done { id, .. }
             | Self::Open { id, .. }
+            | Self::Connecting { id, .. }
             | Self::Send { id, .. }
             | Self::Recv { id, .. }
             | Self::Close { id, .. } => *id,
