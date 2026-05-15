@@ -774,6 +774,20 @@ fn dom_006_flog_net_kind_rejects_missing_id() {
 }
 
 #[test]
+fn dom_006_flog_net_kind_connecting_deserializes_from_wire() {
+    let j = r#"{"t":"connecting","id":5,"url":"wss://host/ws","ts":1700000000000}"#;
+    let k: FlogNetKind = serde_json::from_str(j).expect("deserialize");
+    match k {
+        FlogNetKind::Connecting { id, url, ts } => {
+            assert_eq!(id, 5);
+            assert_eq!(url.as_deref(), Some("wss://host/ws"));
+            assert_eq!(ts, Some(1_700_000_000_000));
+        }
+        _ => panic!("expected Connecting"),
+    }
+}
+
+#[test]
 fn dom_006_flog_net_kind_id_helper_covers_all_variants() {
     let variants = [
         req(7),
@@ -850,6 +864,7 @@ fn open_after_connecting_upgrades_to_active() {
     assert_eq!(store.len(), 1);
     let e = store.get(0).unwrap();
     assert_eq!(e.status, NetworkStatus::Active);
+    assert_eq!(e.url, "wss://host/ws");
 }
 
 #[test]

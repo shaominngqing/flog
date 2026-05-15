@@ -265,7 +265,7 @@ impl NetworkStore {
 
     fn handle_connecting(&mut self, id: u64, url: Option<String>, ts: Option<u64>) {
         self.ensure_capacity();
-        let url = url.unwrap_or_default();
+        let url = url.filter(|u| !u.is_empty()).unwrap_or_default();
         let mut entry = NetworkEntry::new_ws(id, url, String::new());
         entry.status = NetworkStatus::Pending;
         if let Some(t) = ts {
