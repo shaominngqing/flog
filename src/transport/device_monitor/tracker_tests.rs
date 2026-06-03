@@ -28,8 +28,39 @@ fn contains_reflects_add_remove() {
     assert!(!t.contains("A"));
     t.add(dev("A"));
     assert!(t.contains("A"));
+    assert_eq!(t.get("A").map(|d| d.name.as_str()), Some("name-A"));
     t.remove("A");
     assert!(!t.contains("A"));
+}
+
+#[test]
+fn update_existing_emits_updated_and_replaces_device() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let mut t = DeviceTracker::new(tx);
+    t.add(dev("A"));
+    let _ = rx.try_recv(); // Added
+
+    let mut updated = dev("A");
+    updated.name = "renamed".into();
+    assert!(t.update(updated));
+
+    match rx.try_recv().expect("Updated") {
+        DeviceEvent::Updated(d) => assert_eq!(d.name, "renamed"),
+        _ => panic!("expected Updated"),
+    }
+    assert_eq!(t.get("A").map(|d| d.name.as_str()), Some("renamed"));
+}
+
+#[test]
+fn update_same_device_is_silent() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let mut t = DeviceTracker::new(tx);
+    let device = dev("A");
+    t.add(device.clone());
+    let _ = rx.try_recv(); // Added
+
+    assert!(!t.update(device));
+    assert!(rx.try_recv().is_err());
 }
 
 #[test]
@@ -138,7 +169,9 @@ fn connection_method_maps_device_kind() {
 fn device_event_debug_is_stable() {
     // Debug impls must not panic; guard against accidental derive removal.
     let ev_added = DeviceEvent::Added(dev("A"));
+    let ev_updated = DeviceEvent::Updated(dev("A"));
     let ev_removed = DeviceEvent::Removed("A".into());
     assert!(format!("{:?}", ev_added).contains("Added"));
+    assert!(format!("{:?}", ev_updated).contains("Updated"));
     assert!(format!("{:?}", ev_removed).contains("Removed"));
 }

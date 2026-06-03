@@ -34,7 +34,9 @@ class FlogServer {
   FlogServer._();
 
   HttpServer? _httpServer;
+  Future<void>? _startFuture;
   bool _started = false;
+  bool _hooksInstalled = false;
   Dio? _dio;
   int _port = 9753;
   String _appName = 'flutter';
@@ -63,8 +65,39 @@ class FlogServer {
     if (_started) return;
     _started = true;
     _port = port;
-    _installSystemHooks();
-    _startServer();
+    if (!_hooksInstalled) {
+      _hooksInstalled = true;
+      _installSystemHooks();
+    }
+    _startFuture = _startServer();
+  }
+
+  /// Restart the WebSocket server without reinstalling system log hooks.
+  ///
+  /// iOS can leave app-owned sockets in a stale state after the app is
+  /// suspended and later resumed. Rebinding on resume gives flog a fresh
+  /// listener while preserving buffered logs in [FlogStore].
+  Future<void> restart({int? port}) async {
+    if (!flogEnabled) return;
+    final targetPort = port ?? _port;
+    final pendingStart = _startFuture;
+    if (pendingStart != null) {
+      try {
+        await pendingStart;
+      } catch (_) {}
+    }
+    for (final ws in _clients.toList()) {
+      try {
+        await ws.close();
+      } catch (_) {}
+    }
+    _clients.clear();
+    try {
+      await _httpServer?.close(force: true);
+    } catch (_) {}
+    _httpServer = null;
+    _started = false;
+    start(port: targetPort);
   }
 
   /// Update app info after async detection.
@@ -121,8 +154,7 @@ class FlogServer {
 
     // 3. PlatformDispatcher.onError — captures unhandled async errors
     //    outside the Flutter framework (top-level Futures, Isolate errors).
-    final originalPlatformErrorHandler =
-        PlatformDispatcher.instance.onError;
+    final originalPlatformErrorHandler = PlatformDispatcher.instance.onError;
     PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
       _recordRawLog(error.toString());
       _recordRawLog(stack.toString());
@@ -206,15 +238,17 @@ class FlogServer {
 
   void _handleWebSocket(WebSocket ws) {
     // 1. Send hello with app info
-    ws.add(jsonEncode({
-      'type': 'hello',
-      'app': _appName,
-      'appVersion': _appVersion,
-      'os': _osName(),
-      'packageName': _packageName,
-      'port': _port,
-      'buildMode': _buildMode(),
-    }));
+    ws.add(
+      jsonEncode({
+        'type': 'hello',
+        'app': _appName,
+        'appVersion': _appVersion,
+        'os': _osName(),
+        'packageName': _packageName,
+        'port': _port,
+        'buildMode': _buildMode(),
+      }),
+    );
 
     // 2. Replay entire buffer — delivers all historical data.
     //    Dart is single-threaded, so no new messages can be produced during

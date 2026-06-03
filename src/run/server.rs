@@ -84,13 +84,12 @@ pub(crate) fn spawn_device_discovery(
         // "restart discovery" strategy is deferred to Phase 3.5.
         while let Some(event) = device_rx.recv().await {
             match event {
-                transport::DeviceEvent::Added(device) => {
+                transport::DeviceEvent::Added(device) | transport::DeviceEvent::Updated(device) => {
                     // Sync to App for UI
                     {
                         let mut a = app_for_discovery.lock().await;
                         a.discovered_devices
-                            .entry(device.id.clone())
-                            .or_insert_with(|| device.clone());
+                            .insert(device.id.clone(), device.clone());
                     }
 
                     // Spawn a connection task for each port in range
@@ -106,13 +105,22 @@ pub(crate) fn spawn_device_discovery(
                             }
                         }
 
-                        let device = device.clone();
+                        let device_id = device.id.clone();
+                        let fallback_device_name = device.name.clone();
                         let app_c = Arc::clone(&app_for_discovery);
                         let adb_fwd = Arc::clone(&adb_forwards_c);
                         let task_key_c = task_key.clone();
 
                         let task = tokio::spawn(async move {
-                            connection_task(device, target_port, task_key_c, app_c, adb_fwd).await;
+                            connection_task(
+                                device_id,
+                                fallback_device_name,
+                                target_port,
+                                task_key_c,
+                                app_c,
+                                adb_fwd,
+                            )
+                            .await;
                         });
 
                         active_tasks_c.lock().await.insert(task_key, task);
@@ -168,7 +176,8 @@ pub(crate) fn spawn_device_discovery(
 /// unrecoverable failure; otherwise reconnects forever with the
 /// TRANS-008 exponential backoff.
 async fn connection_task(
-    device: transport::device_monitor::Device,
+    device_id: String,
+    fallback_device_name: String,
     target_port: u16,
     task_key_c: String,
     app_c: Arc<Mutex<App>>,
@@ -178,6 +187,17 @@ async fn connection_task(
     loop {
         // Track adb forward for cleanup
         let mut adb_forward_info: Option<(String, u16)> = None;
+
+        let device = {
+            let a = app_c.lock().await;
+            a.discovered_devices.get(&device_id).cloned()
+        };
+        let Some(device) = device else {
+            tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
+            retry_delay_secs =
+                (retry_delay_secs * RECONNECT_BACKOFF_FACTOR).min(RECONNECT_MAX_DELAY_SECS);
+            continue;
+        };
 
         // TRANS-009: `resolve_transport_addr` turns the device kind into
         // a structured plan; the match below then runs the platform-
@@ -238,12 +258,12 @@ async fn connection_task(
                     ConnectorEvent::Connected(info) => {
                         let device_name = a
                             .discovered_devices
-                            .get(&device.id)
+                            .get(&device_id)
                             .map(|d| d.name.clone())
-                            .unwrap_or_else(|| device.name.clone());
+                            .unwrap_or_else(|| fallback_device_name.clone());
                         let app_info = app::ConnectedApp {
                             id: task_key_c.clone(),
-                            device_id: device.id.clone(),
+                            device_id: device_id.clone(),
                             port: target_port,
                             device_name: device_name.clone(),
                             app_name: info.app.clone(),
@@ -270,7 +290,12 @@ async fn connection_task(
                         // slot — a future reconnect is a fresh session that
                         // Dart will auto-replay into.
                         a.remove_connected_app(&task_key_c);
-                        a.show_status(format_disconnect_message(&device.name, &reason));
+                        let device_name = a
+                            .discovered_devices
+                            .get(&device_id)
+                            .map(|d| d.name.clone())
+                            .unwrap_or_else(|| fallback_device_name.clone());
+                        a.show_status(format_disconnect_message(&device_name, &reason));
                         break;
                     }
                     ConnectorEvent::Message(msg) => {
