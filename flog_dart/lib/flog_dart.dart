@@ -5,7 +5,10 @@
 /// point is [Flog.init]; see its dartdoc for the canonical bootstrap example.
 library flog_dart;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'src/flog_server.dart';
@@ -47,6 +50,7 @@ class Flog {
 
     // Start server and register hooks immediately (synchronous, zero delay).
     FlogServer.instance.start(port: port);
+    _FlogLifecycleRestarter.instance.install(port: port);
 
     // Auto-detect app info in the background — updates before any TUI connects.
     PackageInfo.fromPlatform().then((info) {
@@ -63,6 +67,33 @@ class Flog {
       // debugPrint does not leak into production output.)
       debugPrint('flog_dart: PackageInfo.fromPlatform failed: $e');
     });
+  }
+}
+
+class _FlogLifecycleRestarter with WidgetsBindingObserver {
+  static final _FlogLifecycleRestarter instance = _FlogLifecycleRestarter._();
+  _FlogLifecycleRestarter._();
+
+  bool _installed = false;
+  int _port = 9753;
+
+  void install({required int port}) {
+    _port = port;
+    if (_installed) return;
+    try {
+      WidgetsBinding.instance.addObserver(this);
+      _installed = true;
+    } catch (_) {
+      // Preserve Flog.init's historical "callable before binding" behavior.
+      // Real Flutter apps call WidgetsFlutterBinding.ensureInitialized()
+      // before Flog.init, so they still get lifecycle recovery.
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(FlogServer.instance.restart(port: _port));
   }
 }
 

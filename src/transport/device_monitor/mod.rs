@@ -54,6 +54,7 @@ impl Device {
 #[derive(Debug)]
 pub enum DeviceEvent {
     Added(Device),
+    Updated(Device),
     Removed(String),
 }
 
@@ -78,21 +79,22 @@ pub fn start_discovery(port: u16) -> mpsc::UnboundedReceiver<DeviceEvent> {
 /// when the source's connection dies unexpectedly (via `drain`).
 struct DeviceTracker {
     tx: mpsc::UnboundedSender<DeviceEvent>,
-    known: std::collections::HashSet<String>,
+    known: std::collections::HashMap<String, Device>,
 }
 
 impl DeviceTracker {
     fn new(tx: mpsc::UnboundedSender<DeviceEvent>) -> Self {
         Self {
             tx,
-            known: std::collections::HashSet::new(),
+            known: std::collections::HashMap::new(),
         }
     }
 
     /// Emit Added if the device id hasn't been seen yet. Returns whether a new
     /// event was emitted — callers can skip expensive name queries otherwise.
     fn add(&mut self, device: Device) -> bool {
-        if self.known.insert(device.id.clone()) {
+        if !self.known.contains_key(&device.id) {
+            self.known.insert(device.id.clone(), device.clone());
             let _ = self.tx.send(DeviceEvent::Added(device));
             true
         } else {
@@ -101,11 +103,27 @@ impl DeviceTracker {
     }
 
     fn contains(&self, id: &str) -> bool {
-        self.known.contains(id)
+        self.known.contains_key(id)
+    }
+
+    fn get(&self, id: &str) -> Option<&Device> {
+        self.known.get(id)
+    }
+
+    fn update(&mut self, device: Device) -> bool {
+        let Some(existing) = self.known.get(&device.id) else {
+            return self.add(device);
+        };
+        if existing == &device {
+            return false;
+        }
+        self.known.insert(device.id.clone(), device.clone());
+        let _ = self.tx.send(DeviceEvent::Updated(device));
+        true
     }
 
     fn remove(&mut self, id: &str) {
-        if self.known.remove(id) {
+        if self.known.remove(id).is_some() {
             let _ = self.tx.send(DeviceEvent::Removed(id.to_string()));
         }
     }
@@ -114,7 +132,7 @@ impl DeviceTracker {
     /// receiving a full state snapshot from the source.
     fn removed_since(&self, current: &std::collections::HashSet<String>) -> Vec<String> {
         self.known
-            .iter()
+            .keys()
             .filter(|id| !current.contains(*id))
             .cloned()
             .collect()
@@ -123,7 +141,7 @@ impl DeviceTracker {
     /// Emit Removed for every known device and clear the set. Called when the
     /// underlying source disconnects so stale devices don't linger in the UI.
     fn drain(&mut self) {
-        for id in self.known.drain() {
+        for (id, _) in self.known.drain() {
             let _ = self.tx.send(DeviceEvent::Removed(id));
         }
     }

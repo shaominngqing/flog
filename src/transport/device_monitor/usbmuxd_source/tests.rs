@@ -48,7 +48,7 @@ async fn handle_attached_emits_added_once() {
 }
 
 #[tokio::test]
-async fn handle_attached_second_interface_does_not_duplicate() {
+async fn handle_attached_second_interface_updates_device_id_without_duplicate_added() {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut tracker = DeviceTracker::new(tx);
     let mut map: HashMap<u32, String> = HashMap::new();
@@ -67,12 +67,21 @@ async fn handle_attached_second_interface_does_not_duplicate() {
     )
     .await;
 
-    // First Added drained, second attach did not emit Added.
-    let mut count = 0;
-    while rx.try_recv().is_ok() {
-        count += 1;
+    match rx.try_recv().expect("Added") {
+        DeviceEvent::Added(d) => {
+            assert_eq!(d.id, "APPLE-SN-1");
+            assert!(matches!(d.kind, DeviceKind::IosUsb { device_id: 5 }));
+        }
+        _ => panic!("expected Added"),
     }
-    assert_eq!(count, 1, "only one Added for same serial");
+    match rx.try_recv().expect("Updated") {
+        DeviceEvent::Updated(d) => {
+            assert_eq!(d.id, "APPLE-SN-1");
+            assert!(matches!(d.kind, DeviceKind::IosUsb { device_id: 7 }));
+        }
+        _ => panic!("expected Updated"),
+    }
+    assert!(rx.try_recv().is_err(), "no duplicate Added");
     assert_eq!(map.len(), 2);
 }
 

@@ -143,26 +143,40 @@ async fn handle_attached(
 
     device_id_to_serial.insert(device_id, serial.clone());
 
-    if tracker.contains(&serial) {
-        // Same phone, new interface (USB vs wifi pairing) — just remember
-        // the mapping; don't emit a duplicate Added.
-        return;
-    }
-
-    let name = props
+    let raw_name = props
         .get("DeviceName")
         .and_then(|v| v.as_string())
         .map(str::to_string)
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| "iPhone".to_string());
+
+    if let Some(existing) = tracker.get(&serial) {
+        // usbmuxd DeviceID is a transient connection handle. After a cable
+        // reconnect or lock-screen sleep, the same serial can re-attach with
+        // a new DeviceID; publish that update so retrying tunnels stop using
+        // the stale handle. Preserve a previously resolved friendly name when
+        // this attach only reports the generic fallback.
+        let name = if raw_name == "iPhone" {
+            existing.name.clone()
+        } else {
+            raw_name
+        };
+        tracker.update(Device {
+            id: serial,
+            name,
+            kind: DeviceKind::IosUsb { device_id },
+        });
+        return;
+    }
+
     // DeviceName is usually populated by usbmuxd; if not, lockdownd query
     // as a fallback.
-    let name = if name == "iPhone" {
+    let name = if raw_name == "iPhone" {
         crate::transport::usbmuxd::query_device_name(device_id)
             .await
-            .unwrap_or(name)
+            .unwrap_or(raw_name)
     } else {
-        name
+        raw_name
     };
 
     tracker.add(Device {
