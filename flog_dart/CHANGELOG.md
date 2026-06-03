@@ -3,6 +3,18 @@
 All notable changes to `flog_dart`. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.9.1 — 2026-06-03
+
+### Fixed
+
+- Restart the embedded WebSocket server when a Flutter app resumes, helping iOS
+  apps recover from stale sockets after suspend/resume without reinstalling log
+  hooks.
+- Fix the package example import and keep `dart analyze` clean after adding the
+  lifecycle observer.
+
+---
+
 ## 0.9.0 — 2026-05-15
 
 **Breaking release.** `FlogWebSocket` API redesigned for full handshake-phase coverage.

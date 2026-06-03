@@ -11,7 +11,8 @@ import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'
+    show FlutterError, FlutterErrorDetails, debugPrint;
 
 import 'flog_mock_interceptor.dart';
 import 'flog_net.dart' show flogEnabled;

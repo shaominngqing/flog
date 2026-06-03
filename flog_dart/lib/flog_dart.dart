@@ -8,7 +8,8 @@ library flog_dart;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart'
+    show AppLifecycleState, WidgetsBinding, WidgetsBindingObserver;
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'src/flog_server.dart';

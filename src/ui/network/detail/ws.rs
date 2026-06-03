@@ -128,6 +128,7 @@ pub(super) fn render_ws(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_chat_mode(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
@@ -251,7 +252,7 @@ fn render_chat_mode(
                             &format!("ws_{}", mi),
                             &mut app.network.json_viewer_states,
                             inner_w,
-                            &copied_ids,
+                            copied_ids,
                         ) {
                             app.network.detail_json_trees.insert(k, t);
                         }
@@ -271,6 +272,7 @@ fn render_chat_mode(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_raw_mode(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
@@ -321,7 +323,7 @@ fn render_raw_mode(
                 &format!("ws_{}", i),
                 &mut app.network.json_viewer_states,
                 inner_w,
-                &copied_ids,
+                copied_ids,
             ) {
                 app.network.detail_json_trees.insert(k, t);
             }

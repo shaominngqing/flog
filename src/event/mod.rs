@@ -222,9 +222,7 @@ fn handle_full_value_overlay_mouse(app: &mut App, mouse: MouseEvent) {
             if inner_h >= 4 {
                 let btn_y = oy + 1 + inner_h - 1; // oy + 1 (border) + (inner_h - 1)
                 let btn_x_start = ox + 1 + crate::ui::full_value_overlay::COPY_BTN_X_OFFSET;
-                let btn_w = crate::ui::full_value_overlay::COPY_BTN_TEXT
-                    .chars()
-                    .count() as u16;
+                let btn_w = crate::ui::full_value_overlay::COPY_BTN_TEXT.chars().count() as u16;
                 let btn_x_end = btn_x_start + btn_w;
                 if y == btn_y && x >= btn_x_start && x < btn_x_end {
                     apply::copy_and_exit_overlay(app);

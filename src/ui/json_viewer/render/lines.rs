@@ -39,10 +39,7 @@ fn url_regex() -> &'static regex::Regex {
 
 /// Returns the copy icon span text and style for a container node.
 /// Shows ✓ (GREEN) when the node was recently copied; ⧉ (OVERLAY0) otherwise.
-fn copy_icon_for(
-    id: u32,
-    copied_ids: &std::collections::HashSet<u32>,
-) -> (&'static str, Style) {
+fn copy_icon_for(id: u32, copied_ids: &std::collections::HashSet<u32>) -> (&'static str, Style) {
     if copied_ids.contains(&id) {
         (" ✓", Style::default().fg(GREEN))
     } else {
@@ -102,7 +99,15 @@ pub(super) fn render_node(
 
     // Recursion safety: `tree::parse` uses `serde_json::from_str` which has
     // a default nesting cap of 128. Any JSON that parses is safe to recurse on.
-    push_container_opener(out, click_map, tree, section_key, outer_prefix, id, copied_ids);
+    push_container_opener(
+        out,
+        click_map,
+        tree,
+        section_key,
+        outer_prefix,
+        id,
+        copied_ids,
+    );
     let child_count = node.children.len();
     for (i, &cid) in node.children.iter().enumerate() {
         let child_trailing = i + 1 < child_count;

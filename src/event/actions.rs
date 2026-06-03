@@ -382,10 +382,7 @@ fn subtree_to_value(tree: &crate::ui::json_viewer::Tree, id: u32) -> Option<serd
 
 /// Variant of [`extract_node_json`] that takes `&Tree` directly.
 /// Used by `apply_network_json_action` which has the tree from the cache.
-pub(super) fn extract_node_json_from_tree(
-    tree: &crate::ui::json_viewer::Tree,
-    id: u32,
-) -> String {
+pub(super) fn extract_node_json_from_tree(tree: &crate::ui::json_viewer::Tree, id: u32) -> String {
     match subtree_to_value(tree, id) {
         Some(val) => serde_json::to_string_pretty(&val).unwrap_or_default(),
         None => String::new(),
@@ -450,7 +447,9 @@ pub(super) fn dispatch_enter_action(app: &mut App, row: &[crate::ui::json_viewer
             if let Some(text) = text_opt {
                 let msg = copy_to_clipboard(&text);
                 app.show_status(msg);
-                app.detail.copied_node_feedback.insert(node_id, std::time::Instant::now());
+                app.detail
+                    .copied_node_feedback
+                    .insert(node_id, std::time::Instant::now());
             }
         }
         JsonAction::ToggleFold(node_id) => {

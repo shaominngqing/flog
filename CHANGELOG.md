@@ -3,6 +3,18 @@
 All notable changes to flog. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.5.2 — 2026-06-03
+
+### Fixed
+
+- Recover iOS USB reconnects when usbmuxd re-attaches the same device serial
+  with a new transient DeviceID. Existing retry tasks now read the latest
+  discovered device record before opening the next tunnel.
+- Keep the release build clean on the current Rust toolchain (`cargo fmt` and
+  `cargo clippy --all-targets -- -D warnings`).
+
+---
+
 ## 0.5.1 — 2026-05-15
 
 ### What's new

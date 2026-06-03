@@ -387,7 +387,9 @@ fn apply_json_action(app: &mut App, action: crate::ui::json_viewer::JsonAction) 
         JsonAction::CopyNode(id) => {
             let text = super::actions::extract_node_json(&app.detail.viewer_tree, id);
             app.show_status(super::actions::copy_to_clipboard(&text));
-            app.detail.copied_node_feedback.insert(id, std::time::Instant::now());
+            app.detail
+                .copied_node_feedback
+                .insert(id, std::time::Instant::now());
         }
         JsonAction::OpenUrl(url) => {
             app.show_status(super::actions::open_url(&url));
@@ -440,7 +442,9 @@ fn apply_network_json_action(
                 if let Some(tree) = app.network.detail_json_trees.get(&key) {
                     let text = super::actions::extract_node_json_from_tree(tree, id);
                     app.show_status(super::actions::copy_to_clipboard(&text));
-                    app.detail.copied_node_feedback.insert(id, std::time::Instant::now());
+                    app.detail
+                        .copied_node_feedback
+                        .insert(id, std::time::Instant::now());
                 }
             }
         }

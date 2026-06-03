@@ -16,8 +16,10 @@ use ratatui::{
 use crate::app::App;
 use crate::domain::network::{EntrySource, NetworkStatus};
 
-use super::super::{safe_truncate, BASE, BLUE, MANTLE, MAUVE, OVERLAY0, SAPPHIRE, SUBTEXT0,
-    SURFACE0, SURFACE1, TEXT};
+use super::super::{
+    safe_truncate, BASE, BLUE, MANTLE, MAUVE, OVERLAY0, SAPPHIRE, SUBTEXT0, SURFACE0, SURFACE1,
+    TEXT,
+};
 use super::status_bar::draw_empty_network;
 use super::{
     duration_color, format_duration, format_size, method_color, protocol_pill, status_color,
@@ -109,16 +111,25 @@ pub(super) fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             let method_c = method_color(&entry.method);
             let method_text = match entry.source {
                 EntrySource::Replay => {
-                    if entry.method.is_empty() { "\u{21bb}-".to_string() }
-                    else { format!("\u{21bb}{}", entry.method) }
+                    if entry.method.is_empty() {
+                        "\u{21bb}-".to_string()
+                    } else {
+                        format!("\u{21bb}{}", entry.method)
+                    }
                 }
                 EntrySource::Mocked => {
-                    if entry.method.is_empty() { "\u{25c6}-".to_string() }
-                    else { format!("\u{25c6}{}", entry.method) }
+                    if entry.method.is_empty() {
+                        "\u{25c6}-".to_string()
+                    } else {
+                        format!("\u{25c6}{}", entry.method)
+                    }
                 }
                 EntrySource::App => {
-                    if entry.method.is_empty() { "-".to_string() }
-                    else { entry.method.clone() }
+                    if entry.method.is_empty() {
+                        "-".to_string()
+                    } else {
+                        entry.method.clone()
+                    }
                 }
             };
             let method_cell = Cell::from(Span::styled(method_text, Style::default().fg(method_c)));
@@ -187,13 +198,20 @@ pub(super) fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
             let status_cell = Cell::from(Span::styled(status_text, Style::default().fg(status_c)));
 
             // Col 5: duration (width TIME_W)
-            let time_text = entry.duration.map(format_duration).unwrap_or_else(|| "-".to_string());
+            let time_text = entry
+                .duration
+                .map(format_duration)
+                .unwrap_or_else(|| "-".to_string());
             let time_c = entry.duration.map(duration_color).unwrap_or(OVERLAY0);
             let time_cell = Cell::from(Span::styled(time_text, Style::default().fg(time_c)));
 
             // Col 6: size (width SIZE_W)
             let size = entry.display_size();
-            let size_text = if size > 0 { format_size(size) } else { "-".to_string() };
+            let size_text = if size > 0 {
+                format_size(size)
+            } else {
+                "-".to_string()
+            };
             let size_cell = Cell::from(Span::styled(size_text, Style::default().fg(SUBTEXT0)));
 
             Some(
@@ -212,13 +230,13 @@ pub(super) fn draw_table_body(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let widths = [
-        Constraint::Length(1),                   // cursor
-        Constraint::Length(PROTO_W as u16),       // proto pill
-        Constraint::Length(METHOD_W as u16),      // method
-        Constraint::Fill(1),                      // URL (takes remaining)
-        Constraint::Length(STATUS_W as u16),      // status
-        Constraint::Length(TIME_W as u16),        // duration
-        Constraint::Length(SIZE_W as u16),        // size
+        Constraint::Length(1),               // cursor
+        Constraint::Length(PROTO_W as u16),  // proto pill
+        Constraint::Length(METHOD_W as u16), // method
+        Constraint::Fill(1),                 // URL (takes remaining)
+        Constraint::Length(STATUS_W as u16), // status
+        Constraint::Length(TIME_W as u16),   // duration
+        Constraint::Length(SIZE_W as u16),   // size
     ];
 
     let mut table_state = TableState::default().with_offset(start);

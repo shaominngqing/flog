@@ -76,9 +76,7 @@ pub(super) fn render_headers(
     inner_w: usize,
     copied_ids: &std::collections::HashSet<u32>,
 ) -> Option<(String, json_viewer::Tree)> {
-    if headers.is_none() {
-        return None;
-    }
+    let headers = headers?;
     let is_collapsed = collapsed_sections.contains(section_title);
     push_section_header(
         lines,
@@ -91,22 +89,18 @@ pub(super) fn render_headers(
     if is_collapsed {
         return None;
     }
-    let tree_entry = if let Some(hdrs) = headers {
-        render_json_section_with_depth(
-            lines,
-            section_map,
-            json_click_map,
-            json_section_keys,
-            hdrs,
-            section_key,
-            viewer_states,
-            inner_w,
-            0,
-            copied_ids,
-        )
-    } else {
-        None
-    };
+    let tree_entry = render_json_section_with_depth(
+        lines,
+        section_map,
+        json_click_map,
+        json_section_keys,
+        headers,
+        section_key,
+        viewer_states,
+        inner_w,
+        0,
+        copied_ids,
+    );
     lines.push(Line::raw(""));
     section_map.push(None);
     json_click_map.push(Vec::new());

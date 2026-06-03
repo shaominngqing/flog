@@ -285,7 +285,7 @@ fn render_events_mode(
                     &format!("sse_{}", i),
                     &mut app.network.json_viewer_states,
                     inner_w,
-                    &copied_ids,
+                    copied_ids,
                 ) {
                     app.network.detail_json_trees.insert(k, t);
                 }

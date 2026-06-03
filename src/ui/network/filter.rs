@@ -226,15 +226,15 @@ pub fn draw_network_op2(f: &mut Frame, app: &mut App, area: Rect) {
 /// Uses the same Table widget constraints as draw_table_body so columns are
 /// guaranteed to align regardless of protocol pill widths.
 pub fn draw_network_column_header(f: &mut Frame, area: Rect) {
+    use super::{METHOD_W, PROTO_W, SIZE_W, STATUS_W, TIME_W};
     use ratatui::{
         layout::Constraint,
         widgets::{Cell, Row, Table},
     };
-    use super::{METHOD_W, PROTO_W, SIZE_W, STATUS_W, TIME_W};
 
     let h = Style::default().fg(OVERLAY0).bg(MANTLE);
     let header = Row::new([
-        Cell::from(""),       // cursor col
+        Cell::from(""), // cursor col
         Cell::from("PROTO"),
         Cell::from("METHOD"),
         Cell::from("URL"),
