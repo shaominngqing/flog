@@ -3,6 +3,7 @@
 pub mod args;
 mod output;
 mod redact;
+mod snapshot;
 
 use std::io;
 
