@@ -1,6 +1,8 @@
 //! AI-oriented headless inspection commands.
 
 pub mod args;
+mod output;
+mod redact;
 
 use std::io;
 
