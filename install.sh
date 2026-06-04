@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-FLOG_VERSION="0.5.2"
+FLOG_VERSION="0.6.0"
 REPO="shaominngqing/flog"
 
 NC='\033[0m'; BOLD='\033[1m'; DIM='\033[2m'

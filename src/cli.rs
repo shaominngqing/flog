@@ -1,13 +1,24 @@
 //! Command-line argument parsing.
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 /// flog — Flutter Log Viewer & Network Inspector.
 ///
 /// Starts a WebSocket server and waits for flog_dart clients to connect.
+#[derive(Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Command {
+    Update,
+    Uninstall,
+    Doctor,
+    Devices,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "flog", version, about)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
     /// Server port for flog_dart connections
     #[arg(long, default_value = "9753")]
     pub port: u16,
@@ -126,5 +137,29 @@ mod tests {
         let err = Cli::try_parse_from(["flog", "--level", "nope"]).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unknown level") || msg.contains("'nope'"));
+    }
+
+    #[test]
+    fn cli_update_subcommand() {
+        let cli = Cli::parse_from(["flog", "update"]);
+        assert_eq!(cli.command, Some(Command::Update));
+    }
+
+    #[test]
+    fn cli_uninstall_subcommand() {
+        let cli = Cli::parse_from(["flog", "uninstall"]);
+        assert_eq!(cli.command, Some(Command::Uninstall));
+    }
+
+    #[test]
+    fn cli_doctor_subcommand() {
+        let cli = Cli::parse_from(["flog", "doctor"]);
+        assert_eq!(cli.command, Some(Command::Doctor));
+    }
+
+    #[test]
+    fn cli_devices_subcommand() {
+        let cli = Cli::parse_from(["flog", "devices"]);
+        assert_eq!(cli.command, Some(Command::Devices));
     }
 }

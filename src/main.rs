@@ -2,6 +2,7 @@
 
 mod app;
 mod cli;
+mod commands;
 mod domain;
 mod event;
 pub mod input;
@@ -30,6 +31,9 @@ use cli::Cli;
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let cli = Cli::parse();
+    if let Some(command) = cli.command {
+        return commands::run(command).await;
+    }
 
     let app = Arc::new(Mutex::new(App::new()));
     {

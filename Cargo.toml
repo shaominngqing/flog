@@ -1,6 +1,6 @@
 [package]
 name = "flog"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2021"
 description = "Flutter Log Viewer — see your logs, finally."
 license = "MIT"
@@ -20,6 +20,6 @@ dirs = "6"
 clap = { version = "4", features = ["derive"] }
 tokio-tungstenite = { version = "0.26", features = ["connect"] }
 futures-util = "0.3"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 plist = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }

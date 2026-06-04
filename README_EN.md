@@ -292,6 +292,20 @@ cargo install --path .
 
 Supported: macOS (Intel / Apple Silicon), Linux (x86_64 / aarch64), Windows.
 
+### Maintenance Commands
+
+```bash
+flog update      # update from the latest GitHub Release, with confirmation
+flog uninstall   # remove flog and local config; exported flog_*.log files stay
+flog doctor      # check update network, adb, usbmuxd, and ports 9753..9762
+flog devices     # list discovered devices and flog_dart apps
+```
+
+These commands do not enter the TUI, so they are useful for maintenance and
+diagnostics. `doctor` distinguishes `free`, `flog_dart <app>`, and
+`open, not flog_dart` ports; `devices` performs a short scan and returns early
+once it finds a connectable `flog_dart` app.
+
 ## Contributor docs
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — high-level architecture.
@@ -299,7 +313,10 @@ Supported: macOS (Intel / Apple Silicon), Linux (x86_64 / aarch64), Windows.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — wire protocol spec.
 - [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — audit taxonomy, testing rules, commit format.
 
-Current version (**0.5.0**) — ships the Phase 3-4 cleanup, the flog_dart v0.8 SSE redesign, and the UI-042 WS-mode-toggle fix. See `docs/superpowers/` for the campaign audit trail.
+Current version (**0.6.0**) — adds the basic `flog update`, `flog uninstall`,
+`flog doctor`, and `flog devices` maintenance commands while keeping the
+post-cleanup layered architecture. See `docs/superpowers/` for the campaign
+audit trail.
 
 ## License
 

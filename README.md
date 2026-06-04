@@ -348,6 +348,19 @@ cargo install --path .
 
 支持 macOS (Intel / Apple Silicon)、Linux (x86_64 / aarch64)、Windows。
 
+### 维护命令
+
+```bash
+flog update      # 从最新 GitHub Release 更新 flog，替换前会确认
+flog uninstall   # 删除 flog 二进制和本地配置，用户导出的 flog_*.log 不会删除
+flog doctor      # 检查更新网络、adb、usbmuxd 和 9753..9762 端口状态
+flog devices     # 列出发现的设备和 flog_dart App
+```
+
+这些命令不进入 TUI，适合安装维护和排障。`doctor` 会尝试区分端口是
+`free`、`flog_dart <app>`，还是 `open, not flog_dart`；`devices` 会短扫
+设备和 App，发现可连接的 `flog_dart` 后尽快返回。
+
 ## 贡献者文档
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 分层架构总览。
@@ -355,7 +368,9 @@ cargo install --path .
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — flog ↔ flog_dart 线协议规范。
 - [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — 审计分类 / 测试规约 / commit 约定。
 
-当前版本 **0.5.0** —— 包含 Phase 3-4 清理、flog_dart v0.8 SSE 架构重设计、UI-042 WS 模式切换修复。完整审计线索见 `docs/superpowers/`。
+当前版本 **0.6.0** —— 新增 `flog update` / `flog uninstall` / `flog doctor` /
+`flog devices` 基础维护命令，并保留 Phase 3-4 清理后的分层架构。完整审计线索见
+`docs/superpowers/`。
 
 ## License
 

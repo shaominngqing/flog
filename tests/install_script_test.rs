@@ -9,7 +9,7 @@ fn installer_uses_checked_in_release_version() {
     let script = install_script();
 
     assert!(
-        script.contains("FLOG_VERSION=\"0.5.2\""),
+        script.contains("FLOG_VERSION=\"0.6.0\""),
         "installer should pin the published release version"
     );
     assert!(

@@ -3,6 +3,21 @@
 All notable changes to flog. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.6.0 — 2026-06-04
+
+### What's new
+
+- Add basic maintenance commands: `flog update`, `flog uninstall`,
+  `flog doctor`, and `flog devices`.
+- Add polished CLI output for maintenance commands with status markers,
+  loading spinners, and a release-download progress bar.
+- `flog doctor` checks GitHub release reachability, local tool availability,
+  usbmuxd on macOS, and port status for `9753..9762`.
+- `flog devices` lists discovered devices and connectable `flog_dart` apps
+  without entering the TUI.
+
+---
+
 ## 0.5.2 — 2026-06-03
 
 ### Fixed
