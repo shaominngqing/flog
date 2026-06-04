@@ -1,6 +1,7 @@
 //! AI-oriented headless inspection commands.
 
 pub mod args;
+mod doctor;
 mod get;
 mod output;
 mod redact;
@@ -88,7 +89,10 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
                 Err(error) => print_json(&output::AiEnvelope::error("get", error)),
             }
         }
-        AiCommand::Doctor(_) => print_json(&not_implemented("doctor")),
+        AiCommand::Doctor(_) => {
+            let payload = doctor::run_doctor(9753).await;
+            print_json(&output::AiEnvelope::new("doctor", true, payload))
+        }
         AiCommand::Screenshot(args) => {
             let Some(device_id) = args.select.device.as_deref() else {
                 return print_json(&output::AiEnvelope::error(
@@ -116,18 +120,6 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
 #[derive(serde::Serialize)]
 struct GetPayload {
     record: serde_json::Value,
-}
-
-fn not_implemented(command: &str) -> output::AiEnvelope<output::ErrorPayload> {
-    let _known_error_codes = output::AiErrorCode::ALL.len();
-    output::AiEnvelope::error(
-        command,
-        output::AiError::new(
-            output::AiErrorCode::InternalError,
-            format!("flog ai {command} is not implemented yet."),
-            vec!["Use `flog ai snapshot --format json` for the current implementation.".to_string()],
-        ),
-    )
 }
 
 fn print_json<T: serde::Serialize>(value: &T) -> io::Result<()> {
