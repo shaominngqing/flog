@@ -140,6 +140,21 @@ flog --level w
 flog --tag network,-flog_net
 ```
 
+### AI inspection
+
+`flog ai` provides a headless JSON interface for AI agents:
+
+```bash
+flog ai snapshot --format json --last 300
+flog ai snapshot --format json --screenshot
+flog ai get net#42 --body
+flog ai doctor --format json
+```
+
+The output is read-only, redacted by default, and uses stable ids such as
+`log#12` and `net#42` so an agent can cite evidence without copying from the
+TUI.
+
 ## With flog_dart
 
 flog recognises any Flutter log output; pair it with [flog_dart](https://pub.dev/packages/flog_dart) for precise level / tag parsing and the Network Inspector:
