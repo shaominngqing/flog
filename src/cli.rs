@@ -1,16 +1,122 @@
 //! Command-line argument parsing.
 
-use clap::{Parser, Subcommand};
+use std::time::Duration;
+
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 /// flog — Flutter Log Viewer & Network Inspector.
 ///
 /// Starts a WebSocket server and waits for flog_dart clients to connect.
-#[derive(Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Update,
     Uninstall,
     Doctor,
     Devices,
+    #[command(subcommand)]
+    Ai(AiCommand),
+}
+
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+pub enum AiCommand {
+    Snapshot(AiSnapshotArgs),
+    Watch(AiWatchArgs),
+    Get(AiGetArgs),
+    Doctor(AiDoctorArgs),
+    Screenshot(AiScreenshotArgs),
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiFormat {
+    Json,
+    Ndjson,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiSelectArgs {
+    #[arg(long)]
+    pub device: Option<String>,
+    #[arg(long)]
+    pub app: Option<String>,
+    #[arg(long, default_value = "9753")]
+    pub port: u16,
+    #[arg(long, value_parser = parse_duration, default_value = "5s")]
+    pub wait: Duration,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiSnapshotArgs {
+    #[command(flatten)]
+    pub select: AiSelectArgs,
+    #[arg(long, default_value = "300")]
+    pub last: usize,
+    #[arg(long, value_enum, default_value_t = AiFormat::Json)]
+    pub format: AiFormat,
+    #[arg(long, value_parser = parse_duration, default_value = "750ms")]
+    pub settle: Duration,
+    #[arg(long)]
+    pub errors: bool,
+    #[arg(long)]
+    pub network: bool,
+    #[arg(long)]
+    pub sse: bool,
+    #[arg(long)]
+    pub ws: bool,
+    #[arg(long)]
+    pub include_headers: bool,
+    #[arg(long)]
+    pub include_body: bool,
+    #[arg(long)]
+    pub no_redact: bool,
+    #[arg(long)]
+    pub screenshot: bool,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiWatchArgs {
+    #[command(flatten)]
+    pub select: AiSelectArgs,
+    #[arg(long, value_parser = parse_duration, default_value = "30s")]
+    pub duration: Duration,
+    #[arg(long, value_enum, default_value_t = AiFormat::Ndjson)]
+    pub format: AiFormat,
+    #[arg(long)]
+    pub errors: bool,
+    #[arg(long)]
+    pub network: bool,
+    #[arg(long)]
+    pub since: Option<String>,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiGetArgs {
+    pub id: String,
+    #[command(flatten)]
+    pub select: AiSelectArgs,
+    #[arg(long)]
+    pub chunks: bool,
+    #[arg(long)]
+    pub body: bool,
+    #[arg(long)]
+    pub stacktrace: bool,
+    #[arg(long)]
+    pub no_redact: bool,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiDoctorArgs {
+    #[arg(long, value_enum, default_value_t = AiFormat::Json)]
+    pub format: AiFormat,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiScreenshotArgs {
+    #[command(flatten)]
+    pub select: AiSelectArgs,
+    #[arg(long, value_enum, default_value_t = AiFormat::Json)]
+    pub format: AiFormat,
+    #[arg(long)]
+    pub out: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -41,6 +147,34 @@ fn parse_level(s: &str) -> Result<crate::domain::LogLevel, String> {
         "e" | "error" => Ok(crate::domain::LogLevel::Error),
         _ => Err(format!("unknown level '{}', use v/d/i/w/e", s)),
     }
+}
+
+pub(crate) fn parse_duration(input: &str) -> Result<Duration, String> {
+    let Some((number, unit)) = split_duration(input) else {
+        return Err("duration must use ms, s, or m suffix".to_string());
+    };
+    let value = number
+        .parse::<u64>()
+        .map_err(|_| format!("invalid duration value '{number}'"))?;
+    match unit {
+        "ms" => Ok(Duration::from_millis(value)),
+        "s" => Ok(Duration::from_secs(value)),
+        "m" => Ok(Duration::from_secs(value * 60)),
+        _ => Err(format!("invalid duration unit '{unit}', use ms/s/m")),
+    }
+}
+
+fn split_duration(input: &str) -> Option<(&str, &str)> {
+    if input.is_empty() {
+        return None;
+    }
+    let unit_start = input
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(input.len());
+    if unit_start == 0 || unit_start == input.len() {
+        return None;
+    }
+    Some(input.split_at(unit_start))
 }
 
 #[cfg(test)]
@@ -161,5 +295,42 @@ mod tests {
     fn cli_devices_subcommand() {
         let cli = Cli::parse_from(["flog", "devices"]);
         assert_eq!(cli.command, Some(Command::Devices));
+    }
+
+    #[test]
+    fn cli_ai_snapshot_defaults_parse() {
+        let cli = Cli::parse_from(["flog", "ai", "snapshot"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Ai(AiCommand::Snapshot(_)))
+        ));
+    }
+
+    #[test]
+    fn cli_ai_snapshot_screenshot_parse() {
+        let cli = Cli::parse_from(["flog", "ai", "snapshot", "--screenshot"]);
+        let Some(Command::Ai(AiCommand::Snapshot(args))) = cli.command else {
+            panic!("expected ai snapshot command");
+        };
+        assert!(args.screenshot);
+    }
+
+    #[test]
+    fn cli_ai_get_parse() {
+        let cli = Cli::parse_from(["flog", "ai", "get", "net#42", "--body"]);
+        let Some(Command::Ai(AiCommand::Get(args))) = cli.command else {
+            panic!("expected ai get command");
+        };
+        assert_eq!(args.id, "net#42");
+        assert!(args.body);
+    }
+
+    #[test]
+    fn cli_ai_watch_duration_parse() {
+        let cli = Cli::parse_from(["flog", "ai", "watch", "--duration", "30s"]);
+        let Some(Command::Ai(AiCommand::Watch(args))) = cli.command else {
+            panic!("expected ai watch command");
+        };
+        assert_eq!(args.duration.as_millis(), 30_000);
     }
 }

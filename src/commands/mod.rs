@@ -5,6 +5,7 @@ use std::io;
 use crate::cli::Command;
 
 mod cli_ui;
+pub(crate) mod ai;
 mod devices;
 mod doctor;
 mod uninstall;
@@ -16,5 +17,6 @@ pub async fn run(command: Command) -> io::Result<()> {
         Command::Uninstall => uninstall::run().await,
         Command::Doctor => doctor::run().await,
         Command::Devices => devices::run().await,
+        Command::Ai(command) => ai::run(command).await,
     }
 }
