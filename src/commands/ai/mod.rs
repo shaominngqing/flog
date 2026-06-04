@@ -5,6 +5,7 @@ mod get;
 mod output;
 mod redact;
 mod session;
+mod screenshot;
 mod snapshot;
 mod watch;
 
@@ -25,6 +26,7 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
             .await;
             match result {
                 Ok(session) => {
+                    let device_id_for_screenshot = session.candidate.device_id.clone();
                     let mut payload = snapshot::build_snapshot(
                         &session.app,
                         snapshot::SnapshotBuildOptions {
@@ -50,6 +52,13 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
                         build_mode: session.candidate.build_mode,
                         port: session.candidate.port,
                     });
+                    if args.screenshot {
+                        let result =
+                            screenshot::capture_with_flutter(&device_id_for_screenshot, None)
+                                .await;
+                        payload.screenshot =
+                            Some(serde_json::to_value(result).unwrap_or(serde_json::Value::Null));
+                    }
                     print_json(&output::AiEnvelope::snapshot(payload))
                 }
                 Err(error) => print_json(&output::AiEnvelope::error("snapshot", error)),
@@ -80,7 +89,27 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
             }
         }
         AiCommand::Doctor(_) => print_json(&not_implemented("doctor")),
-        AiCommand::Screenshot(_) => print_json(&not_implemented("screenshot")),
+        AiCommand::Screenshot(args) => {
+            let Some(device_id) = args.select.device.as_deref() else {
+                return print_json(&output::AiEnvelope::error(
+                    "screenshot",
+                    output::AiError::new(
+                        output::AiErrorCode::NoDeviceFound,
+                        "No device was selected for screenshot capture.",
+                        vec![
+                            "Run `flutter devices` to find a device id.".to_string(),
+                            "Run `flog ai screenshot --device <device-id>`.".to_string(),
+                        ],
+                    ),
+                ));
+            };
+            let result = screenshot::capture_with_flutter(device_id, args.out.map(Into::into)).await;
+            print_json(&output::AiEnvelope::new(
+                "screenshot",
+                result.ok,
+                screenshot::ScreenshotPayload { screenshot: result },
+            ))
+        }
     }
 }
 
