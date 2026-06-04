@@ -5,6 +5,9 @@
 # Install:
 #   curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | bash
 #
+# Install to a specific directory:
+#   curl -fsSL https://raw.githubusercontent.com/shaominngqing/flog/master/install.sh | FLOG_INSTALL_DIR=/usr/local/bin bash
+#
 # Uninstall:
 #   rm $(which flog)
 # =============================================================================
@@ -54,11 +57,13 @@ echo ""
 # ── Get latest version ──
 step "Fetch latest release"
 
-LATEST_TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
-    | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')
+LATEST_RESPONSE=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || true)
+LATEST_TAG=$(printf "%s\n" "$LATEST_RESPONSE" \
+    | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | head -1)
 
 if [ -z "$LATEST_TAG" ]; then
-    fail "Failed to fetch latest release from GitHub"
+    fail "Failed to fetch latest release from GitHub. Check network access to api.github.com."
 fi
 
 VERSION="${LATEST_TAG#v}"
@@ -123,11 +128,12 @@ DOWNLOADED=false
 
 if command -v curl >/dev/null 2>&1; then
     TOTAL_SIZE=$(curl -fsSLI "$DOWNLOAD_URL" 2>/dev/null \
-        | grep -i 'content-length' | tail -1 | tr -dc '0-9')
+        | awk 'tolower($1) == "content-length:" { gsub("\r", "", $2); len = $2 } END { if (len != "") print len; else print 0 }' \
+        || true)
     TOTAL_SIZE="${TOTAL_SIZE:-0}"
 
     if [ "$TOTAL_SIZE" -gt 0 ]; then
-        curl -fsSL "$DOWNLOAD_URL" -o "$TMP_ARCHIVE" 2>/dev/null &
+        curl -fL "$DOWNLOAD_URL" -o "$TMP_ARCHIVE" 2>/dev/null &
         DL_PID=$!
         while kill -0 "$DL_PID" 2>/dev/null; do
             if [ -f "$TMP_ARCHIVE" ]; then
@@ -142,7 +148,8 @@ if command -v curl >/dev/null 2>&1; then
         fi
         printf "\n" >&2
     else
-        if curl -fsSL "$DOWNLOAD_URL" -o "$TMP_ARCHIVE" 2>/dev/null; then
+        warn "Could not determine download size; downloading without progress..."
+        if curl -fL --progress-bar "$DOWNLOAD_URL" -o "$TMP_ARCHIVE"; then
             DOWNLOADED=true
         fi
     fi
@@ -162,10 +169,10 @@ if [ "$DOWNLOADED" != true ] || [ ! -s "$TMP_ARCHIVE" ]; then
     step "Build from source"
     BUILD_DIR="${TMP_DIR}/flog-src"
     if command -v git >/dev/null 2>&1; then
-        git clone --depth 1 "https://github.com/${REPO}.git" "$BUILD_DIR" 2>/dev/null
+        git clone --depth 1 --branch "$LATEST_TAG" "https://github.com/${REPO}.git" "$BUILD_DIR" 2>/dev/null
     else
-        curl -fsSL "https://github.com/${REPO}/archive/master.tar.gz" | tar -xz -C "$TMP_DIR"
-        BUILD_DIR="${TMP_DIR}/flog-master"
+        curl -fsSL "https://github.com/${REPO}/archive/${LATEST_TAG}.tar.gz" | tar -xz -C "$TMP_DIR"
+        BUILD_DIR="${TMP_DIR}/flog-${VERSION}"
     fi
     (cd "$BUILD_DIR" && cargo build --release 2>&1 | tail -3)
     cp "$BUILD_DIR/target/release/flog" "${TMP_DIR}/flog"
@@ -193,7 +200,13 @@ fi
 step "Install binary"
 
 INSTALL_DIR=""
-if [ -d /opt/homebrew/bin ] && echo "$PATH" | grep -q "/opt/homebrew/bin"; then
+ACTIVE_FLOG=$(command -v flog 2>/dev/null || true)
+
+if [ -n "${FLOG_INSTALL_DIR:-}" ]; then
+    INSTALL_DIR="$FLOG_INSTALL_DIR"
+elif [ -n "$ACTIVE_FLOG" ] && [ "${ACTIVE_FLOG#/}" != "$ACTIVE_FLOG" ]; then
+    INSTALL_DIR=$(dirname "$ACTIVE_FLOG")
+elif [ -d /opt/homebrew/bin ] && echo "$PATH" | grep -q "/opt/homebrew/bin"; then
     INSTALL_DIR="/opt/homebrew/bin"
 elif [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
     INSTALL_DIR="/usr/local/bin"
@@ -203,6 +216,8 @@ else
     mkdir -p "$HOME/.local/bin"
     INSTALL_DIR="$HOME/.local/bin"
 fi
+
+mkdir -p "$INSTALL_DIR"
 
 if cp "${TMP_DIR}/flog" "$INSTALL_DIR/flog" 2>/dev/null; then
     ok "flog → $INSTALL_DIR/"
@@ -221,13 +236,22 @@ fi
 # ── Verify ──
 step "Verify"
 
-if command -v flog >/dev/null 2>&1; then
-    ok "flog is ready!"
+INSTALLED_BIN="$INSTALL_DIR/flog"
+INSTALLED_VERSION=$("$INSTALLED_BIN" --version 2>/dev/null || true)
+
+if printf "%s" "$INSTALLED_VERSION" | grep -q "$VERSION"; then
+    ok "$INSTALLED_VERSION at $INSTALLED_BIN"
 else
-    ok "Installed to $INSTALL_DIR/flog"
-    if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
-        warn "Run: export PATH=\"$INSTALL_DIR:\$PATH\""
-    fi
+    warn "Installed to $INSTALLED_BIN, but version check did not return v${VERSION}"
+fi
+
+ACTIVE_FLOG_AFTER=$(command -v flog 2>/dev/null || true)
+if [ -n "$ACTIVE_FLOG_AFTER" ] && [ "$ACTIVE_FLOG_AFTER" != "$INSTALLED_BIN" ]; then
+    warn "Your shell currently resolves flog to: $ACTIVE_FLOG_AFTER"
+    warn "Run this directly to verify: $INSTALLED_BIN --version"
+    warn "Adjust PATH or remove the older binary if needed."
+elif ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
+    warn "Run: export PATH=\"$INSTALL_DIR:\$PATH\""
 fi
 
 # ── Done ──
