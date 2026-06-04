@@ -32,7 +32,7 @@ pub struct AiError {
     pub next_actions: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AiErrorCode {
     NoDeviceFound,
@@ -51,6 +51,27 @@ pub enum AiErrorCode {
     ProtocolMismatch,
     PermissionOrAuthorizationRequired,
     InternalError,
+}
+
+impl AiErrorCode {
+    pub const ALL: [Self; 16] = [
+        Self::NoDeviceFound,
+        Self::NoFlogAppFound,
+        Self::MultipleAppsFound,
+        Self::HandshakeTimeout,
+        Self::AppBusy,
+        Self::ReplayIncomplete,
+        Self::RecordNotFound,
+        Self::AdbForwardFailed,
+        Self::UsbmuxdConnectFailed,
+        Self::FlutterNotFound,
+        Self::FlutterDevicesFailed,
+        Self::FlutterScreenshotFailed,
+        Self::ScreenshotUnsupported,
+        Self::ProtocolMismatch,
+        Self::PermissionOrAuthorizationRequired,
+        Self::InternalError,
+    ];
 }
 
 #[derive(Debug, Serialize, Default)]
