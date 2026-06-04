@@ -14,6 +14,7 @@
 
 set -euo pipefail
 
+FLOG_VERSION="0.5.2"
 REPO="shaominngqing/flog"
 
 NC='\033[0m'; BOLD='\033[1m'; DIM='\033[2m'
@@ -54,19 +55,16 @@ echo ""
 printf "    ${DIM}Flutter Log Viewer — see your logs, finally.${NC}\n"
 echo ""
 
-# ── Get latest version ──
-step "Fetch latest release"
+# ── Select version ──
+step "Select release"
 
-LATEST_RESPONSE=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || true)
-LATEST_TAG=$(printf "%s\n" "$LATEST_RESPONSE" \
-    | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    | head -1)
-
-if [ -z "$LATEST_TAG" ]; then
-    fail "Failed to fetch latest release from GitHub. Check network access to api.github.com."
+VERSION="${FLOG_VERSION_OVERRIDE:-$FLOG_VERSION}"
+if [[ "$VERSION" == v* ]]; then
+    LATEST_TAG="$VERSION"
+    VERSION="${VERSION#v}"
+else
+    LATEST_TAG="v${VERSION}"
 fi
-
-VERSION="${LATEST_TAG#v}"
 ok "v${VERSION}"
 
 # ── Detect platform ──
@@ -125,15 +123,20 @@ _draw_progress() {
 }
 
 DOWNLOADED=false
+CURL_RETRY=(--retry 5 --retry-delay 1 --connect-timeout 15)
+if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+    CURL_RETRY+=(--retry-all-errors)
+fi
 
 if command -v curl >/dev/null 2>&1; then
-    TOTAL_SIZE=$(curl -fsSLI "$DOWNLOAD_URL" 2>/dev/null \
+    TOTAL_SIZE=$(curl -fLIs "${CURL_RETRY[@]}" "$DOWNLOAD_URL" 2>/dev/null \
         | awk 'tolower($1) == "content-length:" { gsub("\r", "", $2); len = $2 } END { if (len != "") print len; else print 0 }' \
         || true)
     TOTAL_SIZE="${TOTAL_SIZE:-0}"
 
     if [ "$TOTAL_SIZE" -gt 0 ]; then
-        curl -fL "$DOWNLOAD_URL" -o "$TMP_ARCHIVE" 2>/dev/null &
+        _draw_progress 0 "$TOTAL_SIZE"
+        curl -fL "${CURL_RETRY[@]}" "$DOWNLOAD_URL" -o "$TMP_ARCHIVE" 2>/dev/null &
         DL_PID=$!
         while kill -0 "$DL_PID" 2>/dev/null; do
             if [ -f "$TMP_ARCHIVE" ]; then
@@ -149,7 +152,7 @@ if command -v curl >/dev/null 2>&1; then
         printf "\n" >&2
     else
         warn "Could not determine download size; downloading without progress..."
-        if curl -fL --progress-bar "$DOWNLOAD_URL" -o "$TMP_ARCHIVE"; then
+        if curl -fL "${CURL_RETRY[@]}" --progress-bar "$DOWNLOAD_URL" -o "$TMP_ARCHIVE"; then
             DOWNLOADED=true
         fi
     fi
@@ -160,7 +163,11 @@ elif command -v wget >/dev/null 2>&1; then
 fi
 
 if [ "$DOWNLOADED" != true ] || [ ! -s "$TMP_ARCHIVE" ]; then
-    warn "No pre-built binary for ${OS_NAME}-${ARCH_NAME}, building from source..."
+    if [ "${FLOG_BUILD_FROM_SOURCE:-}" != "1" ]; then
+        fail "Failed to download ${ASSET_NAME}. Check network access to github.com, then retry. To build from source instead, run with FLOG_BUILD_FROM_SOURCE=1."
+    fi
+
+    warn "Pre-built binary download failed; building from source..."
 
     if ! command -v cargo >/dev/null 2>&1; then
         fail "Rust toolchain required. Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
@@ -169,7 +176,7 @@ if [ "$DOWNLOADED" != true ] || [ ! -s "$TMP_ARCHIVE" ]; then
     step "Build from source"
     BUILD_DIR="${TMP_DIR}/flog-src"
     if command -v git >/dev/null 2>&1; then
-        git clone --depth 1 --branch "$LATEST_TAG" "https://github.com/${REPO}.git" "$BUILD_DIR" 2>/dev/null
+        git clone --depth 1 --branch "$LATEST_TAG" "https://github.com/${REPO}.git" "$BUILD_DIR"
     else
         curl -fsSL "https://github.com/${REPO}/archive/${LATEST_TAG}.tar.gz" | tar -xz -C "$TMP_DIR"
         BUILD_DIR="${TMP_DIR}/flog-${VERSION}"
