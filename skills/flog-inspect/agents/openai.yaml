@@ -1,0 +1,3 @@
+display_name: flog Inspect
+short_description: Inspect Flutter flog logs, network traffic, and screenshots.
+default_prompt: Use flog to inspect the current Flutter app state and explain what is going wrong with cited log or network ids.
