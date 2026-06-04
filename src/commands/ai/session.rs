@@ -132,15 +132,13 @@ async fn collect_app_frames(
     deadline: Instant,
     settle: Duration,
 ) -> Result<App, AiError> {
-    let mut connection = open_transport(&candidate.transport)
-        .await
-        .map_err(|e| {
-            AiError::new(
-                AiErrorCode::NoFlogAppFound,
-                format!("Could not reconnect to selected flog_dart app: {e}"),
-                vec!["Run `flog ai snapshot --format json` again.".to_string()],
-            )
-        })?;
+    let mut connection = open_transport(&candidate.transport).await.map_err(|e| {
+        AiError::new(
+            AiErrorCode::NoFlogAppFound,
+            format!("Could not reconnect to selected flog_dart app: {e}"),
+            vec!["Run `flog ai snapshot --format json` again.".to_string()],
+        )
+    })?;
     let mut app = App::new();
     let mut last_frame = Instant::now();
     connection.handle.send_subscribe();

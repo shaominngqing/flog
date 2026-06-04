@@ -79,7 +79,9 @@ fn summarize(logs: &[LogEntry], network: &[NetworkEntry]) -> Summary {
             .count(),
         active_sse: network
             .iter()
-            .filter(|entry| entry.protocol == Protocol::Sse && entry.status == NetworkStatus::Active)
+            .filter(|entry| {
+                entry.protocol == Protocol::Sse && entry.status == NetworkStatus::Active
+            })
             .count(),
         websockets: network
             .iter()

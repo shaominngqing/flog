@@ -1,7 +1,7 @@
 //! Domain layer — pure data types and storage, zero UI dependencies.
 
-pub mod entry;
 pub mod diagnostics;
+pub mod entry;
 pub mod filter;
 pub mod filter_traits;
 pub mod json_tolerant;

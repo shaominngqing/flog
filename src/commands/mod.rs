@@ -4,8 +4,8 @@ use std::io;
 
 use crate::cli::Command;
 
-mod cli_ui;
 pub(crate) mod ai;
+mod cli_ui;
 mod devices;
 mod doctor;
 mod uninstall;

@@ -4,11 +4,7 @@ use crate::domain::{LogEntry, LogLevel};
 
 #[test]
 fn diagnostics_include_error_logs() {
-    let logs = vec![LogEntry::new(
-        LogLevel::Error,
-        "Repo",
-        "failed".to_string(),
-    )];
+    let logs = vec![LogEntry::new(LogLevel::Error, "Repo", "failed".to_string())];
     let items = collect_notable(&logs, &[]);
     assert_eq!(items[0].kind, "error_log");
     assert_eq!(items[0].severity, DiagnosticSeverity::Error);
@@ -17,8 +13,7 @@ fn diagnostics_include_error_logs() {
 
 #[test]
 fn diagnostics_include_failed_http_status() {
-    let mut entry =
-        NetworkEntry::new_http(42, "GET".to_string(), "/x".to_string(), String::new());
+    let mut entry = NetworkEntry::new_http(42, "GET".to_string(), "/x".to_string(), String::new());
     entry.status = NetworkStatus::Completed;
     entry.http_status = Some(500);
 
@@ -30,8 +25,7 @@ fn diagnostics_include_failed_http_status() {
 
 #[test]
 fn diagnostics_include_completed_empty_sse_merge() {
-    let mut entry =
-        NetworkEntry::new_sse(7, "POST".to_string(), "/sse".to_string(), String::new());
+    let mut entry = NetworkEntry::new_sse(7, "POST".to_string(), "/sse".to_string(), String::new());
     entry.status = NetworkStatus::Completed;
     entry.sse_chunks.push(SseChunk {
         data: "{\"choices\":[{\"delta\":{\"content\":\"\"}}]}".to_string(),

@@ -6,11 +6,7 @@ use crate::domain::{LogEntry, LogLevel};
 #[test]
 fn build_snapshot_counts_logs_errors_and_network() {
     let mut app = App::new();
-    app.add_entry(LogEntry::new(
-        LogLevel::Error,
-        "Repo",
-        "failed".to_string(),
-    ));
+    app.add_entry(LogEntry::new(LogLevel::Error, "Repo", "failed".to_string()));
     let mut net = NetworkEntry::new_http(42, "GET".to_string(), "/x".to_string(), String::new());
     net.status = NetworkStatus::Failed;
     app.network_store.push_entry(net);

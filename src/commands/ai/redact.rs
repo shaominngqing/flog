@@ -49,7 +49,9 @@ pub fn redact_text_patterns(input: &str) -> String {
     static BEARER_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+").unwrap()
     });
-    BEARER_RE.replace_all(input, "Bearer [redacted]").to_string()
+    BEARER_RE
+        .replace_all(input, "Bearer [redacted]")
+        .to_string()
 }
 
 fn is_sensitive_key(key: &str) -> bool {

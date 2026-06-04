@@ -5,8 +5,8 @@ mod doctor;
 mod get;
 mod output;
 mod redact;
-mod session;
 mod screenshot;
+mod session;
 mod snapshot;
 mod watch;
 
@@ -55,8 +55,7 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
                     });
                     if args.screenshot {
                         let result =
-                            screenshot::capture_with_flutter(&device_id_for_screenshot, None)
-                                .await;
+                            screenshot::capture_with_flutter(&device_id_for_screenshot, None).await;
                         payload.screenshot =
                             Some(serde_json::to_value(result).unwrap_or(serde_json::Value::Null));
                     }
@@ -79,11 +78,9 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
                 Ok(session) => match get::parse_record_id(&args.id)
                     .and_then(|record_id| get::lookup_record(&session.app, &record_id))
                 {
-                    Ok(record) => print_json(&output::AiEnvelope::new(
-                        "get",
-                        true,
-                        GetPayload { record },
-                    )),
+                    Ok(record) => {
+                        print_json(&output::AiEnvelope::new("get", true, GetPayload { record }))
+                    }
                     Err(error) => print_json(&output::AiEnvelope::error("get", error)),
                 },
                 Err(error) => print_json(&output::AiEnvelope::error("get", error)),
@@ -107,7 +104,8 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
                     ),
                 ));
             };
-            let result = screenshot::capture_with_flutter(device_id, args.out.map(Into::into)).await;
+            let result =
+                screenshot::capture_with_flutter(device_id, args.out.map(Into::into)).await;
             print_json(&output::AiEnvelope::new(
                 "screenshot",
                 result.ok,

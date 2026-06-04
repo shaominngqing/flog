@@ -16,10 +16,7 @@ fn select_multiple_apps_requires_selector() {
         AiAppCandidate::for_tests("app-b", "Device B"),
     ];
     let err = select_candidate(&candidates, None, None).unwrap_err();
-    assert!(matches!(
-        err.code,
-        AiErrorCode::MultipleAppsFound
-    ));
+    assert!(matches!(err.code, AiErrorCode::MultipleAppsFound));
 }
 
 #[test]
