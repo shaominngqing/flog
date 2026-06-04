@@ -1,10 +1,12 @@
 //! AI-oriented headless inspection commands.
 
 pub mod args;
+mod get;
 mod output;
 mod redact;
 mod session;
 mod snapshot;
+mod watch;
 
 use std::io;
 
@@ -53,11 +55,38 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
                 Err(error) => print_json(&output::AiEnvelope::error("snapshot", error)),
             }
         }
-        AiCommand::Watch(_) => print_json(&not_implemented("watch")),
-        AiCommand::Get(_) => print_json(&not_implemented("get")),
+        AiCommand::Watch(args) => watch::run_watch(args.duration).await,
+        AiCommand::Get(args) => {
+            let result = session::collect_snapshot_session(
+                args.select.port,
+                args.select.wait,
+                std::time::Duration::from_millis(750),
+                args.select.app.as_deref(),
+                args.select.device.as_deref(),
+            )
+            .await;
+            match result {
+                Ok(session) => match get::parse_record_id(&args.id)
+                    .and_then(|record_id| get::lookup_record(&session.app, &record_id))
+                {
+                    Ok(record) => print_json(&output::AiEnvelope::new(
+                        "get",
+                        true,
+                        GetPayload { record },
+                    )),
+                    Err(error) => print_json(&output::AiEnvelope::error("get", error)),
+                },
+                Err(error) => print_json(&output::AiEnvelope::error("get", error)),
+            }
+        }
         AiCommand::Doctor(_) => print_json(&not_implemented("doctor")),
         AiCommand::Screenshot(_) => print_json(&not_implemented("screenshot")),
     }
+}
+
+#[derive(serde::Serialize)]
+struct GetPayload {
+    record: serde_json::Value,
 }
 
 fn not_implemented(command: &str) -> output::AiEnvelope<output::ErrorPayload> {
