@@ -1,9 +1,11 @@
+use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::time::{Duration, Instant};
 
 use crate::app::App;
 use crate::commands::ai::output::{AiError, AiErrorCode};
 use crate::input::{connect, connect_stream, ConnectorEvent, ConnectorHandle};
-use crate::transport::{self, DeviceEvent, TransportAddr};
+use crate::transport::{self, device_monitor::Device, DeviceEvent, TransportAddr};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiAppCandidate {
@@ -100,39 +102,27 @@ async fn discover_selected_candidate_until(
     app_selector: Option<&str>,
     device_selector: Option<&str>,
 ) -> Result<AiAppCandidate, AiError> {
-    let candidates = discover_candidates(base_port, deadline).await?;
+    let candidates =
+        discover_candidates(base_port, deadline, app_selector, device_selector).await?;
     select_candidate(&candidates, app_selector, device_selector)
 }
 
 async fn discover_candidates(
     base_port: u16,
     deadline: Instant,
+    app_selector: Option<&str>,
+    device_selector: Option<&str>,
 ) -> Result<Vec<AiAppCandidate>, AiError> {
-    let mut rx = transport::start_discovery(base_port);
-    let mut devices = Vec::new();
-    while Instant::now() < deadline {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        match tokio::time::timeout(remaining.min(Duration::from_millis(250)), rx.recv()).await {
-            Ok(Some(DeviceEvent::Added(device))) | Ok(Some(DeviceEvent::Updated(device))) => {
-                devices.push(device);
-            }
-            Ok(Some(DeviceEvent::Removed(_))) => {}
-            Ok(None) => break,
-            Err(_) => {}
-        }
-    }
-
-    let mut candidates = Vec::new();
-    for device in &devices {
-        for port in base_port..base_port + 10 {
-            if Instant::now() >= deadline {
-                break;
-            }
-            if let Some(candidate) = probe_candidate(device, port, deadline).await {
-                candidates.push(candidate);
-            }
-        }
-    }
+    let rx = transport::start_discovery(base_port);
+    let candidates = discover_candidates_from_events(
+        base_port,
+        deadline,
+        app_selector,
+        device_selector,
+        rx,
+        |device, port, deadline| async move { probe_candidate(&device, port, deadline).await },
+    )
+    .await;
 
     if candidates.is_empty() {
         Err(AiError::new(
@@ -145,6 +135,109 @@ async fn discover_candidates(
         ))
     } else {
         Ok(candidates)
+    }
+}
+
+async fn discover_candidates_from_events<F, Fut>(
+    base_port: u16,
+    deadline: Instant,
+    app_selector: Option<&str>,
+    device_selector: Option<&str>,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<DeviceEvent>,
+    mut probe: F,
+) -> Vec<AiAppCandidate>
+where
+    F: FnMut(Device, u16, Instant) -> Fut,
+    Fut: Future<Output = Option<AiAppCandidate>>,
+{
+    let mut devices: HashMap<String, Device> = HashMap::new();
+    let mut probed: HashSet<(String, u16)> = HashSet::new();
+    let mut candidates = Vec::new();
+
+    while Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match tokio::time::timeout(remaining.min(Duration::from_millis(250)), rx.recv()).await {
+            Ok(Some(DeviceEvent::Added(device))) | Ok(Some(DeviceEvent::Updated(device))) => {
+                devices.insert(device.id.clone(), device.clone());
+                probe_unprobed_ports(
+                    base_port,
+                    deadline,
+                    &mut probed,
+                    &mut candidates,
+                    device,
+                    &mut probe,
+                )
+                .await;
+                if has_matching_candidate(&candidates, app_selector, device_selector) {
+                    break;
+                }
+            }
+            Ok(Some(DeviceEvent::Removed(id))) => {
+                devices.remove(&id);
+            }
+            Ok(None) => break,
+            Err(_) => {
+                for device in devices.values().cloned().collect::<Vec<_>>() {
+                    probe_unprobed_ports(
+                        base_port,
+                        deadline,
+                        &mut probed,
+                        &mut candidates,
+                        device,
+                        &mut probe,
+                    )
+                    .await;
+                    if has_matching_candidate(&candidates, app_selector, device_selector) {
+                        break;
+                    }
+                }
+                if has_matching_candidate(&candidates, app_selector, device_selector) {
+                    break;
+                }
+            }
+        }
+    }
+
+    candidates
+}
+
+fn has_matching_candidate(
+    candidates: &[AiAppCandidate],
+    app_selector: Option<&str>,
+    device_selector: Option<&str>,
+) -> bool {
+    candidates.iter().any(|candidate| {
+        let app_matches = app_selector.is_none_or(|selector| {
+            candidate.app_id == selector
+                || candidate.app_name == selector
+                || candidate.package_name == selector
+        });
+        let device_matches = device_selector.is_none_or(|selector| candidate.device_id == selector);
+        app_matches && device_matches
+    })
+}
+
+async fn probe_unprobed_ports<F, Fut>(
+    base_port: u16,
+    deadline: Instant,
+    probed: &mut HashSet<(String, u16)>,
+    candidates: &mut Vec<AiAppCandidate>,
+    device: Device,
+    probe: &mut F,
+) where
+    F: FnMut(Device, u16, Instant) -> Fut,
+    Fut: Future<Output = Option<AiAppCandidate>>,
+{
+    for port in base_port..base_port + 10 {
+        if Instant::now() >= deadline {
+            break;
+        }
+        if !probed.insert((device.id.clone(), port)) {
+            continue;
+        }
+        if let Some(candidate) = probe(device.clone(), port, deadline).await {
+            candidates.push(candidate);
+        }
     }
 }
 

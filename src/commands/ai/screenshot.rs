@@ -67,9 +67,9 @@ pub async fn capture_with_flutter(device_id: &str, out: Option<PathBuf>) -> Scre
     }
     let path_str = path.to_string_lossy().to_string();
     let cmd = flutter_screenshot_command(device_id, &path_str);
-    let status = Command::new(&cmd.program).args(&cmd.args).status().await;
-    match status {
-        Ok(status) if status.success() && path.exists() => ScreenshotResult {
+    let output = Command::new(&cmd.program).args(&cmd.args).output().await;
+    match output {
+        Ok(output) if output.status.success() && path.exists() => ScreenshotResult {
             ok: true,
             path: Some(path_str),
             source: "flutter_screenshot".to_string(),
@@ -79,10 +79,7 @@ pub async fn capture_with_flutter(device_id: &str, out: Option<PathBuf>) -> Scre
             ),
             error: None,
         },
-        Ok(_) => failure(
-            AiErrorCode::FlutterScreenshotFailed,
-            format!("Flutter screenshot failed for device {device_id}."),
-        ),
+        Ok(output) => failure_with_output(device_id, &output.stdout, &output.stderr),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => failure(
             AiErrorCode::FlutterNotFound,
             "The flutter command was not found in PATH.".to_string(),
@@ -92,6 +89,37 @@ pub async fn capture_with_flutter(device_id: &str, out: Option<PathBuf>) -> Scre
             format!("Flutter screenshot failed: {e}"),
         ),
     }
+}
+
+fn failure_with_output(device_id: &str, stdout: &[u8], stderr: &[u8]) -> ScreenshotResult {
+    let text = command_output_text(stdout, stderr);
+    let code = if text.to_ascii_lowercase().contains("not supported") {
+        AiErrorCode::ScreenshotUnsupported
+    } else {
+        AiErrorCode::FlutterScreenshotFailed
+    };
+    let suffix = if text.is_empty() {
+        String::new()
+    } else {
+        format!(" Output: {text}")
+    };
+    failure(
+        code,
+        format!("Flutter screenshot failed for device {device_id}.{suffix}"),
+    )
+}
+
+fn command_output_text(stdout: &[u8], stderr: &[u8]) -> String {
+    let mut chunks = Vec::new();
+    let stdout = String::from_utf8_lossy(stdout).trim().to_string();
+    if !stdout.is_empty() {
+        chunks.push(stdout);
+    }
+    let stderr = String::from_utf8_lossy(stderr).trim().to_string();
+    if !stderr.is_empty() {
+        chunks.push(stderr);
+    }
+    chunks.join(" ")
 }
 
 fn failure(code: AiErrorCode, message: String) -> ScreenshotResult {

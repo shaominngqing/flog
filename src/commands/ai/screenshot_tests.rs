@@ -16,3 +16,26 @@ fn default_screenshot_path_is_png_under_temp_dir() {
     assert!(path.to_string_lossy().contains("flog-ai"));
     assert!(path.to_string_lossy().ends_with(".png"));
 }
+
+#[test]
+fn screenshot_failure_output_classifies_unsupported_without_stdout_leak() {
+    let result = failure_with_output(
+        "macos",
+        b"Screenshot not supported for macOS.\n",
+        b"Must have a connected device for screenshot type device\n",
+    );
+
+    assert!(!result.ok);
+    let error = result.error.unwrap();
+    assert!(matches!(error.code, AiErrorCode::ScreenshotUnsupported));
+    assert!(error
+        .message
+        .contains("Screenshot not supported for macOS."));
+    assert!(error.message.contains("Must have a connected device"));
+}
+
+#[test]
+fn command_output_text_joins_stdout_and_stderr() {
+    let output = command_output_text(b"stdout line\n", b"stderr line\n");
+    assert_eq!(output, "stdout line stderr line");
+}
