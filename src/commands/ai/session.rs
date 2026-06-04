@@ -71,8 +71,9 @@ pub async fn collect_snapshot_session(
 ) -> Result<CollectedSession, AiError> {
     let ports_scanned = (base_port..base_port + 10).collect::<Vec<_>>();
     let deadline = Instant::now() + wait;
-    let candidates = discover_candidates(base_port, deadline).await?;
-    let candidate = select_candidate(&candidates, app_selector, device_selector)?;
+    let candidate =
+        discover_selected_candidate_until(base_port, deadline, app_selector, device_selector)
+            .await?;
     let app = collect_app_frames(&candidate, deadline, settle).await?;
     Ok(CollectedSession {
         app,
@@ -81,6 +82,26 @@ pub async fn collect_snapshot_session(
         complete: Instant::now() <= deadline,
         warnings: Vec::new(),
     })
+}
+
+pub async fn discover_selected_candidate(
+    base_port: u16,
+    wait: Duration,
+    app_selector: Option<&str>,
+    device_selector: Option<&str>,
+) -> Result<AiAppCandidate, AiError> {
+    let deadline = Instant::now() + wait;
+    discover_selected_candidate_until(base_port, deadline, app_selector, device_selector).await
+}
+
+async fn discover_selected_candidate_until(
+    base_port: u16,
+    deadline: Instant,
+    app_selector: Option<&str>,
+    device_selector: Option<&str>,
+) -> Result<AiAppCandidate, AiError> {
+    let candidates = discover_candidates(base_port, deadline).await?;
+    select_candidate(&candidates, app_selector, device_selector)
 }
 
 async fn discover_candidates(
@@ -132,16 +153,10 @@ async fn collect_app_frames(
     deadline: Instant,
     settle: Duration,
 ) -> Result<App, AiError> {
-    let mut connection = open_transport(&candidate.transport).await.map_err(|e| {
-        AiError::new(
-            AiErrorCode::NoFlogAppFound,
-            format!("Could not reconnect to selected flog_dart app: {e}"),
-            vec!["Run `flog ai snapshot --format json` again.".to_string()],
-        )
-    })?;
+    let mut connection = connect_candidate(candidate).await?;
     let mut app = App::new();
     let mut last_frame = Instant::now();
-    connection.handle.send_subscribe();
+    connection.send_subscribe();
 
     loop {
         let now = Instant::now();
@@ -151,7 +166,7 @@ async fn collect_app_frames(
         let remaining = deadline.saturating_duration_since(now);
         let settle_remaining = settle.saturating_sub(now.duration_since(last_frame));
         let tick = remaining.min(settle_remaining);
-        match tokio::time::timeout(tick, connection.rx.recv()).await {
+        match tokio::time::timeout(tick, connection.recv()).await {
             Ok(Some(ConnectorEvent::Message(msg))) => {
                 crate::run::dispatch_client_message(&mut app, msg);
                 last_frame = Instant::now();
@@ -164,6 +179,16 @@ async fn collect_app_frames(
 
     connection.cleanup().await;
     Ok(app)
+}
+
+pub async fn connect_candidate(candidate: &AiAppCandidate) -> Result<ActiveConnection, AiError> {
+    open_transport(&candidate.transport).await.map_err(|e| {
+        AiError::new(
+            AiErrorCode::NoFlogAppFound,
+            format!("Could not reconnect to selected flog_dart app: {e}"),
+            vec!["Run `flog ai snapshot --format json` again.".to_string()],
+        )
+    })
 }
 
 async fn probe_candidate(
@@ -202,14 +227,22 @@ async fn probe_candidate(
     None
 }
 
-struct ActiveConnection {
+pub struct ActiveConnection {
     rx: tokio::sync::mpsc::UnboundedReceiver<ConnectorEvent>,
     handle: ConnectorHandle,
     adb_forward: Option<(String, u16)>,
 }
 
 impl ActiveConnection {
-    async fn cleanup(&mut self) {
+    pub fn send_subscribe(&self) {
+        self.handle.send_subscribe();
+    }
+
+    pub async fn recv(&mut self) -> Option<ConnectorEvent> {
+        self.rx.recv().await
+    }
+
+    pub async fn cleanup(&mut self) {
         if let Some((serial, local_port)) = self.adb_forward.take() {
             transport::adb::remove_forward(&serial, local_port).await;
         }

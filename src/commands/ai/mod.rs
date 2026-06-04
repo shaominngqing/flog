@@ -64,7 +64,7 @@ pub async fn run(command: AiCommand) -> io::Result<()> {
                 Err(error) => print_json(&output::AiEnvelope::error("snapshot", error)),
             }
         }
-        AiCommand::Watch(args) => watch::run_watch(args.duration).await,
+        AiCommand::Watch(args) => watch::run_watch(args).await,
         AiCommand::Get(args) => {
             let result = session::collect_snapshot_session(
                 args.select.port,
