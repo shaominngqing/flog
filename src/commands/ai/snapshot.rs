@@ -9,6 +9,7 @@ use super::redact::{preview_text, redact_json_value, redact_text_patterns};
 #[derive(Debug, Clone)]
 pub struct SnapshotBuildOptions {
     pub last: usize,
+    pub net_last: usize,
     pub include_headers: bool,
     pub include_body: bool,
     pub redact: bool,
@@ -23,7 +24,8 @@ pub fn build_snapshot(app: &App, options: SnapshotBuildOptions) -> SnapshotPaylo
     let logs_all = app.store.iter().cloned().collect::<Vec<_>>();
     let network_all = app.network_store.iter().cloned().collect::<Vec<_>>();
     let logs_slice = tail(&logs_all, options.last);
-    let network = network_all
+    let network_slice = tail(&network_all, options.net_last);
+    let network = network_slice
         .iter()
         .map(|entry| network_value(entry, &options))
         .collect();
@@ -49,7 +51,7 @@ pub fn build_snapshot(app: &App, options: SnapshotBuildOptions) -> SnapshotPaylo
             .enumerate()
             .map(|(offset, log)| {
                 let absolute = logs_all.len().saturating_sub(logs_slice.len()) + offset;
-                log_value(absolute, log)
+                log_value(absolute, log, options.redact)
             })
             .collect(),
         network,
@@ -90,13 +92,21 @@ fn summarize(logs: &[LogEntry], network: &[NetworkEntry]) -> Summary {
     }
 }
 
-fn log_value(index: usize, log: &LogEntry) -> serde_json::Value {
+fn log_value(index: usize, log: &LogEntry, redact: bool) -> serde_json::Value {
+    let message = if redact {
+        redact_text_patterns(&log.message)
+    } else {
+        log.message.clone()
+    };
+    let message = preview_text(&message, 500);
     serde_json::json!({
         "id": format!("log#{index}"),
         "timestamp": log.timestamp,
         "level": log.level.as_str(),
         "tag": log.tag,
-        "message": log.message,
+        "message": message.preview,
+        "message_truncated": message.truncated,
+        "original_bytes": message.original_bytes,
         "stacktrace": log.stacktrace.as_ref().map(|s| preview_text(s, 800)),
         "repeat_count": log.repeat_count,
     })
@@ -193,6 +203,7 @@ impl SnapshotBuildOptions {
     pub fn for_tests() -> Self {
         Self {
             last: 300,
+            net_last: 300,
             include_headers: false,
             include_body: false,
             redact: true,

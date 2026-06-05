@@ -1,5 +1,6 @@
 //! Command-line argument parsing.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -13,15 +14,35 @@ pub enum Command {
     Uninstall,
     Doctor,
     Devices,
+    InstallSkill(InstallSkillArgs),
     #[command(subcommand)]
     Ai(AiCommand),
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillAgent {
+    All,
+    Codex,
+    Claude,
+    Cursor,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct InstallSkillArgs {
+    #[arg(long, value_enum, default_value_t = SkillAgent::All)]
+    pub agent: SkillAgent,
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
 }
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum AiCommand {
     Snapshot(AiSnapshotArgs),
+    Logs(AiLogsArgs),
+    Net(AiNetArgs),
     Watch(AiWatchArgs),
     Get(AiGetArgs),
+    Curl(AiCurlArgs),
     Doctor(AiDoctorArgs),
     Screenshot(AiScreenshotArgs),
 }
@@ -48,8 +69,10 @@ pub struct AiSelectArgs {
 pub struct AiSnapshotArgs {
     #[command(flatten)]
     pub select: AiSelectArgs,
-    #[arg(long, default_value = "300")]
+    #[arg(long, default_value = "20")]
     pub last: usize,
+    #[arg(long, default_value = "20")]
+    pub net_last: usize,
     #[arg(long, value_enum, default_value_t = AiFormat::Json)]
     pub format: AiFormat,
     #[arg(long, value_parser = parse_duration, default_value = "750ms")]
@@ -70,6 +93,47 @@ pub struct AiSnapshotArgs {
     pub no_redact: bool,
     #[arg(long)]
     pub screenshot: bool,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiLogsArgs {
+    #[command(flatten)]
+    pub select: AiSelectArgs,
+    #[arg(long, default_value = "50")]
+    pub last: usize,
+    #[arg(long, value_parser = parse_level)]
+    pub level: Option<crate::domain::LogLevel>,
+    #[arg(long)]
+    pub tag: Option<String>,
+    #[arg(long)]
+    pub search: Option<String>,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiNetProtocol {
+    Http,
+    Sse,
+    Ws,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiNetArgs {
+    #[command(flatten)]
+    pub select: AiSelectArgs,
+    #[arg(long, default_value = "50")]
+    pub last: usize,
+    #[arg(long)]
+    pub failed: bool,
+    #[arg(long)]
+    pub status: Option<String>,
+    #[arg(long)]
+    pub method: Option<String>,
+    #[arg(long)]
+    pub url: Option<String>,
+    #[arg(long, value_enum)]
+    pub protocol: Option<AiNetProtocol>,
+    #[arg(long, value_parser = parse_duration)]
+    pub slow: Option<Duration>,
 }
 
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
@@ -94,11 +158,16 @@ pub struct AiGetArgs {
     #[command(flatten)]
     pub select: AiSelectArgs,
     #[arg(long)]
-    pub chunks: bool,
+    pub detail: bool,
     #[arg(long)]
-    pub body: bool,
-    #[arg(long)]
-    pub stacktrace: bool,
+    pub no_redact: bool,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct AiCurlArgs {
+    pub id: String,
+    #[command(flatten)]
+    pub select: AiSelectArgs,
     #[arg(long)]
     pub no_redact: bool,
 }
@@ -298,12 +367,40 @@ mod tests {
     }
 
     #[test]
+    fn cli_install_skill_defaults_parse() {
+        let cli = Cli::parse_from(["flog", "install-skill"]);
+        let Some(Command::InstallSkill(args)) = cli.command else {
+            panic!("expected install-skill command");
+        };
+        assert_eq!(args.agent, SkillAgent::All);
+        assert_eq!(args.project, PathBuf::from("."));
+    }
+
+    #[test]
+    fn cli_install_skill_agent_and_project_parse() {
+        let cli = Cli::parse_from([
+            "flog",
+            "install-skill",
+            "--agent",
+            "cursor",
+            "--project",
+            "/tmp/app",
+        ]);
+        let Some(Command::InstallSkill(args)) = cli.command else {
+            panic!("expected install-skill command");
+        };
+        assert_eq!(args.agent, SkillAgent::Cursor);
+        assert_eq!(args.project, PathBuf::from("/tmp/app"));
+    }
+
+    #[test]
     fn cli_ai_snapshot_defaults_parse() {
         let cli = Cli::parse_from(["flog", "ai", "snapshot"]);
-        assert!(matches!(
-            cli.command,
-            Some(Command::Ai(AiCommand::Snapshot(_)))
-        ));
+        let Some(Command::Ai(AiCommand::Snapshot(args))) = cli.command else {
+            panic!("expected ai snapshot command");
+        };
+        assert_eq!(args.last, 20);
+        assert_eq!(args.net_last, 20);
     }
 
     #[test]
@@ -317,12 +414,68 @@ mod tests {
 
     #[test]
     fn cli_ai_get_parse() {
-        let cli = Cli::parse_from(["flog", "ai", "get", "net#42", "--body"]);
+        let cli = Cli::parse_from(["flog", "ai", "get", "net#42", "--detail"]);
         let Some(Command::Ai(AiCommand::Get(args))) = cli.command else {
             panic!("expected ai get command");
         };
         assert_eq!(args.id, "net#42");
-        assert!(args.body);
+        assert!(args.detail);
+    }
+
+    #[test]
+    fn cli_ai_logs_filters_parse() {
+        let cli = Cli::parse_from([
+            "flog", "ai", "logs", "--level", "error", "--tag", "Network", "--search", "timeout",
+            "--last", "25",
+        ]);
+        let Some(Command::Ai(AiCommand::Logs(args))) = cli.command else {
+            panic!("expected ai logs command");
+        };
+        assert_eq!(args.level, Some(LogLevel::Error));
+        assert_eq!(args.tag.as_deref(), Some("Network"));
+        assert_eq!(args.search.as_deref(), Some("timeout"));
+        assert_eq!(args.last, 25);
+    }
+
+    #[test]
+    fn cli_ai_net_filters_parse() {
+        let cli = Cli::parse_from([
+            "flog",
+            "ai",
+            "net",
+            "--failed",
+            "--status",
+            "5xx",
+            "--method",
+            "POST",
+            "--url",
+            "dictionary",
+            "--protocol",
+            "sse",
+            "--slow",
+            "1000ms",
+            "--last",
+            "15",
+        ]);
+        let Some(Command::Ai(AiCommand::Net(args))) = cli.command else {
+            panic!("expected ai net command");
+        };
+        assert!(args.failed);
+        assert_eq!(args.status.as_deref(), Some("5xx"));
+        assert_eq!(args.method.as_deref(), Some("POST"));
+        assert_eq!(args.url.as_deref(), Some("dictionary"));
+        assert_eq!(args.protocol, Some(AiNetProtocol::Sse));
+        assert_eq!(args.slow.unwrap().as_millis(), 1000);
+        assert_eq!(args.last, 15);
+    }
+
+    #[test]
+    fn cli_ai_curl_parse() {
+        let cli = Cli::parse_from(["flog", "ai", "curl", "net#42"]);
+        let Some(Command::Ai(AiCommand::Curl(args))) = cli.command else {
+            panic!("expected ai curl command");
+        };
+        assert_eq!(args.id, "net#42");
     }
 
     #[test]

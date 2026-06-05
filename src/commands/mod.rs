@@ -8,6 +8,7 @@ pub(crate) mod ai;
 mod cli_ui;
 mod devices;
 mod doctor;
+mod install_skill;
 mod uninstall;
 mod update;
 
@@ -17,6 +18,7 @@ pub async fn run(command: Command) -> io::Result<()> {
         Command::Uninstall => uninstall::run().await,
         Command::Doctor => doctor::run().await,
         Command::Devices => devices::run().await,
+        Command::InstallSkill(args) => install_skill::run(args),
         Command::Ai(command) => ai::run(command).await,
     }
 }

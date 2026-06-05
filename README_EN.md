@@ -145,15 +145,33 @@ flog --tag network,-flog_net
 `flog ai` provides a headless JSON interface for AI agents:
 
 ```bash
-flog ai snapshot --format json --last 300
+flog ai snapshot --format json --last 20 --net-last 20
+flog ai logs --level error --last 20
+flog ai net --failed --last 20
+flog ai get net#42 --detail
+flog ai curl net#42
 flog ai snapshot --format json --screenshot
-flog ai get net#42 --body
 flog ai doctor --format json
 ```
 
 The output is read-only, redacted by default, and uses stable ids such as
 `log#12` and `net#42` so an agent can cite evidence without copying from the
-TUI.
+TUI. Snapshots stay compact by default; use `get --detail` only for the exact
+record that needs large fields.
+
+Install the AI guidance into the current project:
+
+```bash
+cd path/to/your/flutter-app
+flog install-skill
+```
+
+This writes project-level guidance with `AGENTS.md` as the main entry,
+`CLAUDE.md` importing it via `@AGENTS.md`, and
+`.cursor/rules/flog-inspect.mdc` as a lightweight Cursor adapter. The full
+workflow lives at `.flog/skills/flog-inspect/SKILL.md`. There is no shared
+cross-agent skill directory today, so flog installs these adapters by default;
+use `--agent codex|claude|cursor` to target one tool.
 
 ## With flog_dart
 
@@ -328,10 +346,10 @@ once it finds a connectable `flog_dart` app.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — wire protocol spec.
 - [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — audit taxonomy, testing rules, commit format.
 
-Current version (**0.6.0**) — adds the basic `flog update`, `flog uninstall`,
-`flog doctor`, and `flog devices` maintenance commands while keeping the
-post-cleanup layered architecture. See `docs/superpowers/` for the campaign
-audit trail.
+Current version (**0.7.0**) — adds progressive `flog ai` inspection commands
+and `flog install-skill` project guidance for Codex, Claude Code, and Cursor,
+while keeping AI output compact and redacted by default. See
+`docs/superpowers/` for the campaign audit trail.
 
 ## License
 
