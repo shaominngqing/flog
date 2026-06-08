@@ -1122,7 +1122,7 @@ void main() {
 Run:
 
 ```bash
-cd flog_dart && dart test test/timing/timing_trace_test.dart
+cd flog_dart && flutter test test/timing/timing_trace_test.dart
 ```
 
 Expected: FAIL because timing model files do not exist.
@@ -1295,7 +1295,7 @@ class ManualTimingClock implements FlogTimingClock {
 Run:
 
 ```bash
-cd flog_dart && dart test test/timing/timing_trace_test.dart
+cd flog_dart && flutter test test/timing/timing_trace_test.dart
 ```
 
 Expected: PASS.
@@ -1362,7 +1362,7 @@ void main() {
 Run:
 
 ```bash
-cd flog_dart && dart test test/timing/timing_stream_test.dart
+cd flog_dart && flutter test test/timing/timing_stream_test.dart
 ```
 
 Expected: FAIL because `timing_stream.dart` does not exist.
@@ -1595,7 +1595,7 @@ Place this inside `if (flogEnabled) { ... }` so release tree-shaking keeps disab
 Run:
 
 ```bash
-cd flog_dart && dart test test/timing/timing_stream_test.dart test/timing/timing_adapter_test.dart
+cd flog_dart && flutter test test/timing/timing_stream_test.dart test/timing/timing_adapter_test.dart
 ```
 
 Expected: PASS.
@@ -1605,7 +1605,7 @@ Expected: PASS.
 Run:
 
 ```bash
-cd flog_dart && dart test test/flog_dio_test.dart
+cd flog_dart && flutter test test/flog_dio_test.dart
 ```
 
 Expected: PASS. If construction tests fail because adapter type changed, update assertions to verify interceptor order still holds and the adapter is a `FlogTimingHttpClientAdapter`.
@@ -1672,7 +1672,7 @@ import 'package:flog_dart/src/timing/timing_trace.dart';
 Run:
 
 ```bash
-cd flog_dart && dart test test/flog_http_interceptor_test.dart --plain-name "normal response emits timing"
+cd flog_dart && flutter test test/flog_http_interceptor_test.dart --plain-name "normal response emits timing"
 ```
 
 Expected: FAIL because `FlogHttpInterceptor` does not emit timing.
@@ -1750,7 +1750,7 @@ response.requestOptions.extra[kFlogTimingTraceExtraKey] = timing;
 Run:
 
 ```bash
-cd flog_dart && dart test test/flog_http_interceptor_test.dart test/flog_mock_interceptor_test.dart
+cd flog_dart && flutter test test/flog_http_interceptor_test.dart test/flog_mock_interceptor_test.dart
 ```
 
 Expected: PASS.
@@ -1811,7 +1811,7 @@ import 'package:flog_dart/flog_dart.dart' show FlogStore;
 Run:
 
 ```bash
-cd flog_dart && dart test test/sse/reporter_test.dart --plain-name "chunks include eventTiming"
+cd flog_dart && flutter test test/sse/reporter_test.dart --plain-name "chunks include eventTiming"
 ```
 
 Expected: FAIL because chunks/done do not include timing.
@@ -1887,7 +1887,7 @@ On error, emit `err` with a trace whose phase status is `errored`.
 Run:
 
 ```bash
-cd flog_dart && dart test test/sse/reporter_test.dart
+cd flog_dart && flutter test test/sse/reporter_test.dart
 ```
 
 Expected: PASS.
@@ -1951,7 +1951,7 @@ test('close includes timing trace', () async {
 Run:
 
 ```bash
-cd flog_dart && dart test test/flog_web_socket_test.dart --plain-name "include eventTiming"
+cd flog_dart && flutter test test/flog_web_socket_test.dart --plain-name "include eventTiming"
 ```
 
 Expected: FAIL because WS frames do not include timing.
@@ -2049,7 +2049,7 @@ In `_connectAndWrap` failure path, emit `timing` with phase `handshake` and stat
 Run:
 
 ```bash
-cd flog_dart && dart test test/flog_web_socket_test.dart test/flog_web_socket_connect_test.dart
+cd flog_dart && flutter test test/flog_web_socket_test.dart test/flog_web_socket_connect_test.dart
 ```
 
 Expected: PASS.
@@ -2127,7 +2127,7 @@ Run:
 ```bash
 rg -n "timing|eventTiming|NetworkTiming" docs/PROTOCOL.md docs/MODULES.md docs/ARCHITECTURE.md flog_dart/README.md
 cargo test --all
-cd flog_dart && dart test
+cd flog_dart && flutter test
 ```
 
 Expected: `rg` shows the new docs entries; Rust and Dart tests pass.
@@ -2166,7 +2166,7 @@ Expected: PASS.
 - [ ] **Step 3: Run Dart tests and analyzer**
 
 ```bash
-cd flog_dart && dart test && dart analyze
+cd flog_dart && flutter test && dart analyze
 ```
 
 Expected: PASS.
