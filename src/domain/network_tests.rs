@@ -159,6 +159,35 @@ fn flog_net_kind_res_accepts_optional_timing() {
 }
 
 #[test]
+fn flog_net_kind_res_drops_malformed_timing_without_dropping_frame() {
+    let json = r#"{
+        "t": "res",
+        "id": 42,
+        "status": 200,
+        "duration": 126,
+        "timing": {
+            "phases": [{}]
+        }
+    }"#;
+
+    let msg: FlogNetKind =
+        serde_json::from_str(json).expect("malformed timing should not drop response");
+    match msg {
+        FlogNetKind::Res {
+            id,
+            status,
+            timing,
+            ..
+        } => {
+            assert_eq!(id, 42);
+            assert_eq!(status, Some(200));
+            assert!(timing.is_none());
+        }
+        other => panic!("expected res, got {:?}", other),
+    }
+}
+
+#[test]
 fn flog_net_kind_chunk_accepts_event_timing() {
     let json = r#"{
         "t": "chunk",
@@ -197,6 +226,32 @@ fn flog_net_kind_chunk_accepts_event_timing_without_at_us() {
             let event = event_timing.expect("event timing should be present");
             assert_eq!(event.name, "chunk");
             assert_eq!(event.at_us, None);
+        }
+        other => panic!("expected chunk, got {:?}", other),
+    }
+}
+
+#[test]
+fn flog_net_kind_chunk_drops_malformed_event_timing_without_dropping_frame() {
+    let json = r#"{
+        "t": "chunk",
+        "id": 2,
+        "data": "payload",
+        "eventTiming": {"name": 42}
+    }"#;
+
+    let msg: FlogNetKind =
+        serde_json::from_str(json).expect("malformed event timing should not drop chunk");
+    match msg {
+        FlogNetKind::Chunk {
+            id,
+            data,
+            event_timing,
+            ..
+        } => {
+            assert_eq!(id, 2);
+            assert_eq!(data.as_deref(), Some("payload"));
+            assert!(event_timing.is_none());
         }
         other => panic!("expected chunk, got {:?}", other),
     }
@@ -415,11 +470,11 @@ fn dom_024_new_ws_defaults() {
 // must be intentional — the test makes that decision visible.
 
 #[test]
-fn dom_025_sse_chunk_has_only_data_after_prune() {
+fn dom_025_sse_chunk_has_data_and_event_timing_after_timing_addition() {
     // Phase 3 DOM-025: seq/size/timestamp were write-only and are
     // pruned from the storage struct. The wire format still accepts
     // them (see dom_025_flog_net_message_accepts_all_fields_from_protocol)
-    // for compat, but the domain type only carries data.
+    // for compat. Timing metadata is retained because the detail view reads it.
     let chunk = SseChunk {
         data: "payload".to_string(),
         event_timing: None,

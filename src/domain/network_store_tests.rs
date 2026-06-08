@@ -475,6 +475,40 @@ fn handle_res_stores_timing_on_matched_entry() {
 }
 
 #[test]
+fn handle_res_without_timing_preserves_existing_timing() {
+    let mut store = NetworkStore::new();
+    store.process_message(req_http(1, "GET", "https://x.com"));
+    store.process_message(FlogNetKind::Res {
+        id: 1,
+        status: Some(102),
+        duration: Some(10),
+        headers: None,
+        body: None,
+        size: None,
+        error: None,
+        mocked: None,
+        timing: Some(timing(10_000)),
+        ts: None,
+    });
+    store.process_message(FlogNetKind::Res {
+        id: 1,
+        status: Some(200),
+        duration: Some(50),
+        headers: None,
+        body: None,
+        size: None,
+        error: None,
+        mocked: None,
+        timing: None,
+        ts: None,
+    });
+
+    let entry = store.get(0).unwrap();
+    assert_eq!(entry.http_status, Some(200));
+    assert_eq!(entry.timing.as_ref().unwrap().end_us, Some(10_000));
+}
+
+#[test]
 fn handle_res_stores_timing_on_orphan_entry() {
     let mut store = NetworkStore::new();
     store.process_message(FlogNetKind::Res {
@@ -826,6 +860,29 @@ fn handle_close_stores_timing_on_matched_entry() {
     assert_eq!(timing.end_us, Some(5_000_000));
 }
 
+#[test]
+fn handle_close_without_timing_preserves_existing_timing() {
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Open {
+        id: 1,
+        url: Some("wss://x.com".into()),
+        timing: Some(timing(1_000)),
+        ts: None,
+    });
+    store.process_message(FlogNetKind::Close {
+        id: 1,
+        code: Some(1000),
+        reason: Some("Normal".into()),
+        duration: Some(5_000),
+        timing: None,
+        ts: None,
+    });
+
+    let entry = store.get(0).unwrap();
+    assert_eq!(entry.status, NetworkStatus::Completed);
+    assert_eq!(entry.timing.as_ref().unwrap().end_us, Some(1_000));
+}
+
 // ---- Capacity / ring buffer behavior ------------------------------
 
 #[test]
@@ -1089,6 +1146,27 @@ fn open_after_connecting_replaces_pending_timing() {
 
     let timing = store.get(0).unwrap().timing.as_ref().unwrap();
     assert_eq!(timing.end_us, Some(200));
+}
+
+#[test]
+fn open_after_connecting_without_timing_preserves_pending_timing() {
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Connecting {
+        id: 99,
+        url: Some("wss://host/ws".into()),
+        timing: Some(timing(100)),
+        ts: None,
+    });
+    store.process_message(FlogNetKind::Open {
+        id: 99,
+        url: Some("wss://host/ws".into()),
+        timing: None,
+        ts: None,
+    });
+
+    let entry = store.get(0).unwrap();
+    assert_eq!(entry.status, NetworkStatus::Active);
+    assert_eq!(entry.timing.as_ref().unwrap().end_us, Some(100));
 }
 
 #[test]

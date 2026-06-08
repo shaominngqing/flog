@@ -1,9 +1,29 @@
 //! Network request data types for HTTP, SSE, and WebSocket.
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::fmt;
 
 use crate::domain::network_timing::{NetworkTiming, TimingEvent};
+
+fn deserialize_optional_network_timing<'de, D>(
+    deserializer: D,
+) -> Result<Option<NetworkTiming>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
+fn deserialize_optional_timing_event<'de, D>(
+    deserializer: D,
+) -> Result<Option<TimingEvent>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {
@@ -322,7 +342,7 @@ pub enum FlogNetKind {
         error: Option<String>,
         #[serde(default)]
         mocked: Option<bool>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "deserialize_optional_network_timing")]
         timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,
@@ -334,7 +354,7 @@ pub enum FlogNetKind {
         error: Option<String>,
         #[serde(default)]
         duration: Option<u64>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "deserialize_optional_network_timing")]
         timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,
@@ -349,7 +369,11 @@ pub enum FlogNetKind {
         size: Option<u64>,
         #[serde(default)]
         seq: Option<u32>,
-        #[serde(default, rename = "eventTiming")]
+        #[serde(
+            default,
+            rename = "eventTiming",
+            deserialize_with = "deserialize_optional_timing_event"
+        )]
         event_timing: Option<TimingEvent>,
         #[serde(default)]
         ts: Option<u64>,
@@ -359,7 +383,7 @@ pub enum FlogNetKind {
         id: u64,
         #[serde(default)]
         duration: Option<u64>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "deserialize_optional_network_timing")]
         timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,
@@ -369,7 +393,7 @@ pub enum FlogNetKind {
         id: u64,
         #[serde(default)]
         url: Option<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "deserialize_optional_network_timing")]
         timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,
@@ -380,7 +404,7 @@ pub enum FlogNetKind {
         id: u64,
         #[serde(default)]
         url: Option<String>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "deserialize_optional_network_timing")]
         timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,
@@ -392,7 +416,11 @@ pub enum FlogNetKind {
         data: Option<String>,
         #[serde(default)]
         size: Option<u64>,
-        #[serde(default, rename = "eventTiming")]
+        #[serde(
+            default,
+            rename = "eventTiming",
+            deserialize_with = "deserialize_optional_timing_event"
+        )]
         event_timing: Option<TimingEvent>,
         #[serde(default)]
         ts: Option<u64>,
@@ -404,7 +432,11 @@ pub enum FlogNetKind {
         data: Option<String>,
         #[serde(default)]
         size: Option<u64>,
-        #[serde(default, rename = "eventTiming")]
+        #[serde(
+            default,
+            rename = "eventTiming",
+            deserialize_with = "deserialize_optional_timing_event"
+        )]
         event_timing: Option<TimingEvent>,
         #[serde(default)]
         ts: Option<u64>,
@@ -418,7 +450,7 @@ pub enum FlogNetKind {
         reason: Option<String>,
         #[serde(default)]
         duration: Option<u64>,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "deserialize_optional_network_timing")]
         timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,

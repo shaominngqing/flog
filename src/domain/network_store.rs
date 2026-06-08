@@ -213,7 +213,9 @@ impl NetworkStore {
             entry.http_status = status;
             entry.duration = duration;
             entry.error = error;
-            entry.timing = timing;
+            if timing.is_some() {
+                entry.timing = timing;
+            }
             if let Some(h) = headers {
                 entry.response_headers = Some(h.to_string());
             }
@@ -246,7 +248,9 @@ impl NetworkStore {
             entry.status = NetworkStatus::Failed;
             entry.error = error;
             entry.duration = duration;
-            entry.timing = timing;
+            if timing.is_some() {
+                entry.timing = timing;
+            }
         }
     }
 
@@ -269,7 +273,9 @@ impl NetworkStore {
         if let Some(entry) = self.find_by_id_mut(id) {
             entry.status = NetworkStatus::Completed;
             entry.duration = duration;
-            entry.timing = timing;
+            if timing.is_some() {
+                entry.timing = timing;
+            }
         }
     }
 
@@ -283,7 +289,9 @@ impl NetworkStore {
         if let Some(entry) = self.find_by_id_mut(id) {
             // Upgrade a Pending entry created by a prior `connecting` frame.
             entry.status = NetworkStatus::Active;
-            entry.timing = timing;
+            if timing.is_some() {
+                entry.timing = timing;
+            }
             if let Some(u) = url {
                 if !u.is_empty() {
                     entry.url = u;
@@ -358,7 +366,9 @@ impl NetworkStore {
             entry.ws_close_code = code;
             entry.ws_close_reason = reason;
             entry.duration = duration;
-            entry.timing = timing;
+            if timing.is_some() {
+                entry.timing = timing;
+            }
         }
     }
 }
