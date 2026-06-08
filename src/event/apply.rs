@@ -597,9 +597,11 @@ mod tests {
         entry.protocol = Protocol::Sse;
         entry.sse_chunks.push(SseChunk {
             data: "{\"alpha\": \"one\", \"beta\": \"two\"}".into(),
+            event_timing: None,
         });
         entry.sse_chunks.push(SseChunk {
             data: "{\"alpha\": \"three\", \"beta\": \"four\"}".into(),
+            event_timing: None,
         });
         app.network_store.push_entry(entry);
         app.network.invalidate_filter();

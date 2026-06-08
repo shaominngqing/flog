@@ -29,6 +29,7 @@ fn diagnostics_include_completed_empty_sse_merge() {
     entry.status = NetworkStatus::Completed;
     entry.sse_chunks.push(SseChunk {
         data: "{\"choices\":[{\"delta\":{\"content\":\"\"}}]}".to_string(),
+        event_timing: None,
     });
 
     let items = collect_notable(&[], &[entry]);

@@ -1,6 +1,114 @@
 use super::*;
 
 #[test]
+fn network_timing_deserializes_full_trace() {
+    let json = r#"{
+        "v": 1,
+        "source": "flog_adapter",
+        "clock": "monotonic_us",
+        "startUs": 0,
+        "endUs": 126000,
+        "connection": {
+            "id": "https://api.example.com:443#3",
+            "reused": false,
+            "protocol": "http/1.1"
+        },
+        "phases": [
+            {
+                "name": "ttfb",
+                "startUs": 62000,
+                "endUs": 104000,
+                "status": "complete",
+                "confidence": "exact",
+                "detail": "headers to first byte"
+            }
+        ],
+        "events": [
+            {"name": "headers", "atUs": 62000},
+            {"name": "first_byte", "atUs": 104000, "gapUs": 42000, "size": 1}
+        ],
+        "notes": ["TLS boundary approximated by adapter"]
+    }"#;
+
+    let timing: crate::domain::network_timing::NetworkTiming =
+        serde_json::from_str(json).expect("timing should deserialize");
+
+    assert_eq!(timing.version, 1);
+    assert_eq!(
+        timing.source,
+        crate::domain::network_timing::TimingSource::FlogAdapter
+    );
+    assert_eq!(
+        timing.clock,
+        crate::domain::network_timing::TimingClock::MonotonicUs
+    );
+    assert_eq!(
+        timing.connection.as_ref().unwrap().id.as_deref(),
+        Some("https://api.example.com:443#3")
+    );
+    assert!(!timing.connection.as_ref().unwrap().reused);
+    assert_eq!(timing.phases[0].name, "ttfb");
+    assert_eq!(
+        timing.phases[0].confidence,
+        crate::domain::network_timing::TimingConfidence::Exact
+    );
+    assert_eq!(timing.events[1].gap_us, Some(42_000));
+    assert_eq!(timing.notes, vec!["TLS boundary approximated by adapter"]);
+}
+
+#[test]
+fn flog_net_kind_res_accepts_optional_timing() {
+    let json = r#"{
+        "t": "res",
+        "id": 42,
+        "status": 200,
+        "duration": 126,
+        "timing": {
+            "v": 1,
+            "source": "flog_adapter",
+            "clock": "monotonic_us",
+            "startUs": 0,
+            "endUs": 126000,
+            "phases": [],
+            "events": [],
+            "notes": []
+        }
+    }"#;
+
+    let msg: FlogNetKind = serde_json::from_str(json).expect("res should deserialize");
+    match msg {
+        FlogNetKind::Res { timing, .. } => {
+            assert!(timing.is_some());
+            assert_eq!(timing.unwrap().end_us, Some(126_000));
+        }
+        other => panic!("expected res, got {:?}", other),
+    }
+}
+
+#[test]
+fn flog_net_kind_chunk_accepts_event_timing() {
+    let json = r#"{
+        "t": "chunk",
+        "id": 2,
+        "data": "payload",
+        "size": 208,
+        "seq": 4,
+        "eventTiming": {"name": "chunk", "atUs": 1259000, "gapUs": 812000, "size": 208}
+    }"#;
+
+    let msg: FlogNetKind = serde_json::from_str(json).expect("chunk should deserialize");
+    match msg {
+        FlogNetKind::Chunk { event_timing, .. } => {
+            let event = event_timing.expect("event timing should be present");
+            assert_eq!(event.at_us, 1_259_000);
+            assert_eq!(event.gap_us, Some(812_000));
+            assert_eq!(event.size, Some(208));
+        }
+        other => panic!("expected chunk, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_entry_source_default_is_app() {
     let entry =
         NetworkEntry::new_http(1, "GET".into(), "https://example.com".into(), String::new());
@@ -220,6 +328,7 @@ fn dom_025_sse_chunk_has_only_data_after_prune() {
     // for compat, but the domain type only carries data.
     let chunk = SseChunk {
         data: "payload".to_string(),
+        event_timing: None,
     };
     assert_eq!(chunk.data, "payload");
 }
@@ -232,6 +341,7 @@ fn dom_025_ws_message_has_direction_data_size_after_prune() {
         direction: WsDirection::Send,
         data: "hi".to_string(),
         size: 2,
+        event_timing: None,
     };
     assert_eq!(m.direction, WsDirection::Send);
     assert_eq!(m.data, "hi");
@@ -260,12 +370,14 @@ fn dom_025_flog_net_kind_chunk_accepts_all_wire_fields() {
             size,
             seq,
             ts,
+            event_timing,
         } => {
             assert_eq!(id, 1);
             assert_eq!(data.as_deref(), Some("payload"));
             assert_eq!(size, Some(128));
             assert_eq!(seq, Some(5));
             assert_eq!(ts, Some(1_700_000_000_000));
+            assert!(event_timing.is_none());
         }
         _ => panic!("expected Chunk"),
     }
@@ -326,11 +438,13 @@ fn display_size_ws_sums_messages() {
         direction: WsDirection::Send,
         data: "a".into(),
         size: 10,
+        event_timing: None,
     });
     e.ws_messages.push(WsMessage {
         direction: WsDirection::Recv,
         data: "b".into(),
         size: 25,
+        event_timing: None,
     });
     assert_eq!(e.display_size(), 35);
 }

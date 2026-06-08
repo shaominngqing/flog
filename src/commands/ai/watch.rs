@@ -239,6 +239,7 @@ fn net_message_value(message: &FlogNetKind) -> serde_json::Value {
             error,
             duration,
             ts,
+            ..
         } => json!({
             "type": "net",
             "id": format!("net#{id}"),
@@ -254,6 +255,7 @@ fn net_message_value(message: &FlogNetKind) -> serde_json::Value {
             size,
             seq,
             ts,
+            ..
         } => json!({
             "type": "net",
             "id": format!("net#{id}"),
@@ -264,7 +266,9 @@ fn net_message_value(message: &FlogNetKind) -> serde_json::Value {
             "seq": seq,
             "timestamp": ts,
         }),
-        FlogNetKind::Done { id, duration, ts } => json!({
+        FlogNetKind::Done {
+            id, duration, ts, ..
+        } => json!({
             "type": "net",
             "id": format!("net#{id}"),
             "net_id": id,
@@ -272,7 +276,7 @@ fn net_message_value(message: &FlogNetKind) -> serde_json::Value {
             "duration_ms": duration,
             "timestamp": ts,
         }),
-        FlogNetKind::Open { id, url, ts } => json!({
+        FlogNetKind::Open { id, url, ts, .. } => json!({
             "type": "net",
             "id": format!("net#{id}"),
             "net_id": id,
@@ -280,7 +284,7 @@ fn net_message_value(message: &FlogNetKind) -> serde_json::Value {
             "url": url,
             "timestamp": ts,
         }),
-        FlogNetKind::Connecting { id, url, ts } => json!({
+        FlogNetKind::Connecting { id, url, ts, .. } => json!({
             "type": "net",
             "id": format!("net#{id}"),
             "net_id": id,
@@ -288,7 +292,9 @@ fn net_message_value(message: &FlogNetKind) -> serde_json::Value {
             "url": url,
             "timestamp": ts,
         }),
-        FlogNetKind::Send { id, data, size, ts } => json!({
+        FlogNetKind::Send {
+            id, data, size, ts, ..
+        } => json!({
             "type": "net",
             "id": format!("net#{id}"),
             "net_id": id,
@@ -297,7 +303,9 @@ fn net_message_value(message: &FlogNetKind) -> serde_json::Value {
             "size": size,
             "timestamp": ts,
         }),
-        FlogNetKind::Recv { id, data, size, ts } => json!({
+        FlogNetKind::Recv {
+            id, data, size, ts, ..
+        } => json!({
             "type": "net",
             "id": format!("net#{id}"),
             "net_id": id,
@@ -312,6 +320,7 @@ fn net_message_value(message: &FlogNetKind) -> serde_json::Value {
             reason,
             duration,
             ts,
+            ..
         } => json!({
             "type": "net",
             "id": format!("net#{id}"),

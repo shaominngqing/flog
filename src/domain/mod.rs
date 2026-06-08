@@ -9,6 +9,7 @@ pub mod mock;
 pub mod network;
 pub mod network_filter;
 pub mod network_store;
+pub mod network_timing;
 pub mod sse_merge;
 pub mod store;
 pub mod structured_parser;

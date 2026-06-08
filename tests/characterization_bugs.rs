@@ -63,6 +63,7 @@ fn dom_003_response_without_request_should_not_drop_silently() {
         size: None,
         error: None,
         mocked: None,
+        timing: None,
         ts: None,
     };
     store.process_message(m);

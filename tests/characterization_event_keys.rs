@@ -669,6 +669,7 @@ fn app_with_sse_entry() -> App {
     for i in 0..3 {
         entry.sse_chunks.push(SseChunk {
             data: format!(r#"{{"a":"hello-{}","b":"world-{}"}}"#, i, i),
+            event_timing: None,
         });
     }
     app.network_store.push_entry(entry);

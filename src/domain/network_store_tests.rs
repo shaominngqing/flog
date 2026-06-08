@@ -28,6 +28,7 @@ fn res(id: u64) -> FlogNetKind {
         size: None,
         error: None,
         mocked: None,
+        timing: None,
         ts: None,
     }
 }
@@ -78,6 +79,7 @@ fn chunk(id: u64, data: Option<&str>) -> FlogNetKind {
         data: data.map(|s| s.to_string()),
         size: None,
         seq: None,
+        event_timing: None,
         ts: None,
     }
 }
@@ -86,6 +88,7 @@ fn open(id: u64, url: &str) -> FlogNetKind {
     FlogNetKind::Open {
         id,
         url: Some(url.to_string()),
+        timing: None,
         ts: None,
     }
 }
@@ -95,6 +98,7 @@ fn send_msg(id: u64, data: &str) -> FlogNetKind {
         id,
         data: Some(data.to_string()),
         size: None,
+        event_timing: None,
         ts: None,
     }
 }
@@ -104,6 +108,7 @@ fn recv_msg(id: u64, data: &str) -> FlogNetKind {
         id,
         data: Some(data.to_string()),
         size: None,
+        event_timing: None,
         ts: None,
     }
 }
@@ -178,6 +183,7 @@ fn dom_002_res_without_req_surfaces_orphan_entry_a() {
         size: None,
         error: None,
         mocked: None,
+        timing: None,
         ts: None,
     };
     store.process_message(m);
@@ -196,6 +202,7 @@ fn dom_002_err_without_req_drops_silently_b() {
         id: 42,
         error: Some("boom".into()),
         duration: None,
+        timing: None,
         ts: None,
     });
     assert!(store.is_empty());
@@ -214,6 +221,7 @@ fn dom_002_done_without_req_drops_silently_d() {
     store.process_message(FlogNetKind::Done {
         id: 42,
         duration: None,
+        timing: None,
         ts: None,
     });
     assert!(store.is_empty());
@@ -227,6 +235,7 @@ fn dom_002_close_without_open_drops_silently_e() {
         code: None,
         reason: None,
         duration: None,
+        timing: None,
         ts: None,
     });
     assert!(store.is_empty());
@@ -406,6 +415,7 @@ fn handle_res_updates_matched_entry() {
         size: None,
         error: None,
         mocked: None,
+        timing: None,
         ts: None,
     });
 
@@ -431,6 +441,7 @@ fn handle_res_size_field_overrides_body_len() {
         size: Some(10_000),
         error: None,
         mocked: None,
+        timing: None,
         ts: None,
     });
     assert_eq!(store.get(0).unwrap().response_size, Some(10_000));
@@ -449,6 +460,7 @@ fn handle_res_mocked_flag_sets_source() {
         size: None,
         error: None,
         mocked: Some(true),
+        timing: None,
         ts: None,
     });
     assert_eq!(store.get(0).unwrap().source, EntrySource::Mocked);
@@ -467,6 +479,7 @@ fn handle_res_mocked_false_keeps_app_source() {
         size: None,
         error: None,
         mocked: Some(false),
+        timing: None,
         ts: None,
     });
     assert_eq!(store.get(0).unwrap().source, EntrySource::App);
@@ -480,6 +493,7 @@ fn handle_err_sets_failed_status() {
         id: 1,
         error: Some("timeout".into()),
         duration: Some(30_000),
+        timing: None,
         ts: None,
     });
 
@@ -498,6 +512,7 @@ fn handle_chunk_appends_to_sse_chunks() {
         data: Some("hello".into()),
         size: Some(5),
         seq: Some(0),
+        event_timing: None,
         ts: None,
     });
     store.process_message(FlogNetKind::Chunk {
@@ -505,6 +520,7 @@ fn handle_chunk_appends_to_sse_chunks() {
         data: Some(" world".into()),
         size: None,
         seq: Some(1),
+        event_timing: None,
         ts: None,
     });
 
@@ -548,6 +564,7 @@ fn handle_done_completes_entry() {
     store.process_message(FlogNetKind::Done {
         id: 1,
         duration: Some(500),
+        timing: None,
         ts: None,
     });
     let e = store.get(0).unwrap();
@@ -561,6 +578,7 @@ fn handle_open_creates_ws_entry() {
     store.process_message(FlogNetKind::Open {
         id: 1,
         url: Some("wss://x.com/ws".into()),
+        timing: None,
         ts: Some(1_700_000_000_000),
     });
     let e = store.get(0).unwrap();
@@ -575,6 +593,7 @@ fn handle_open_missing_url_defaults_to_empty() {
     store.process_message(FlogNetKind::Open {
         id: 1,
         url: None,
+        timing: None,
         ts: None,
     });
     assert_eq!(store.get(0).unwrap().url, "");
@@ -604,6 +623,7 @@ fn handle_ws_msg_size_override() {
         id: 1,
         data: Some("abc".into()),
         size: Some(100),
+        event_timing: None,
         ts: None,
     });
 
@@ -619,6 +639,7 @@ fn handle_close_sets_close_fields() {
         code: Some(1000),
         reason: Some("Normal".into()),
         duration: Some(5_000),
+        timing: None,
         ts: None,
     });
 
@@ -719,6 +740,7 @@ fn find_by_id_mut_returns_most_recent_when_duplicate() {
         size: None,
         error: None,
         mocked: None,
+        timing: None,
         ts: None,
     });
 
@@ -778,10 +800,16 @@ fn dom_006_flog_net_kind_connecting_deserializes_from_wire() {
     let j = r#"{"t":"connecting","id":5,"url":"wss://host/ws","ts":1700000000000}"#;
     let k: FlogNetKind = serde_json::from_str(j).expect("deserialize");
     match k {
-        FlogNetKind::Connecting { id, url, ts } => {
+        FlogNetKind::Connecting {
+            id,
+            url,
+            ts,
+            timing,
+        } => {
             assert_eq!(id, 5);
             assert_eq!(url.as_deref(), Some("wss://host/ws"));
             assert_eq!(ts, Some(1_700_000_000_000));
+            assert!(timing.is_none());
         }
         _ => panic!("expected Connecting"),
     }
@@ -796,22 +824,26 @@ fn dom_006_flog_net_kind_id_helper_covers_all_variants() {
             id: 7,
             error: None,
             duration: None,
+            timing: None,
             ts: None,
         },
         chunk(7, None),
         FlogNetKind::Done {
             id: 7,
             duration: None,
+            timing: None,
             ts: None,
         },
         FlogNetKind::Open {
             id: 7,
             url: None,
+            timing: None,
             ts: None,
         },
         FlogNetKind::Connecting {
             id: 7,
             url: None,
+            timing: None,
             ts: None,
         },
         send_msg(7, ""),
@@ -821,6 +853,7 @@ fn dom_006_flog_net_kind_id_helper_covers_all_variants() {
             code: None,
             reason: None,
             duration: None,
+            timing: None,
             ts: None,
         },
     ];
@@ -837,6 +870,7 @@ fn connecting_creates_pending_ws_entry() {
     store.process_message(FlogNetKind::Connecting {
         id: 99,
         url: Some("wss://host/ws".into()),
+        timing: None,
         ts: None,
     });
     assert_eq!(store.len(), 1);
@@ -853,11 +887,13 @@ fn open_after_connecting_upgrades_to_active() {
     store.process_message(FlogNetKind::Connecting {
         id: 99,
         url: Some("wss://host/ws".into()),
+        timing: None,
         ts: None,
     });
     store.process_message(FlogNetKind::Open {
         id: 99,
         url: Some("wss://host/ws".into()),
+        timing: None,
         ts: None,
     });
     // Must not create a second entry
@@ -874,6 +910,7 @@ fn open_without_prior_connecting_still_creates_active_entry() {
     store.process_message(FlogNetKind::Open {
         id: 42,
         url: Some("wss://host/ws".into()),
+        timing: None,
         ts: None,
     });
     assert_eq!(store.len(), 1);
@@ -892,11 +929,13 @@ fn connecting_twice_same_id_creates_two_pending_entries() {
     store.process_message(FlogNetKind::Connecting {
         id: 55,
         url: Some("wss://host/ws".into()),
+        timing: None,
         ts: None,
     });
     store.process_message(FlogNetKind::Connecting {
         id: 55,
         url: Some("wss://host/ws".into()),
+        timing: None,
         ts: None,
     });
     assert_eq!(store.len(), 2);

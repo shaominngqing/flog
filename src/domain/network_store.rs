@@ -48,12 +48,14 @@ impl NetworkStore {
                 error,
                 mocked,
                 ts: _,
+                timing: _,
             } => self.handle_res(id, status, duration, headers, body, size, error, mocked),
             FlogNetKind::Err {
                 id,
                 error,
                 duration,
                 ts: _,
+                timing: _,
             } => self.handle_err(id, error, duration),
             FlogNetKind::Chunk {
                 id,
@@ -61,25 +63,39 @@ impl NetworkStore {
                 size,
                 seq: _,
                 ts: _,
+                event_timing: _,
             } => self.handle_chunk(id, data, size),
             FlogNetKind::Done {
                 id,
                 duration,
                 ts: _,
+                timing: _,
             } => self.handle_done(id, duration),
-            FlogNetKind::Open { id, url, ts } => self.handle_open(id, url, ts),
-            FlogNetKind::Connecting { id, url, ts } => self.handle_connecting(id, url, ts),
+            FlogNetKind::Open {
+                id,
+                url,
+                ts,
+                timing: _,
+            } => self.handle_open(id, url, ts),
+            FlogNetKind::Connecting {
+                id,
+                url,
+                ts,
+                timing: _,
+            } => self.handle_connecting(id, url, ts),
             FlogNetKind::Send {
                 id,
                 data,
                 size,
                 ts: _,
+                event_timing: _,
             } => self.handle_ws_msg(id, data, size, WsDirection::Send),
             FlogNetKind::Recv {
                 id,
                 data,
                 size,
                 ts: _,
+                event_timing: _,
             } => self.handle_ws_msg(id, data, size, WsDirection::Recv),
             FlogNetKind::Close {
                 id,
@@ -87,6 +103,7 @@ impl NetworkStore {
                 reason,
                 duration,
                 ts: _,
+                timing: _,
             } => self.handle_close(id, code, reason, duration),
         }
     }
@@ -227,7 +244,10 @@ impl NetworkStore {
             entry.sse_total_size += chunk_size;
             // DOM-025: seq/size/ts are accepted on the wire but dropped at
             // ingest — no UI consumer reads them.
-            entry.sse_chunks.push(SseChunk { data });
+            entry.sse_chunks.push(SseChunk {
+                data,
+                event_timing: None,
+            });
         }
     }
 
@@ -291,6 +311,7 @@ impl NetworkStore {
                 direction,
                 data,
                 size: msg_size,
+                event_timing: None,
             });
         }
     }

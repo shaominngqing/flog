@@ -64,6 +64,7 @@ fn net_list_includes_protocol_specific_counts_without_bodies() {
         direction: crate::domain::network::WsDirection::Send,
         data: "hello".to_string(),
         size: 5,
+        event_timing: None,
     });
     app.network_store.push_entry(ws);
 

@@ -34,6 +34,7 @@ fn watch_net_response_value_keeps_ai_lookup_id_and_status() {
             size: Some(2048),
             error: Some("Bearer api-token".to_string()),
             mocked: Some(false),
+            timing: None,
             ts: Some(456),
         },
     });
@@ -59,6 +60,7 @@ fn watch_net_chunk_value_uses_preview_not_full_body() {
             data: Some(data),
             size: Some(700),
             seq: Some(3),
+            event_timing: None,
             ts: None,
         },
     });

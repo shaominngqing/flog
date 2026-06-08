@@ -2,6 +2,8 @@
 
 use serde::Deserialize;
 
+use crate::domain::network_timing::{NetworkTiming, TimingEvent};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {
     Http,
@@ -37,6 +39,8 @@ pub enum EntrySource {
 #[derive(Debug, Clone)]
 pub struct SseChunk {
     pub data: String,
+    #[allow(dead_code)]
+    pub event_timing: Option<TimingEvent>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +49,8 @@ pub struct WsMessage {
     pub data: String,
     /// Byte size of this message. Read by the Network detail panel + stats.
     pub size: u64,
+    #[allow(dead_code)]
+    pub event_timing: Option<TimingEvent>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +77,8 @@ pub struct NetworkEntry {
     pub ws_close_code: Option<u16>,
     pub ws_close_reason: Option<String>,
     pub source: EntrySource,
+    #[allow(dead_code)]
+    pub timing: Option<NetworkTiming>,
 }
 
 impl NetworkEntry {
@@ -131,6 +139,7 @@ impl NetworkEntry {
             ws_close_code: None,
             ws_close_reason: None,
             source: EntrySource::App,
+            timing: None,
         }
     }
 
@@ -197,6 +206,7 @@ impl NetworkEntryBuilder {
                 ws_close_code: None,
                 ws_close_reason: None,
                 source: EntrySource::App,
+                timing: None,
             },
         }
     }
@@ -295,6 +305,8 @@ pub enum FlogNetKind {
         #[serde(default)]
         mocked: Option<bool>,
         #[serde(default)]
+        timing: Option<NetworkTiming>,
+        #[serde(default)]
         ts: Option<u64>,
     },
     /// HTTP error — transport failure before a full response.
@@ -304,6 +316,8 @@ pub enum FlogNetKind {
         error: Option<String>,
         #[serde(default)]
         duration: Option<u64>,
+        #[serde(default)]
+        timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,
     },
@@ -317,6 +331,8 @@ pub enum FlogNetKind {
         size: Option<u64>,
         #[serde(default)]
         seq: Option<u32>,
+        #[serde(default, rename = "eventTiming")]
+        event_timing: Option<TimingEvent>,
         #[serde(default)]
         ts: Option<u64>,
     },
@@ -326,6 +342,8 @@ pub enum FlogNetKind {
         #[serde(default)]
         duration: Option<u64>,
         #[serde(default)]
+        timing: Option<NetworkTiming>,
+        #[serde(default)]
         ts: Option<u64>,
     },
     /// WebSocket open.
@@ -333,6 +351,8 @@ pub enum FlogNetKind {
         id: u64,
         #[serde(default)]
         url: Option<String>,
+        #[serde(default)]
+        timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,
     },
@@ -343,6 +363,8 @@ pub enum FlogNetKind {
         #[serde(default)]
         url: Option<String>,
         #[serde(default)]
+        timing: Option<NetworkTiming>,
+        #[serde(default)]
         ts: Option<u64>,
     },
     /// WebSocket outbound message.
@@ -352,6 +374,8 @@ pub enum FlogNetKind {
         data: Option<String>,
         #[serde(default)]
         size: Option<u64>,
+        #[serde(default, rename = "eventTiming")]
+        event_timing: Option<TimingEvent>,
         #[serde(default)]
         ts: Option<u64>,
     },
@@ -362,6 +386,8 @@ pub enum FlogNetKind {
         data: Option<String>,
         #[serde(default)]
         size: Option<u64>,
+        #[serde(default, rename = "eventTiming")]
+        event_timing: Option<TimingEvent>,
         #[serde(default)]
         ts: Option<u64>,
     },
@@ -374,6 +400,8 @@ pub enum FlogNetKind {
         reason: Option<String>,
         #[serde(default)]
         duration: Option<u64>,
+        #[serde(default)]
+        timing: Option<NetworkTiming>,
         #[serde(default)]
         ts: Option<u64>,
     },

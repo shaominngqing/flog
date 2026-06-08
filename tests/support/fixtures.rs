@@ -117,6 +117,7 @@ pub fn sse_chunk(_seq: u32, data: &str) -> SseChunk {
     // `_seq` parameter is kept to avoid churn at call sites.
     SseChunk {
         data: data.to_string(),
+        event_timing: None,
     }
 }
 
@@ -125,6 +126,7 @@ pub fn ws_send(data: &str) -> WsMessage {
         direction: WsDirection::Send,
         size: data.len() as u64,
         data: data.to_string(),
+        event_timing: None,
     }
 }
 
@@ -133,6 +135,7 @@ pub fn ws_recv(data: &str) -> WsMessage {
         direction: WsDirection::Recv,
         size: data.len() as u64,
         data: data.to_string(),
+        event_timing: None,
     }
 }
 
@@ -173,6 +176,7 @@ pub fn net_res(id: u64, status: u16) -> FlogNetKind {
         size: None,
         error: None,
         mocked: None,
+        timing: None,
         ts: None,
     }
 }
@@ -184,6 +188,7 @@ pub fn net_chunk_sse(id: u64, seq: u32, data: &str) -> FlogNetKind {
         data: Some(data.to_string()),
         size: Some(data.len() as u64),
         seq: Some(seq),
+        event_timing: None,
         ts: None,
     }
 }
