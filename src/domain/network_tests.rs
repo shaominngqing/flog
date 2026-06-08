@@ -77,6 +77,23 @@ fn network_timing_missing_metadata_uses_safe_defaults() {
 }
 
 #[test]
+fn network_timing_durations_saturate_when_clock_order_is_inverted() {
+    let json = r#"{
+        "startUs": 20,
+        "endUs": 5,
+        "phases": [
+            {"name": "ttfb", "startUs": 30, "endUs": 10}
+        ]
+    }"#;
+
+    let timing: crate::domain::network_timing::NetworkTiming =
+        serde_json::from_str(json).expect("partial timing should deserialize");
+
+    assert_eq!(timing.total_duration_us(), Some(0));
+    assert_eq!(timing.phases[0].duration_us(), Some(0));
+}
+
+#[test]
 fn network_timing_unknown_enum_values_fall_back_to_unknown() {
     let json = r#"{
         "v": 1,

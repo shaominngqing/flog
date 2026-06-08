@@ -83,7 +83,7 @@ pub struct TimingPhase {
 
 impl TimingPhase {
     pub fn duration_us(&self) -> Option<u64> {
-        self.end_us?.checked_sub(self.start_us?)
+        Some(self.end_us?.saturating_sub(self.start_us?))
     }
 }
 
@@ -127,7 +127,7 @@ pub struct NetworkTiming {
 
 impl NetworkTiming {
     pub fn total_duration_us(&self) -> Option<u64> {
-        self.end_us?.checked_sub(self.start_us?)
+        Some(self.end_us?.saturating_sub(self.start_us?))
     }
 }
 
