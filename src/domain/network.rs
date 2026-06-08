@@ -1,6 +1,7 @@
 //! Network request data types for HTTP, SSE, and WebSocket.
 
 use serde::Deserialize;
+use std::fmt;
 
 use crate::domain::network_timing::{NetworkTiming, TimingEvent};
 
@@ -36,21 +37,39 @@ pub enum EntrySource {
     Mocked,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SseChunk {
     pub data: String,
-    #[allow(dead_code)]
     pub event_timing: Option<TimingEvent>,
 }
 
-#[derive(Debug, Clone)]
+impl fmt::Debug for SseChunk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SseChunk")
+            .field("data", &self.data)
+            .field("event_timing", &self.event_timing)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
 pub struct WsMessage {
     pub direction: WsDirection,
     pub data: String,
     /// Byte size of this message. Read by the Network detail panel + stats.
     pub size: u64,
-    #[allow(dead_code)]
     pub event_timing: Option<TimingEvent>,
+}
+
+impl fmt::Debug for WsMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WsMessage")
+            .field("direction", &self.direction)
+            .field("data", &self.data)
+            .field("size", &self.size)
+            .field("event_timing", &self.event_timing)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -77,7 +96,6 @@ pub struct NetworkEntry {
     pub ws_close_code: Option<u16>,
     pub ws_close_reason: Option<String>,
     pub source: EntrySource,
-    #[allow(dead_code)]
     pub timing: Option<NetworkTiming>,
 }
 

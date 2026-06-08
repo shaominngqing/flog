@@ -1,5 +1,6 @@
 use super::*;
 use crate::domain::network::EntrySource;
+use crate::domain::network_timing::{NetworkTiming, TimingClock, TimingEvent, TimingSource};
 
 // Test-only variant factories. Phase 3 DOM-002/006 replaced the
 // 20-field FlogNetMessage struct with a typed enum; tests now build
@@ -110,6 +111,30 @@ fn recv_msg(id: u64, data: &str) -> FlogNetKind {
         size: None,
         event_timing: None,
         ts: None,
+    }
+}
+
+fn timing(end_us: u64) -> NetworkTiming {
+    NetworkTiming {
+        version: 1,
+        source: TimingSource::FlogAdapter,
+        clock: TimingClock::MonotonicUs,
+        start_us: Some(0),
+        end_us: Some(end_us),
+        connection: None,
+        phases: Vec::new(),
+        events: Vec::new(),
+        notes: Vec::new(),
+    }
+}
+
+fn event_timing(name: &str, at_us: Option<u64>) -> TimingEvent {
+    TimingEvent {
+        name: name.to_string(),
+        at_us,
+        gap_us: None,
+        size: None,
+        detail: None,
     }
 }
 
@@ -429,6 +454,48 @@ fn handle_res_updates_matched_entry() {
 }
 
 #[test]
+fn handle_res_stores_timing_on_matched_entry() {
+    let mut store = NetworkStore::new();
+    store.process_message(req_http(1, "GET", "https://x.com"));
+    store.process_message(FlogNetKind::Res {
+        id: 1,
+        status: Some(200),
+        duration: Some(50),
+        headers: None,
+        body: None,
+        size: None,
+        error: None,
+        mocked: None,
+        timing: Some(timing(50_000)),
+        ts: None,
+    });
+
+    let timing = store.get(0).unwrap().timing.as_ref().unwrap();
+    assert_eq!(timing.total_duration_us(), Some(50_000));
+}
+
+#[test]
+fn handle_res_stores_timing_on_orphan_entry() {
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Res {
+        id: 1,
+        status: Some(200),
+        duration: Some(50),
+        headers: None,
+        body: None,
+        size: None,
+        error: None,
+        mocked: None,
+        timing: Some(timing(50_000)),
+        ts: None,
+    });
+
+    let entry = store.get(0).unwrap();
+    assert_eq!(entry.status, NetworkStatus::Orphan);
+    assert_eq!(entry.timing.as_ref().unwrap().end_us, Some(50_000));
+}
+
+#[test]
 fn handle_res_size_field_overrides_body_len() {
     let mut store = NetworkStore::new();
     store.process_message(req_http(1, "GET", "https://x.com"));
@@ -504,6 +571,22 @@ fn handle_err_sets_failed_status() {
 }
 
 #[test]
+fn handle_err_stores_timing_on_matched_entry() {
+    let mut store = NetworkStore::new();
+    store.process_message(req_http(1, "GET", "https://x.com"));
+    store.process_message(FlogNetKind::Err {
+        id: 1,
+        error: Some("timeout".into()),
+        duration: Some(30_000),
+        timing: Some(timing(30_000_000)),
+        ts: None,
+    });
+
+    let timing = store.get(0).unwrap().timing.as_ref().unwrap();
+    assert_eq!(timing.end_us, Some(30_000_000));
+}
+
+#[test]
 fn handle_chunk_appends_to_sse_chunks() {
     let mut store = NetworkStore::new();
     store.process_message(req_sse(1, "GET", "https://x.com/stream"));
@@ -531,6 +614,27 @@ fn handle_chunk_appends_to_sse_chunks() {
     // DOM-025: sse_total_size is the live aggregate; per-chunk
     // seq/size/timestamp are accepted on the wire but dropped.
     assert_eq!(e.sse_total_size, 11);
+}
+
+#[test]
+fn handle_chunk_stores_event_timing() {
+    let mut store = NetworkStore::new();
+    store.process_message(req_sse(1, "GET", "https://x.com/stream"));
+    store.process_message(FlogNetKind::Chunk {
+        id: 1,
+        data: Some("hello".into()),
+        size: Some(5),
+        seq: Some(0),
+        event_timing: Some(event_timing("chunk", Some(12_000))),
+        ts: None,
+    });
+
+    let event = store.get(0).unwrap().sse_chunks[0]
+        .event_timing
+        .as_ref()
+        .unwrap();
+    assert_eq!(event.name, "chunk");
+    assert_eq!(event.at_us, Some(12_000));
 }
 
 #[test]
@@ -573,6 +677,21 @@ fn handle_done_completes_entry() {
 }
 
 #[test]
+fn handle_done_stores_timing_on_matched_entry() {
+    let mut store = NetworkStore::new();
+    store.process_message(req_sse(1, "GET", "https://x.com"));
+    store.process_message(FlogNetKind::Done {
+        id: 1,
+        duration: Some(500),
+        timing: Some(timing(500_000)),
+        ts: None,
+    });
+
+    let timing = store.get(0).unwrap().timing.as_ref().unwrap();
+    assert_eq!(timing.end_us, Some(500_000));
+}
+
+#[test]
 fn handle_open_creates_ws_entry() {
     let mut store = NetworkStore::new();
     store.process_message(FlogNetKind::Open {
@@ -585,6 +704,20 @@ fn handle_open_creates_ws_entry() {
     assert_eq!(e.protocol, Protocol::Ws);
     assert_eq!(e.url, "wss://x.com/ws");
     assert_eq!(e.timestamp.len(), 12);
+}
+
+#[test]
+fn handle_open_stores_timing_on_new_entry() {
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Open {
+        id: 1,
+        url: Some("wss://x.com/ws".into()),
+        timing: Some(timing(1_000)),
+        ts: None,
+    });
+
+    let timing = store.get(0).unwrap().timing.as_ref().unwrap();
+    assert_eq!(timing.end_us, Some(1_000));
 }
 
 #[test]
@@ -613,6 +746,32 @@ fn handle_send_and_recv_append_ws_messages() {
     assert_eq!(e.ws_messages[0].size, 4);
     assert_eq!(e.ws_messages[1].direction, WsDirection::Recv);
     assert_eq!(e.ws_messages[1].data, "pong");
+}
+
+#[test]
+fn handle_send_and_recv_store_event_timing() {
+    let mut store = NetworkStore::new();
+    store.process_message(open(1, "wss://x.com"));
+    store.process_message(FlogNetKind::Send {
+        id: 1,
+        data: Some("ping".into()),
+        size: None,
+        event_timing: Some(event_timing("send", Some(10))),
+        ts: None,
+    });
+    store.process_message(FlogNetKind::Recv {
+        id: 1,
+        data: Some("pong".into()),
+        size: None,
+        event_timing: Some(event_timing("recv", None)),
+        ts: None,
+    });
+
+    let messages = &store.get(0).unwrap().ws_messages;
+    assert_eq!(messages[0].event_timing.as_ref().unwrap().name, "send");
+    assert_eq!(messages[0].event_timing.as_ref().unwrap().at_us, Some(10));
+    assert_eq!(messages[1].event_timing.as_ref().unwrap().name, "recv");
+    assert_eq!(messages[1].event_timing.as_ref().unwrap().at_us, None);
 }
 
 #[test]
@@ -648,6 +807,23 @@ fn handle_close_sets_close_fields() {
     assert_eq!(e.ws_close_code, Some(1000));
     assert_eq!(e.ws_close_reason.as_ref().unwrap(), "Normal");
     assert_eq!(e.duration, Some(5_000));
+}
+
+#[test]
+fn handle_close_stores_timing_on_matched_entry() {
+    let mut store = NetworkStore::new();
+    store.process_message(open(1, "wss://x.com"));
+    store.process_message(FlogNetKind::Close {
+        id: 1,
+        code: Some(1000),
+        reason: Some("Normal".into()),
+        duration: Some(5_000),
+        timing: Some(timing(5_000_000)),
+        ts: None,
+    });
+
+    let timing = store.get(0).unwrap().timing.as_ref().unwrap();
+    assert_eq!(timing.end_us, Some(5_000_000));
 }
 
 // ---- Capacity / ring buffer behavior ------------------------------
@@ -879,6 +1055,40 @@ fn connecting_creates_pending_ws_entry() {
     assert_eq!(e.protocol, Protocol::Ws);
     assert_eq!(e.status, NetworkStatus::Pending);
     assert_eq!(e.url, "wss://host/ws");
+}
+
+#[test]
+fn connecting_stores_timing_on_pending_entry() {
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Connecting {
+        id: 99,
+        url: Some("wss://host/ws".into()),
+        timing: Some(timing(100)),
+        ts: None,
+    });
+
+    let timing = store.get(0).unwrap().timing.as_ref().unwrap();
+    assert_eq!(timing.end_us, Some(100));
+}
+
+#[test]
+fn open_after_connecting_replaces_pending_timing() {
+    let mut store = NetworkStore::new();
+    store.process_message(FlogNetKind::Connecting {
+        id: 99,
+        url: Some("wss://host/ws".into()),
+        timing: Some(timing(100)),
+        ts: None,
+    });
+    store.process_message(FlogNetKind::Open {
+        id: 99,
+        url: Some("wss://host/ws".into()),
+        timing: Some(timing(200)),
+        ts: None,
+    });
+
+    let timing = store.get(0).unwrap().timing.as_ref().unwrap();
+    assert_eq!(timing.end_us, Some(200));
 }
 
 #[test]

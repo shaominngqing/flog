@@ -52,8 +52,64 @@ fn network_timing_deserializes_full_trace() {
         timing.phases[0].confidence,
         crate::domain::network_timing::TimingConfidence::Exact
     );
+    assert_eq!(timing.events[0].at_us, Some(62_000));
     assert_eq!(timing.events[1].gap_us, Some(42_000));
     assert_eq!(timing.notes, vec!["TLS boundary approximated by adapter"]);
+}
+
+#[test]
+fn network_timing_missing_metadata_uses_safe_defaults() {
+    let json = r#"{"startUs": 10, "endUs": 25}"#;
+
+    let timing: crate::domain::network_timing::NetworkTiming =
+        serde_json::from_str(json).expect("partial timing should deserialize");
+
+    assert_eq!(timing.version, 1);
+    assert_eq!(
+        timing.source,
+        crate::domain::network_timing::TimingSource::Unknown
+    );
+    assert_eq!(
+        timing.clock,
+        crate::domain::network_timing::TimingClock::Unknown
+    );
+    assert_eq!(timing.total_duration_us(), Some(15));
+}
+
+#[test]
+fn network_timing_unknown_enum_values_fall_back_to_unknown() {
+    let json = r#"{
+        "v": 1,
+        "source": "future_adapter",
+        "clock": "future_clock",
+        "phases": [
+            {
+                "name": "future",
+                "status": "future_status",
+                "confidence": "future_confidence"
+            }
+        ]
+    }"#;
+
+    let timing: crate::domain::network_timing::NetworkTiming =
+        serde_json::from_str(json).expect("unknown enum values should deserialize");
+
+    assert_eq!(
+        timing.source,
+        crate::domain::network_timing::TimingSource::Unknown
+    );
+    assert_eq!(
+        timing.clock,
+        crate::domain::network_timing::TimingClock::Unknown
+    );
+    assert_eq!(
+        timing.phases[0].status,
+        crate::domain::network_timing::TimingPhaseStatus::Unknown
+    );
+    assert_eq!(
+        timing.phases[0].confidence,
+        crate::domain::network_timing::TimingConfidence::Unknown
+    );
 }
 
 #[test]
@@ -100,9 +156,30 @@ fn flog_net_kind_chunk_accepts_event_timing() {
     match msg {
         FlogNetKind::Chunk { event_timing, .. } => {
             let event = event_timing.expect("event timing should be present");
-            assert_eq!(event.at_us, 1_259_000);
+            assert_eq!(event.at_us, Some(1_259_000));
             assert_eq!(event.gap_us, Some(812_000));
             assert_eq!(event.size, Some(208));
+        }
+        other => panic!("expected chunk, got {:?}", other),
+    }
+}
+
+#[test]
+fn flog_net_kind_chunk_accepts_event_timing_without_at_us() {
+    let json = r#"{
+        "t": "chunk",
+        "id": 2,
+        "data": "payload",
+        "eventTiming": {"name": "chunk"}
+    }"#;
+
+    let msg: FlogNetKind =
+        serde_json::from_str(json).expect("chunk with partial event timing should deserialize");
+    match msg {
+        FlogNetKind::Chunk { event_timing, .. } => {
+            let event = event_timing.expect("event timing should be present");
+            assert_eq!(event.name, "chunk");
+            assert_eq!(event.at_us, None);
         }
         other => panic!("expected chunk, got {:?}", other),
     }

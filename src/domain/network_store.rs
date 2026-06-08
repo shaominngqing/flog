@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use crate::domain::network::{
     FlogNetKind, NetworkEntry, NetworkStatus, Protocol, SseChunk, WsDirection, WsMessage,
 };
+use crate::domain::network_timing::{NetworkTiming, TimingEvent};
 
 // WHY 10_000: Flipper defaults its network plugin buffer to 5K. We
 // chose double that because a single LLM streaming session can burn
@@ -48,63 +49,65 @@ impl NetworkStore {
                 error,
                 mocked,
                 ts: _,
-                timing: _,
-            } => self.handle_res(id, status, duration, headers, body, size, error, mocked),
+                timing,
+            } => self.handle_res(
+                id, status, duration, headers, body, size, error, mocked, timing,
+            ),
             FlogNetKind::Err {
                 id,
                 error,
                 duration,
                 ts: _,
-                timing: _,
-            } => self.handle_err(id, error, duration),
+                timing,
+            } => self.handle_err(id, error, duration, timing),
             FlogNetKind::Chunk {
                 id,
                 data,
                 size,
                 seq: _,
                 ts: _,
-                event_timing: _,
-            } => self.handle_chunk(id, data, size),
+                event_timing,
+            } => self.handle_chunk(id, data, size, event_timing),
             FlogNetKind::Done {
                 id,
                 duration,
                 ts: _,
-                timing: _,
-            } => self.handle_done(id, duration),
+                timing,
+            } => self.handle_done(id, duration, timing),
             FlogNetKind::Open {
                 id,
                 url,
                 ts,
-                timing: _,
-            } => self.handle_open(id, url, ts),
+                timing,
+            } => self.handle_open(id, url, ts, timing),
             FlogNetKind::Connecting {
                 id,
                 url,
                 ts,
-                timing: _,
-            } => self.handle_connecting(id, url, ts),
+                timing,
+            } => self.handle_connecting(id, url, ts, timing),
             FlogNetKind::Send {
                 id,
                 data,
                 size,
                 ts: _,
-                event_timing: _,
-            } => self.handle_ws_msg(id, data, size, WsDirection::Send),
+                event_timing,
+            } => self.handle_ws_msg(id, data, size, WsDirection::Send, event_timing),
             FlogNetKind::Recv {
                 id,
                 data,
                 size,
                 ts: _,
-                event_timing: _,
-            } => self.handle_ws_msg(id, data, size, WsDirection::Recv),
+                event_timing,
+            } => self.handle_ws_msg(id, data, size, WsDirection::Recv, event_timing),
             FlogNetKind::Close {
                 id,
                 code,
                 reason,
                 duration,
                 ts: _,
-                timing: _,
-            } => self.handle_close(id, code, reason, duration),
+                timing,
+            } => self.handle_close(id, code, reason, duration, timing),
         }
     }
 
@@ -200,6 +203,7 @@ impl NetworkStore {
         size: Option<u64>,
         error: Option<String>,
         mocked: Option<bool>,
+        timing: Option<NetworkTiming>,
     ) {
         if let Some(entry) = self.find_by_id_mut(id) {
             entry.status = NetworkStatus::Completed;
@@ -209,6 +213,7 @@ impl NetworkStore {
             entry.http_status = status;
             entry.duration = duration;
             entry.error = error;
+            entry.timing = timing;
             if let Some(h) = headers {
                 entry.response_headers = Some(h.to_string());
             }
@@ -224,44 +229,61 @@ impl NetworkStore {
             // drop it silently. Surface as an Orphan entry so the user can see
             // that data was received without context.
             self.ensure_capacity();
-            let entry = NetworkEntry::new_orphan_response(id, status, body, duration);
+            let mut entry = NetworkEntry::new_orphan_response(id, status, body, duration);
+            entry.timing = timing;
             self.entries.push_back(entry);
         }
     }
 
-    fn handle_err(&mut self, id: u64, error: Option<String>, duration: Option<u64>) {
+    fn handle_err(
+        &mut self,
+        id: u64,
+        error: Option<String>,
+        duration: Option<u64>,
+        timing: Option<NetworkTiming>,
+    ) {
         if let Some(entry) = self.find_by_id_mut(id) {
             entry.status = NetworkStatus::Failed;
             entry.error = error;
             entry.duration = duration;
+            entry.timing = timing;
         }
     }
 
-    fn handle_chunk(&mut self, id: u64, data: Option<String>, size: Option<u64>) {
+    fn handle_chunk(
+        &mut self,
+        id: u64,
+        data: Option<String>,
+        size: Option<u64>,
+        event_timing: Option<TimingEvent>,
+    ) {
         if let Some(entry) = self.find_by_id_mut(id) {
             let data = data.unwrap_or_default();
             let chunk_size = size.unwrap_or(data.len() as u64);
             entry.sse_total_size += chunk_size;
-            // DOM-025: seq/size/ts are accepted on the wire but dropped at
-            // ingest — no UI consumer reads them.
-            entry.sse_chunks.push(SseChunk {
-                data,
-                event_timing: None,
-            });
+            entry.sse_chunks.push(SseChunk { data, event_timing });
         }
     }
 
-    fn handle_done(&mut self, id: u64, duration: Option<u64>) {
+    fn handle_done(&mut self, id: u64, duration: Option<u64>, timing: Option<NetworkTiming>) {
         if let Some(entry) = self.find_by_id_mut(id) {
             entry.status = NetworkStatus::Completed;
             entry.duration = duration;
+            entry.timing = timing;
         }
     }
 
-    fn handle_open(&mut self, id: u64, url: Option<String>, ts: Option<u64>) {
+    fn handle_open(
+        &mut self,
+        id: u64,
+        url: Option<String>,
+        ts: Option<u64>,
+        timing: Option<NetworkTiming>,
+    ) {
         if let Some(entry) = self.find_by_id_mut(id) {
             // Upgrade a Pending entry created by a prior `connecting` frame.
             entry.status = NetworkStatus::Active;
+            entry.timing = timing;
             if let Some(u) = url {
                 if !u.is_empty() {
                     entry.url = u;
@@ -279,11 +301,18 @@ impl NetworkStore {
             if let Some(t) = ts {
                 entry.timestamp = format_ts(t);
             }
+            entry.timing = timing;
             self.entries.push_back(entry);
         }
     }
 
-    fn handle_connecting(&mut self, id: u64, url: Option<String>, ts: Option<u64>) {
+    fn handle_connecting(
+        &mut self,
+        id: u64,
+        url: Option<String>,
+        ts: Option<u64>,
+        timing: Option<NetworkTiming>,
+    ) {
         self.ensure_capacity();
         let url = url.filter(|u| !u.is_empty()).unwrap_or_default();
         let mut entry = NetworkEntry::new_ws(id, url, String::new());
@@ -291,6 +320,7 @@ impl NetworkStore {
         if let Some(t) = ts {
             entry.timestamp = format_ts(t);
         }
+        entry.timing = timing;
         self.entries.push_back(entry);
     }
 
@@ -300,18 +330,17 @@ impl NetworkStore {
         data: Option<String>,
         size: Option<u64>,
         direction: WsDirection,
+        event_timing: Option<TimingEvent>,
     ) {
         if let Some(entry) = self.find_by_id_mut(id) {
             let data = data.unwrap_or_default();
             let msg_size = size.unwrap_or(data.len() as u64);
 
-            // DOM-025: per-message timestamp is accepted on the wire but
-            // not stored — no UI consumer reads it.
             entry.ws_messages.push(WsMessage {
                 direction,
                 data,
                 size: msg_size,
-                event_timing: None,
+                event_timing,
             });
         }
     }
@@ -322,12 +351,14 @@ impl NetworkStore {
         code: Option<u16>,
         reason: Option<String>,
         duration: Option<u64>,
+        timing: Option<NetworkTiming>,
     ) {
         if let Some(entry) = self.find_by_id_mut(id) {
             entry.status = NetworkStatus::Completed;
             entry.ws_close_code = code;
             entry.ws_close_reason = reason;
             entry.duration = duration;
+            entry.timing = timing;
         }
     }
 }

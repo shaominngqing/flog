@@ -92,7 +92,8 @@ impl TimingPhase {
 pub struct TimingEvent {
     #[serde(default = "default_event_name")]
     pub name: String,
-    pub at_us: u64,
+    #[serde(default)]
+    pub at_us: Option<u64>,
     #[serde(default)]
     pub gap_us: Option<u64>,
     #[serde(default)]
@@ -104,9 +105,11 @@ pub struct TimingEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkTiming {
-    #[serde(rename = "v")]
+    #[serde(default = "default_version", rename = "v")]
     pub version: u32,
+    #[serde(default = "default_source")]
     pub source: TimingSource,
+    #[serde(default = "default_clock")]
     pub clock: TimingClock,
     #[serde(default)]
     pub start_us: Option<u64>,
@@ -138,4 +141,16 @@ fn default_confidence() -> TimingConfidence {
 
 fn default_event_name() -> String {
     "event".to_string()
+}
+
+fn default_version() -> u32 {
+    1
+}
+
+fn default_source() -> TimingSource {
+    TimingSource::Unknown
+}
+
+fn default_clock() -> TimingClock {
+    TimingClock::Unknown
 }
