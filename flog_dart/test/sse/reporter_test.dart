@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flog_dart/src/flog_net.dart' show flogEnabled;
 import 'package:flog_dart/src/flog_server.dart' show FlogServer;
+import 'package:flog_dart/src/flog_store.dart';
 import 'package:flog_dart/src/sse/event.dart';
 import 'package:flog_dart/src/sse/reporter.dart';
+import 'package:flog_dart/src/timing/timing_clock.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A [FlogServer]-compatible sink that records every `send`d payload.
@@ -20,6 +22,18 @@ import 'package:flutter_test/flutter_test.dart';
 /// enabled, the reporter produces a new stream and drains events.
 
 void main() {
+  setUp(() {
+    FlogStore.instance.clear();
+  });
+
+  tearDownAll(() {
+    FlogStore.instance.clear();
+  });
+
+  List<Map<String, dynamic>> nets() => FlogStore.instance.snapshotForTesting
+      .where((record) => record['type'] == 'net')
+      .toList(growable: false);
+
   // Sanity: in test (non-product) mode, flogEnabled is true unless
   // `FLOG_ENABLED=false` is passed. We rely on that below.
   group('FlogSseReporter', () {
@@ -108,6 +122,35 @@ void main() {
       // attached clients in test env), but the reporter still ran its
       // microtask. This test's primary assertion is the drain order.
       expect(FlogServer.instance.connected, before);
+    });
+
+    test('6. chunks and done emit timing metadata', () async {
+      final clock = ManualTimingClock();
+      final controller = StreamController<SseEvent>(sync: true);
+      final out = controller.stream.transform(
+        FlogSseReporter(url: 'test://timing', clock: clock),
+      );
+
+      final seen = <SseEvent>[];
+      final done = out.listen((event) => seen.add(event));
+      await Future<void>.delayed(Duration.zero);
+
+      clock.advanceUs(100);
+      controller.add(const SseEvent(data: 'alpha'));
+      clock.advanceUs(50);
+      controller.add(const SseEvent(data: 'beta'));
+      clock.advanceUs(25);
+      await controller.close();
+      await done.asFuture<void>();
+
+      final chunks = nets().where((record) => record['t'] == 'chunk').toList();
+      final dones = nets().where((record) => record['t'] == 'done').toList();
+      expect(chunks, hasLength(2));
+      expect(chunks.first['eventTiming']['name'], 'chunk');
+      expect(chunks.first['eventTiming']['atUs'], 100);
+      expect(chunks[1]['eventTiming']['gapUs'], 50);
+      expect(dones.single['timing']['source'], 'sse_reporter');
+      expect(dones.single['timing']['endUs'], 175);
     });
   });
 }

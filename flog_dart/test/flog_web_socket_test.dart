@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'package:flog_dart/flog_dart.dart';
+import 'package:flog_dart/src/timing/timing_clock.dart';
 
 /// Fake WebSocketChannel backed by a pair of StreamControllers. Lets us
 /// drive the 'incoming' stream directly and assert on outgoing 'sink'
@@ -113,7 +114,8 @@ void main() {
       expect(opens.first['id'], isA<int>());
     });
 
-    test('fromChannel stream is broadcast — multiple listeners coexist '
+    test(
+        'fromChannel stream is broadcast — multiple listeners coexist '
         '(DART-006 fixed)', () async {
       final channel = _FakeChannel();
       final ws = FlogWebSocket.fromChannel(channel, url: 'wss://x/y');
@@ -128,7 +130,8 @@ void main() {
       await sub2.cancel();
     });
 
-    test('fromChannel forwards messages through stream and emits recv', () async {
+    test('fromChannel forwards messages through stream and emits recv',
+        () async {
       final channel = _FakeChannel();
       final ws = FlogWebSocket.fromChannel(channel, url: 'wss://x/y');
 
@@ -151,7 +154,8 @@ void main() {
       await sub.cancel();
     });
 
-    test('stream error produces an `err` net record and is re-thrown', () async {
+    test('stream error produces an `err` net record and is re-thrown',
+        () async {
       final channel = _FakeChannel();
       final ws = FlogWebSocket.fromChannel(channel, url: 'wss://x/y');
 
@@ -195,7 +199,35 @@ void main() {
       expect(sends.first['size'], 2);
     });
 
-    test('send(List<int>) emits the `<binary: N bytes>` magic string '
+    test('send and recv include eventTiming metadata', () async {
+      final clock = ManualTimingClock();
+      final channel = _FakeChannel();
+      final ws = FlogWebSocket.fromChannel(
+        channel,
+        url: 'wss://x/y',
+        clock: clock,
+      );
+      final received = <dynamic>[];
+      final sub = ws.stream.listen(received.add);
+      FlogStore.instance.clear();
+
+      clock.advanceUs(10);
+      ws.send('hi');
+      clock.advanceUs(15);
+      channel.push('yo');
+      await Future<void>.delayed(Duration.zero);
+
+      final send = _nets().firstWhere((record) => record['t'] == 'send');
+      final recv = _nets().firstWhere((record) => record['t'] == 'recv');
+      expect(send['eventTiming']['name'], 'send');
+      expect(send['eventTiming']['atUs'], 10);
+      expect(recv['eventTiming']['name'], 'recv');
+      expect(recv['eventTiming']['gapUs'], 15);
+      await sub.cancel();
+    });
+
+    test(
+        'send(List<int>) emits the `<binary: N bytes>` magic string '
         '(DART-019)', () async {
       final channel = _FakeChannel();
       final ws = FlogWebSocket.fromChannel(channel, url: 'wss://x/y');
@@ -228,6 +260,26 @@ void main() {
       expect(closes.first['duration'], isA<int>());
       expect(channel.closeCode, 1000);
       expect(channel.closeReason, 'bye');
+    });
+
+    test('close includes full timing trace', () async {
+      final clock = ManualTimingClock();
+      final channel = _FakeChannel();
+      final ws = FlogWebSocket.fromChannel(
+        channel,
+        url: 'wss://x/y',
+        clock: clock,
+      );
+      final sub = ws.stream.listen((_) {}, onError: (_) {});
+      FlogStore.instance.clear();
+
+      clock.advanceUs(250);
+      await ws.close().timeout(const Duration(seconds: 2));
+      await sub.cancel();
+
+      final close = _nets().firstWhere((record) => record['t'] == 'close');
+      expect(close['timing']['source'], 'ws_wrapper');
+      expect(close['timing']['endUs'], 250);
     });
 
     test('close without args emits close without code/reason keys', () async {

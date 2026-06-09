@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 
 import 'flog_net.dart' show flogEnabled, nextNetId, emitNet;
 import 'flog_mock_interceptor.dart' show kFlogMockedExtrasKey;
+import 'timing/timing_adapter.dart';
+import 'timing/timing_trace.dart';
 
 /// Predicate to decide whether a request should be logged.
 typedef FlogHttpFilter = bool Function(RequestOptions options);
@@ -204,6 +206,10 @@ class FlogHttpInterceptor extends Interceptor {
     if (mocked) {
       data['mocked'] = true;
     }
+    final timing = _timingJson(response.requestOptions);
+    if (timing != null) {
+      data['timing'] = timing;
+    }
     emitNet(data);
   }
 
@@ -215,8 +221,7 @@ class FlogHttpInterceptor extends Interceptor {
     }
 
     final id = err.requestOptions.extra.remove(_kIdExtraKey) as int?;
-    final startMs =
-        err.requestOptions.extra.remove(_kStartExtraKey) as int?;
+    final startMs = err.requestOptions.extra.remove(_kStartExtraKey) as int?;
 
     if (id == null) {
       handler.next(err);
@@ -251,6 +256,10 @@ class FlogHttpInterceptor extends Interceptor {
       if (includeResponseBody && response.data != null) {
         data['body'] = _truncate(_encodeBody(response.data));
       }
+      final timing = _timingJson(err.requestOptions);
+      if (timing != null) {
+        data['timing'] = timing;
+      }
 
       emitNet(data);
     } else {
@@ -264,6 +273,10 @@ class FlogHttpInterceptor extends Interceptor {
 
       if (duration != null) {
         data['duration'] = duration;
+      }
+      final timing = _timingJson(err.requestOptions);
+      if (timing != null) {
+        data['timing'] = timing;
       }
 
       emitNet(data);
@@ -301,5 +314,13 @@ class FlogHttpInterceptor extends Interceptor {
     }
     final head = utf8.decode(bytes.sublist(0, end), allowMalformed: true);
     return '$head... (truncated)';
+  }
+
+  Map<String, dynamic>? _timingJson(RequestOptions options) {
+    final trace = options.extra[kFlogTimingTraceExtraKey];
+    if (trace is FlogTimingTrace) {
+      return trace.toJson();
+    }
+    return null;
   }
 }

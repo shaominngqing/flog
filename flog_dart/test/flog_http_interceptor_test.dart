@@ -19,6 +19,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flog_dart/flog_dart.dart';
+import 'package:flog_dart/src/timing/timing_adapter.dart';
+import 'package:flog_dart/src/timing/timing_trace.dart';
 
 class _ReqHandler implements RequestInterceptorHandler {
   RequestOptions? passed;
@@ -169,7 +171,8 @@ void main() {
   // DART-008: _idMap/_startMap leak when downstream resolves early
   // ═══════════════════════════════════════════════════════════════
 
-  group('DART-008 id/start maps leak when response never reaches this '
+  group(
+      'DART-008 id/start maps leak when response never reaches this '
       'interceptor', () {
     test('onResponse with untracked options falls through without crash', () {
       final interceptor = FlogHttpInterceptor();
@@ -415,6 +418,33 @@ void main() {
       expect(rec['duration'], greaterThanOrEqualTo(0));
       // Non-mocked responses do not have mocked=true.
       expect(rec.containsKey('mocked'), isFalse);
+    });
+
+    test('normal response emits adapter timing when present', () {
+      final interceptor = FlogHttpInterceptor();
+      final opts = _opts('https://example.com/ok');
+      interceptor.onRequest(opts, _ReqHandler());
+      opts.extra[kFlogTimingTraceExtraKey] = const FlogTimingTrace(
+        source: 'flog_adapter',
+        startUs: 0,
+        endUs: 20,
+        phases: [],
+        events: [],
+        notes: [],
+      );
+
+      FlogStore.instance.clear();
+      final response = Response<dynamic>(
+        requestOptions: opts,
+        statusCode: 200,
+        data: 'ok',
+      );
+      interceptor.onResponse(response, _ResHandler());
+
+      final rec = _nets().single;
+      expect(rec['timing'], isA<Map<String, dynamic>>());
+      expect(rec['timing']['source'], 'flog_adapter');
+      expect(rec['timing']['endUs'], 20);
     });
   });
 }

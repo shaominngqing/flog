@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import '../flog_net.dart' show flogEnabled, nextNetId, emitNet;
+import '../timing/timing_clock.dart';
+import '../timing/timing_trace.dart';
 import 'event.dart';
 
 /// Telemetry tee for an SSE event stream. Emits flog_net protocol messages
@@ -28,7 +30,15 @@ class FlogSseReporter extends StreamTransformerBase<SseEvent, SseEvent> {
   /// The HTTP method (defaults to `GET`), recorded in the `req` frame.
   final String method;
 
-  const FlogSseReporter({required this.url, this.method = 'GET'});
+  /// Monotonic clock used for timing metadata. Tests pass a manual clock;
+  /// production defaults to [StopwatchTimingClock].
+  final FlogTimingClock? clock;
+
+  const FlogSseReporter({
+    required this.url,
+    this.method = 'GET',
+    this.clock,
+  });
 
   @override
   Stream<SseEvent> bind(Stream<SseEvent> stream) {
@@ -40,6 +50,10 @@ class FlogSseReporter extends StreamTransformerBase<SseEvent, SseEvent> {
     final controller = StreamController<SseEvent>(sync: false);
     final id = nextNetId();
     final start = DateTime.now();
+    final timingClock = clock ?? StopwatchTimingClock();
+    final startUs = timingClock.nowUs();
+    int? lastEventUs;
+    final events = <FlogTimingEvent>[];
     int seq = 0;
     late StreamSubscription<SseEvent> sub;
 
@@ -61,18 +75,52 @@ class FlogSseReporter extends StreamTransformerBase<SseEvent, SseEvent> {
     sub = stream.listen(
       (event) {
         seq++;
-        emit('chunk', {'data': event.data, 'seq': seq});
+        final nowUs = timingClock.nowUs();
+        final timingEvent = FlogTimingEvent(
+          name: 'chunk',
+          atUs: nowUs,
+          gapUs: lastEventUs == null ? null : nowUs - lastEventUs!,
+          size: event.data.length,
+        );
+        lastEventUs = nowUs;
+        events.add(timingEvent);
+        emit('chunk', {
+          'data': event.data,
+          'seq': seq,
+          'size': event.data.length,
+          'eventTiming': timingEvent.toJson(),
+        });
         controller.add(event);
       },
       onError: (Object e, StackTrace st) {
-        emit('err', {'error': e.toString()});
+        final endUs = timingClock.nowUs();
+        emit('err', {
+          'error': e.toString(),
+          'timing': FlogTimingTrace(
+            source: 'sse_reporter',
+            startUs: startUs,
+            endUs: endUs,
+            phases: const [],
+            events: events,
+            notes: const [],
+          ).toJson(),
+        });
         controller.addError(e, st);
       },
       onDone: () {
         final duration = DateTime.now().difference(start).inMilliseconds;
+        final endUs = timingClock.nowUs();
         emit('done', {
           'duration': duration,
           'chunks': seq,
+          'timing': FlogTimingTrace(
+            source: 'sse_reporter',
+            startUs: startUs,
+            endUs: endUs,
+            phases: const [],
+            events: events,
+            notes: const [],
+          ).toJson(),
         });
         controller.close();
       },

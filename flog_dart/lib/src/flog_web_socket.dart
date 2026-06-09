@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'flog_net.dart' show flogEnabled, nextNetId, emitNet;
+import 'timing/timing_clock.dart';
+import 'timing/timing_trace.dart';
 
 /// A WebSocket wrapper that emits flog_net protocol messages for all
 /// WebSocket traffic (open, send, receive, close).
@@ -23,6 +25,11 @@ class FlogWebSocket {
   /// When the connection was created.
   final DateTime _start;
 
+  final FlogTimingClock _clock;
+  final int _startUs;
+  final List<FlogTimingEvent> _events = <FlogTimingEvent>[];
+  int? _lastEventUs;
+
   /// Broadcast stream of incoming messages with flog_net instrumentation.
   late final Stream<dynamic> stream;
 
@@ -33,9 +40,14 @@ class FlogWebSocket {
   ///
   /// No `connecting` frame is emitted — the handshake is already complete at
   /// the call site. Only an `open` frame is emitted via [_initFromChannel].
-  FlogWebSocket.fromChannel(this._channel, {required String url})
-      : _id = nextNetId(),
-        _start = DateTime.now() {
+  FlogWebSocket.fromChannel(
+    this._channel, {
+    required String url,
+    FlogTimingClock? clock,
+  })  : _clock = clock ?? StopwatchTimingClock(),
+        _id = nextNetId(),
+        _start = DateTime.now(),
+        _startUs = (clock ?? StopwatchTimingClock()).nowUs() {
     _initFromChannel(url);
   }
 
@@ -48,10 +60,12 @@ class FlogWebSocket {
   static Future<FlogWebSocket> connect(
     Uri uri, {
     Iterable<String>? protocols,
+    FlogTimingClock? clock,
   }) {
     return _connectAndWrap(
       () async => WebSocketChannel.connect(uri, protocols: protocols),
       url: uri.toString(),
+      clock: clock,
     );
   }
 
@@ -77,8 +91,9 @@ class FlogWebSocket {
   static Future<FlogWebSocket> wrap(
     Future<WebSocketChannel> Function() connect, {
     required String url,
+    FlogTimingClock? clock,
   }) {
-    return _connectAndWrap(connect, url: url);
+    return _connectAndWrap(connect, url: url, clock: clock);
   }
 
   /// Shared implementation for [connect] and [wrap].
@@ -90,12 +105,27 @@ class FlogWebSocket {
   static Future<FlogWebSocket> _connectAndWrap(
     Future<WebSocketChannel> Function() connect, {
     required String url,
+    FlogTimingClock? clock,
   }) async {
     final id = nextNetId();
     final start = DateTime.now();
+    final timingClock = clock ?? StopwatchTimingClock();
+    final startUs = timingClock.nowUs();
 
     if (flogEnabled) {
-      emitNet({'id': id, 't': 'connecting', 'p': 'ws', 'url': url});
+      emitNet({
+        'id': id,
+        't': 'connecting',
+        'p': 'ws',
+        'url': url,
+        'timing': FlogTimingTrace(
+          source: 'ws_wrapper',
+          startUs: startUs,
+          phases: const [],
+          events: const [],
+          notes: const [],
+        ).toJson(),
+      });
     }
 
     WebSocketChannel channel;
@@ -111,12 +141,28 @@ class FlogWebSocket {
           'url': url,
           'error': e.toString(),
           'duration': DateTime.now().difference(start).inMilliseconds,
+          'timing': FlogTimingTrace(
+            source: 'ws_wrapper',
+            startUs: startUs,
+            endUs: timingClock.nowUs(),
+            phases: const [
+              FlogTimingPhase(name: 'handshake', status: 'errored'),
+            ],
+            events: const [],
+            notes: const [],
+          ).toJson(),
         });
       }
       rethrow;
     }
 
-    final ws = FlogWebSocket._fromConnected(channel, id: id, start: start);
+    final ws = FlogWebSocket._fromConnected(
+      channel,
+      id: id,
+      start: start,
+      clock: timingClock,
+      startUs: startUs,
+    );
     ws._initFromChannel(url);
     return ws;
   }
@@ -127,8 +173,12 @@ class FlogWebSocket {
     this._channel, {
     required int id,
     required DateTime start,
+    required FlogTimingClock clock,
+    required int startUs,
   })  : _id = id,
-        _start = start;
+        _start = start,
+        _clock = clock,
+        _startUs = startUs;
 
   /// Shared wiring used by every entry point: emit the `open` flog_net frame,
   /// then install a broadcast stream so callers who read the dartdoc can
@@ -141,6 +191,7 @@ class FlogWebSocket {
         't': 'open',
         'p': 'ws',
         'url': url,
+        'timing': _trace(_clock.nowUs()).toJson(),
       });
     }
 
@@ -155,6 +206,7 @@ class FlogWebSocket {
           'p': 'ws',
           'data': display,
           'size': size,
+          'eventTiming': _event('recv', size).toJson(),
         });
       }
 
@@ -166,6 +218,7 @@ class FlogWebSocket {
           't': 'err',
           'p': 'ws',
           'error': error.toString(),
+          'timing': _trace(_clock.nowUs()).toJson(),
         });
       }
       // Re-throw so downstream listeners see the error
@@ -186,6 +239,7 @@ class FlogWebSocket {
         'p': 'ws',
         'data': display,
         'size': size,
+        'eventTiming': _event('send', size).toJson(),
       });
     }
 
@@ -205,6 +259,7 @@ class FlogWebSocket {
         't': 'close',
         'p': 'ws',
         'duration': duration,
+        'timing': _trace(_clock.nowUs()).toJson(),
       };
 
       if (closeCode != null) {
@@ -223,6 +278,28 @@ class FlogWebSocket {
 
   /// The underlying sink, for advanced usage.
   WebSocketSink get sink => _channel.sink;
+
+  FlogTimingEvent _event(String name, int size) {
+    final nowUs = _clock.nowUs();
+    final event = FlogTimingEvent(
+      name: name,
+      atUs: nowUs,
+      gapUs: _lastEventUs == null ? null : nowUs - _lastEventUs!,
+      size: size,
+    );
+    _lastEventUs = nowUs;
+    _events.add(event);
+    return event;
+  }
+
+  FlogTimingTrace _trace(int endUs) => FlogTimingTrace(
+        source: 'ws_wrapper',
+        startUs: _startUs,
+        endUs: endUs,
+        phases: const [],
+        events: List<FlogTimingEvent>.unmodifiable(_events),
+        notes: const [],
+      );
 
   /// Prefix for the binary-message placeholder string emitted by
   /// [_formatMessage]. The TUI's WS Chat View detects binary frames by
