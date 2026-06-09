@@ -1,4 +1,8 @@
 //! Network detail Timing section renderers.
+//!
+//! File-size note: this module intentionally keeps the Timing section in one
+//! place while the feature lands because the protocol-specific renderers share
+//! the same section-map/json-map append contract. Split once it grows again.
 
 use std::collections::HashSet;
 
