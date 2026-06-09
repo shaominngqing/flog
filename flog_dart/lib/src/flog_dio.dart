@@ -5,6 +5,7 @@ import 'flog_http_interceptor.dart';
 import 'flog_mock_interceptor.dart';
 import 'flog_net.dart' show flogEnabled;
 import 'flog_dio_sse.dart';
+import 'timing/timing_adapter.dart';
 
 // Re-export so `package:flog_dart/src/flog_dio.dart` remains a stable
 // entry point for SseResponse.
@@ -87,6 +88,11 @@ class FlogDio implements Dio {
       // FlogServer.start() should have been called earlier in bootstrap.
       FlogServer.instance.registerDio(_inner);
 
+      _inner.httpClientAdapter = FlogTimingHttpClientAdapter.wrap(
+        _inner.httpClientAdapter,
+        source: 'flog_adapter',
+      );
+
       // Mock interceptor first — intercepts before real network.
       _inner.interceptors.insert(0, FlogMockInterceptor());
 
@@ -162,8 +168,13 @@ class FlogDio implements Dio {
   HttpClientAdapter get httpClientAdapter => _inner.httpClientAdapter;
 
   @override
-  set httpClientAdapter(HttpClientAdapter value) =>
+  set httpClientAdapter(HttpClientAdapter value) {
+    if (flogEnabled && value is! FlogTimingHttpClientAdapter) {
+      _inner.httpClientAdapter = FlogTimingHttpClientAdapter.wrap(value);
+    } else {
       _inner.httpClientAdapter = value;
+    }
+  }
 
   @override
   Transformer get transformer => _inner.transformer;
