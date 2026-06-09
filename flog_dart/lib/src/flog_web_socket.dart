@@ -40,15 +40,21 @@ class FlogWebSocket {
   ///
   /// No `connecting` frame is emitted — the handshake is already complete at
   /// the call site. Only an `open` frame is emitted via [_initFromChannel].
-  FlogWebSocket.fromChannel(
-    this._channel, {
+  factory FlogWebSocket.fromChannel(
+    WebSocketChannel channel, {
     required String url,
     FlogTimingClock? clock,
-  })  : _clock = clock ?? StopwatchTimingClock(),
-        _id = nextNetId(),
-        _start = DateTime.now(),
-        _startUs = (clock ?? StopwatchTimingClock()).nowUs() {
-    _initFromChannel(url);
+  }) {
+    final timingClock = clock ?? StopwatchTimingClock();
+    final ws = FlogWebSocket._fromConnected(
+      channel,
+      id: nextNetId(),
+      start: DateTime.now(),
+      clock: timingClock,
+      startUs: timingClock.nowUs(),
+    );
+    ws._initFromChannel(url);
+    return ws;
   }
 
   /// Establishes a WebSocket connection and registers it with the flog network
