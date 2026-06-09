@@ -5,6 +5,7 @@ mod general;
 mod http_body;
 mod shared;
 mod sse;
+mod timing;
 mod ws;
 
 use ratatui::{
@@ -152,6 +153,17 @@ pub fn draw_network_detail(f: &mut Frame, app: &mut App, area: Rect) {
 
     // ── General ──
     general::render_general(
+        &mut all_lines,
+        &mut section_line_map,
+        &mut json_click_map,
+        &mut json_section_keys,
+        &entry,
+        &app.network.collapsed_sections,
+        inner_w,
+    );
+
+    // ── Timing ──
+    timing::render_timing(
         &mut all_lines,
         &mut section_line_map,
         &mut json_click_map,

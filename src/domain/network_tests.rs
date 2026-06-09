@@ -174,10 +174,7 @@ fn flog_net_kind_res_drops_malformed_timing_without_dropping_frame() {
         serde_json::from_str(json).expect("malformed timing should not drop response");
     match msg {
         FlogNetKind::Res {
-            id,
-            status,
-            timing,
-            ..
+            id, status, timing, ..
         } => {
             assert_eq!(id, 42);
             assert_eq!(status, Some(200));
