@@ -207,7 +207,8 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
 - **Key types:** `Protocol { Http | Sse | Ws }`,
   `NetworkStatus { Pending | Active | Completed | Failed | Orphan }`,
   `WsDirection { Send | Recv }`, `EntrySource { App | Replay | Mocked }`,
-  `SseChunk { data }`, `WsMessage { direction, data, size }`,
+  `SseChunk { data, event_timing }`,
+  `WsMessage { direction, data, size, event_timing }`,
   `NetworkEntry` (21-field record), `NetworkEntryBuilder`,
   `FlogNetKind { Req | Res | Err | Chunk | Done | Open | Send | Recv | Close }`
   (serde `#[serde(tag = "t", rename_all = "lowercase")]`).
@@ -215,6 +216,20 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
   `new_ws`, `new_orphan_response`, `display_size`; `FlogNetKind::id`.
 - **Tests:** `network_tests.rs` — wire-format deserialization + id-dispatch.
 - **Audit:** DOM-002, DOM-003, DOM-006, DOM-024, DOM-025.
+
+### `src/domain/network_timing.rs`
+
+- **Purpose:** pure, UI-agnostic timing metadata for HTTP / SSE / WS
+  network details. Mirrors optional timing fields sent by flog_dart.
+- **Key types:** `NetworkTiming`, `TimingConnection`, `TimingPhase`,
+  `TimingEvent`, `TimingSource`, `TimingClock`, `TimingPhaseStatus`,
+  `TimingConfidence`.
+- **Key functions:** `NetworkTiming::total_duration_us`,
+  `TimingPhase::duration_us`.
+- **Compatibility:** malformed optional timing metadata is dropped without
+  dropping the parent `FlogNetKind` frame.
+- **Tests:** `network_tests.rs` — full trace deserialize, unknown/default
+  metadata, malformed timing tolerance, duration saturation.
 
 ### `src/domain/network_store.rs` (+ `network_store_tests.rs`)
 
@@ -226,7 +241,7 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
 - **Handlers:** `handle_req`, `handle_res`, `handle_err`, `handle_chunk`,
   `handle_done`, `handle_open`, `handle_ws_msg`, `handle_close`.
 - **Tests:** `network_store_tests.rs` — every transition + orphan +
-  Mocked / Replay source propagation.
+  Mocked / Replay source propagation + timing ingestion.
 - **Audit:** DOM-003 (orphan handling).
 
 ### `src/domain/network_filter.rs` (+ `network_filter_tests.rs`)
@@ -648,8 +663,18 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
 ### `src/ui/network/detail/mod.rs`
 
 - **Purpose:** Flipper-style detail with collapsible sections.
-- **Submodules:** `general`, `shared`, `http_body`, `sse` (events /
-  Merged modes + field picker), `ws` (Chat / Raw modes), `error`.
+- **Submodules:** `general`, `shared`, `http_body`, `timing`, `sse`
+  (events / Merged modes + field picker), `ws` (Chat / Raw modes),
+  `error`.
+
+### `src/ui/network/detail/timing.rs`
+
+- **Purpose:** protocol-specific Timing detail section for HTTP phases,
+  SSE event gaps, and WS message idle gaps.
+- **Key functions:** `render_timing`, plus pure helpers `format_us`,
+  `bottleneck_phase`, `bar_cells`.
+- **Tests:** in-source helper tests for formatting, bottleneck selection,
+  and waterfall bar sizing.
 
 ### `src/ui/network/mock_rules.rs`
 
@@ -800,6 +825,9 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
   `FlogHttpConfig`; `SseResponse`.
 - **Convenience:** `sse(path, {method, data, headers})` returns
   `SseResponse` with a `Stream<String>` of parsed events.
+- **Timing:** wraps the active `HttpClientAdapter` with
+  `FlogTimingHttpClientAdapter` when flog is enabled; custom adapters set
+  later are wrapped too.
 - **Audit:** DART-010.
 
 ### `flog_dart/lib/src/flog_dio_sse.dart`
@@ -813,6 +841,8 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
   HTTP request. Must be inserted before response-modifying business
   interceptors.
 - **Key class:** `FlogHttpInterceptor`.
+- **Timing:** attaches adapter traces from `RequestOptions.extra` to
+  `res` / `err` frames.
 - **Audit:** DART-007, DART-008, DART-027.
 
 ### `flog_dart/lib/src/flog_mock_interceptor.dart`
@@ -833,6 +863,20 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
 - **Key static:** `FlogSseParser.wrapTyped(stream, {url, method, requestId, requestHeaders})`.
 - **Audit:** DART-001, DART-002 (parser rewrite).
 
+### `flog_dart/lib/src/timing/`
+
+- **Purpose:** shared Dart timing model and collectors.
+- **Files:**
+  - `timing_trace.dart` — `FlogTimingTrace`, phases, events,
+    connection metadata, JSON conversion.
+  - `timing_clock.dart` — `FlogTimingClock`, `StopwatchTimingClock`,
+    `ManualTimingClock` for tests.
+  - `timing_stream.dart` — `TimingStreamRecorder` for first byte,
+    chunks, byte totals, gaps, completion, and stream errors.
+  - `timing_adapter.dart` — `FlogTimingHttpClientAdapter` wrapper and
+    `kFlogTimingTraceExtraKey`.
+- **Tests:** `test/timing/*`.
+
 ### `flog_dart/lib/src/flog_web_socket.dart`
 
 - **Purpose:** WebSocket wrapper that streams outbound `send`s and
@@ -840,6 +884,8 @@ bottom-up: `transport/` → `input/` → `domain/` → `parser/` → `app/` →
 - **Key class:** `FlogWebSocket`.
 - **Key methods:** `FlogWebSocket(uri)`, `FlogWebSocket.fromChannel(ch)`,
   `send`, `close`, `stream` (broadcast).
+- **Timing:** emits full connection timing on `connecting` / `open` /
+  `close` / `err` and per-message `eventTiming` on `send` / `recv`.
 - **Audit:** DART-006, DART-018, DART-019.
 
 ### `flog_dart/test/`

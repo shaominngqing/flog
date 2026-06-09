@@ -221,6 +221,12 @@ the unused wire fields per DOM-025 (see [ARCHITECTURE.md §6](ARCHITECTURE.md)).
 | `Recv`  | `"recv"` | WS inbound message   | `direction = Recv`.       |
 | `Close` | `"close"` | WS close            | Carries close code + reason. |
 
+Timing metadata is additive. `Res` / `Err` / `Done` / `Open` /
+`Connecting` / `Close` may include a full `timing` object; `Chunk` /
+`Send` / `Recv` may include `eventTiming`. Rust treats both as optional
+metadata: malformed timing is dropped without dropping the parent network
+frame.
+
 ### 4.1 `req` — request start
 
 ```json
@@ -244,20 +250,68 @@ than being dropped. Audit trail: DOM-003.
 
 ```json
 {"type":"net","t":"err","id":1,"error":"SocketException","duration":30000}
-{"type":"net","t":"chunk","id":2,"data":"{\"delta\":\"Hel\"}","size":15,"seq":1,"ts":1700000001000}
-{"type":"net","t":"done","id":2,"duration":5000,"ts":1700000006000}
-{"type":"net","t":"open","id":3,"url":"wss://example.com/ws","ts":1700000000000}
-{"type":"net","t":"send","id":3,"data":"{\"type\":\"ping\"}","size":14,"ts":1700000001000}
-{"type":"net","t":"recv","id":3,"data":"{\"type\":\"pong\"}","size":14,"ts":1700000001050}
-{"type":"net","t":"close","id":3,"code":1000,"reason":"normal closure","duration":60000}
+{"type":"net","t":"chunk","id":2,"data":"{\"delta\":\"Hel\"}","size":15,"seq":1,"eventTiming":{"name":"chunk","atUs":100000,"size":15},"ts":1700000001000}
+{"type":"net","t":"done","id":2,"duration":5000,"timing":{"v":1,"source":"sse_reporter","clock":"monotonic_us","startUs":0,"endUs":5000000,"phases":[],"events":[],"notes":[]},"ts":1700000006000}
+{"type":"net","t":"open","id":3,"url":"wss://example.com/ws","timing":{"v":1,"source":"ws_wrapper","clock":"monotonic_us","startUs":0,"endUs":12000,"phases":[],"events":[],"notes":[]},"ts":1700000000000}
+{"type":"net","t":"send","id":3,"data":"{\"type\":\"ping\"}","size":14,"eventTiming":{"name":"send","atUs":1000000,"size":14},"ts":1700000001000}
+{"type":"net","t":"recv","id":3,"data":"{\"type\":\"pong\"}","size":14,"eventTiming":{"name":"recv","atUs":1050000,"gapUs":50000,"size":14},"ts":1700000001050}
+{"type":"net","t":"close","id":3,"code":1000,"reason":"normal closure","duration":60000,"timing":{"v":1,"source":"ws_wrapper","clock":"monotonic_us","startUs":0,"endUs":60000000,"phases":[],"events":[],"notes":[]}}
 ```
 
 Notes:
 
-- `chunk.seq` and `chunk.size` are dropped at ingest (DOM-025) — only
-  `data` is stored.
+- `chunk.seq` is dropped at ingest (DOM-025). `chunk.size` contributes
+  to stream byte totals; `eventTiming` is stored for the Timing detail
+  section.
 - Binary WS frames are forwarded as `"<binary: N bytes>"` strings by
   `flog_dart/lib/src/flog_web_socket.dart`; Rust treats them as text.
+
+### 4.4 Timing metadata
+
+Full trace shape:
+
+```json
+{
+  "v": 1,
+  "source": "flog_adapter",
+  "clock": "monotonic_us",
+  "startUs": 0,
+  "endUs": 126000,
+  "connection": {
+    "id": "https://api.example.com:443#3",
+    "reused": false,
+    "protocol": "http/1.1"
+  },
+  "phases": [
+    {
+      "name": "ttfb",
+      "startUs": 62000,
+      "endUs": 104000,
+      "status": "complete",
+      "confidence": "exact",
+      "detail": "headers to first byte"
+    }
+  ],
+  "events": [
+    {"name": "first_byte", "atUs": 104000, "gapUs": 42000, "size": 1}
+  ],
+  "notes": ["TLS boundary approximated by adapter"]
+}
+```
+
+Event timing shape:
+
+```json
+{"name":"recv","atUs":1050000,"gapUs":50000,"size":14,"detail":"optional"}
+```
+
+Fields use monotonic microseconds, not wall-clock time. Known
+`source` values today are `flog_adapter`, `custom_adapter`,
+`sse_reporter`, and `ws_wrapper`; Rust accepts unknown values as
+`Unknown`. Known phase `status` values are `complete`, `active`,
+`unavailable`, `reused`, `skipped`, `cancelled`, and `errored`.
+Known `confidence` values are `exact`, `approx`, `inferred`, and
+`unavailable`.
   Audit trail: DART-019.
 
 ## 5. ClientInfo (Rust-side, derived from Hello)
