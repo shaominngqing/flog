@@ -3,6 +3,15 @@
 All notable changes to `flog_dart`. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 0.9.2 — 2026-06-10
+
+### Fixed
+
+- Avoid restarting the embedded WebSocket server on macOS focus changes while
+  keeping suspend/resume recovery after a real paused lifecycle state.
+
+---
+
 ## 0.9.1 — 2026-06-03
 
 ### Fixed
