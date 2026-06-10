@@ -13,7 +13,9 @@ use crate::domain::network::NetworkEntry;
 use crate::domain::sse_merge;
 use crate::ui::json_viewer::JsonHotRegion;
 
-use super::super::super::{wrap_text, MANTLE, OVERLAY0, RED, SAPPHIRE, SUBTEXT0, SURFACE0, TEXT};
+use super::super::super::{
+    safe_truncate, wrap_text, MANTLE, OVERLAY0, RED, SAPPHIRE, SUBTEXT0, SURFACE0, TEXT,
+};
 use super::shared::{path_without_query, push_section_header, render_json_section};
 
 /// Render the SSE Events section (both Events mode and Merged mode) for an
@@ -261,11 +263,7 @@ fn render_events_mode(
                 Span::styled(prefix_text, Style::default().fg(OVERLAY0)),
                 Span::styled(
                     if chunk_collapsed {
-                        if chunk.data.len() > preview_w {
-                            format!("{}...", &chunk.data[..preview_w.saturating_sub(3)])
-                        } else {
-                            chunk.data.clone()
-                        }
+                        safe_truncate(&chunk.data, preview_w)
                     } else {
                         String::new()
                     },

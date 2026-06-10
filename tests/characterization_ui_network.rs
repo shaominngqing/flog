@@ -794,6 +794,22 @@ fn detail_sse_events_mode_shows_merged_pill() {
 }
 
 #[test]
+fn detail_sse_events_mode_truncates_multibyte_preview_without_panic() {
+    let mut app = app_connected();
+    let mut e = fixtures::sse_entry(1, "/stream");
+    e.sse_chunks = vec![fixtures::sse_chunk(
+        0,
+        r#"{"delta":{"content":"你好🙂你好🙂你好🙂"}}"#,
+    )];
+    seed_network(&mut app, vec![e]);
+
+    let buf = render_detail(&mut app, 36, 20);
+    let text = full_text(&buf);
+    assert!(text.contains("#0"), "expected SSE chunk header: {text}");
+    assert!(text.contains("..."), "expected truncated preview: {text}");
+}
+
+#[test]
 fn detail_sse_merged_mode_shows_concatenated() {
     let mut app = app_connected();
     seed_network(&mut app, vec![sse_with_chunks(1, "/stream")]);
