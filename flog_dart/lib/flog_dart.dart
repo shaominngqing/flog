@@ -14,6 +14,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'src/flog_server.dart';
 import 'src/flog_net.dart' show flogEnabled;
+import 'src/lifecycle_restart_policy.dart';
 
 export 'src/flog_server.dart' show FlogServer;
 export 'src/flog_store.dart' show FlogStore;
@@ -77,6 +78,8 @@ class _FlogLifecycleRestarter with WidgetsBindingObserver {
 
   bool _installed = false;
   int _port = 9753;
+  final FlogLifecycleRestartPolicy _restartPolicy =
+      FlogLifecycleRestartPolicy();
 
   void install({required int port}) {
     _port = port;
@@ -93,7 +96,7 @@ class _FlogLifecycleRestarter with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
+    if (!_restartPolicy.shouldRestart(state)) return;
     unawaited(FlogServer.instance.restart(port: _port));
   }
 }
