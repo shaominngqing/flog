@@ -3,7 +3,16 @@
 All notable changes to `flog_dart`. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## 0.9.2 — 2026-06-10
+## 0.10.0 — 2026-06-11
+
+### Added
+
+- Capture HTTP response timing metadata for `FlogDio`, including request-to-headers,
+  response-body download, first-byte, chunk, and completion events.
+- Capture SSE stream timing metadata with first-chunk, receive-window, per-chunk gap,
+  and byte-size data.
+- Capture WebSocket lifecycle timing metadata with handshake, active connection,
+  send/receive event offsets, idle gaps, and byte sizes.
 
 ### Fixed
 

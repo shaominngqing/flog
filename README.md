@@ -233,7 +233,7 @@ flog 能识别任何 Flutter 日志输出。搭配 [flog_dart](https://pub.dev/p
 ```bash
 # pubspec.yaml
 dependencies:
-  flog_dart: ^0.8.0
+  flog_dart: ^0.10.0
 ```
 
 ### 初始化
@@ -401,7 +401,7 @@ flog devices     # 列出发现的设备和 flog_dart App
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — flog ↔ flog_dart 线协议规范。
 - [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — 审计分类 / 测试规约 / commit 约定。
 
-当前版本 **0.7.0** —— 新增渐进式 `flog ai` 检查命令和
+当前版本 **0.8.0** —— 新增 Network Timing 采集和终端时间线，并保留渐进式 `flog ai` 检查命令和
 `flog install-skill` 项目级 AI 使用说明，覆盖 Codex、Claude Code、Cursor，
 同时保持 AI 输出默认精简和脱敏。完整审计线索见 `docs/superpowers/`。
 

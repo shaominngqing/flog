@@ -180,7 +180,7 @@ flog recognises any Flutter log output; pair it with [flog_dart](https://pub.dev
 ```yaml
 # pubspec.yaml
 dependencies:
-  flog_dart: ^0.8.0
+  flog_dart: ^0.10.0
 ```
 
 ### Bootstrap
@@ -346,7 +346,7 @@ once it finds a connectable `flog_dart` app.
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — wire protocol spec.
 - [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — audit taxonomy, testing rules, commit format.
 
-Current version (**0.7.0**) — adds progressive `flog ai` inspection commands
+Current version (**0.8.0**) — adds Network Timing collection and terminal timelines, plus progressive `flog ai` inspection commands
 and `flog install-skill` project guidance for Codex, Claude Code, and Cursor,
 while keeping AI output compact and redacted by default. See
 `docs/superpowers/` for the campaign audit trail.
