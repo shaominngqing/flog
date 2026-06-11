@@ -129,8 +129,7 @@ Future<SseResponse> flogSse(
   // listener will succeed; the second will throw
   // `StateError: Stream has already been listened to.` — the documented
   // contract per the v0.8 migration note.
-  final dataStream =
-      events.where((e) => e.data != '[DONE]').map((e) => e.data);
+  final dataStream = events.where((e) => e.data != '[DONE]').map((e) => e.data);
 
   return SseResponse(
     headers: response.headers,

@@ -121,8 +121,6 @@ pub struct NetworkTiming {
     pub phases: Vec<TimingPhase>,
     #[serde(default)]
     pub events: Vec<TimingEvent>,
-    #[serde(default)]
-    pub notes: Vec<String>,
 }
 
 impl NetworkTiming {

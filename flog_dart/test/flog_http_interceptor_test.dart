@@ -430,7 +430,6 @@ void main() {
         endUs: 20,
         phases: [],
         events: [],
-        notes: [],
       );
 
       FlogStore.instance.clear();

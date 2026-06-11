@@ -124,7 +124,6 @@ fn timing(end_us: u64) -> NetworkTiming {
         connection: None,
         phases: Vec::new(),
         events: Vec::new(),
-        notes: Vec::new(),
     }
 }
 

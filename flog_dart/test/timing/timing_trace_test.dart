@@ -32,7 +32,6 @@ void main() {
             size: 1,
           ),
         ],
-        notes: const ['TLS boundary approximated by adapter'],
       );
 
       final json = trace.toJson();
@@ -44,7 +43,6 @@ void main() {
       expect(json['connection']['id'], 'https://api.example.com:443#3');
       expect(json['phases'][0]['name'], 'ttfb');
       expect(json['events'][0]['gapUs'], 42000);
-      expect(json['notes'], ['TLS boundary approximated by adapter']);
     });
 
     test('durationUs is null until endUs is present', () {
@@ -55,7 +53,6 @@ void main() {
         startUs: 10,
         phases: const [],
         events: const [],
-        notes: const [],
       );
 
       expect(trace.durationUs, isNull);

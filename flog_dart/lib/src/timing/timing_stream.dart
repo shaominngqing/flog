@@ -10,10 +10,13 @@ class TimingStreamRecorder {
   int? _lastUs;
   int _totalBytes = 0;
   bool _sawFirstByte = false;
+  int? _firstByteUs;
 
   TimingStreamRecorder({required this.clock});
 
   int get totalBytes => _totalBytes;
+
+  int? get firstByteUs => _firstByteUs;
 
   Stream<Uint8List> wrap(Stream<Uint8List> input) {
     late StreamController<Uint8List> controller;
@@ -34,6 +37,7 @@ class TimingStreamRecorder {
               size: chunk.length,
             ));
             _sawFirstByte = true;
+            _firstByteUs ??= now;
             controller.add(chunk);
           },
           onError: (Object error, StackTrace stackTrace) {

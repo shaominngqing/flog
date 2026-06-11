@@ -27,6 +27,8 @@ class FlogWebSocket {
 
   final FlogTimingClock _clock;
   final int _startUs;
+  final int _connectUs;
+  final int _openUs;
   final List<FlogTimingEvent> _events = <FlogTimingEvent>[];
   int? _lastEventUs;
 
@@ -46,12 +48,15 @@ class FlogWebSocket {
     FlogTimingClock? clock,
   }) {
     final timingClock = clock ?? StopwatchTimingClock();
+    final nowUs = timingClock.nowUs();
     final ws = FlogWebSocket._fromConnected(
       channel,
       id: nextNetId(),
       start: DateTime.now(),
       clock: timingClock,
-      startUs: timingClock.nowUs(),
+      startUs: nowUs,
+      connectUs: nowUs,
+      openUs: nowUs,
     );
     ws._initFromChannel(url);
     return ws;
@@ -117,6 +122,7 @@ class FlogWebSocket {
     final start = DateTime.now();
     final timingClock = clock ?? StopwatchTimingClock();
     final startUs = timingClock.nowUs();
+    int? readyUs;
 
     if (flogEnabled) {
       emitNet({
@@ -127,9 +133,14 @@ class FlogWebSocket {
         'timing': FlogTimingTrace(
           source: 'ws_wrapper',
           startUs: startUs,
-          phases: const [],
+          phases: const [
+            FlogTimingPhase(
+              name: 'handshake',
+              status: 'active',
+              detail: 'websocket connect + ready',
+            ),
+          ],
           events: const [],
-          notes: const [],
         ).toJson(),
       });
     }
@@ -138,7 +149,9 @@ class FlogWebSocket {
     try {
       channel = await connect();
       await channel.ready;
+      readyUs = timingClock.nowUs();
     } catch (e) {
+      final errorUs = timingClock.nowUs();
       if (flogEnabled) {
         emitNet({
           'id': id,
@@ -150,24 +163,32 @@ class FlogWebSocket {
           'timing': FlogTimingTrace(
             source: 'ws_wrapper',
             startUs: startUs,
-            endUs: timingClock.nowUs(),
-            phases: const [
-              FlogTimingPhase(name: 'handshake', status: 'errored'),
+            endUs: errorUs,
+            phases: <FlogTimingPhase>[
+              FlogTimingPhase(
+                name: 'handshake',
+                startUs: startUs,
+                endUs: errorUs,
+                status: 'errored',
+                detail: 'websocket connect + ready failed',
+              ),
             ],
             events: const [],
-            notes: const [],
           ).toJson(),
         });
       }
       rethrow;
     }
 
+    final openUs = readyUs;
     final ws = FlogWebSocket._fromConnected(
       channel,
       id: id,
       start: start,
       clock: timingClock,
       startUs: startUs,
+      connectUs: openUs,
+      openUs: openUs,
     );
     ws._initFromChannel(url);
     return ws;
@@ -181,10 +202,14 @@ class FlogWebSocket {
     required DateTime start,
     required FlogTimingClock clock,
     required int startUs,
+    required int connectUs,
+    required int openUs,
   })  : _id = id,
         _start = start,
         _clock = clock,
-        _startUs = startUs;
+        _startUs = startUs,
+        _connectUs = connectUs,
+        _openUs = openUs;
 
   /// Shared wiring used by every entry point: emit the `open` flog_net frame,
   /// then install a broadcast stream so callers who read the dartdoc can
@@ -197,7 +222,12 @@ class FlogWebSocket {
         't': 'open',
         'p': 'ws',
         'url': url,
-        'timing': _trace(_clock.nowUs()).toJson(),
+        'timing': _trace(
+          _clock.nowUs(),
+          includeActive: true,
+          activeStatus: 'active',
+          activeEndUs: null,
+        ).toJson(),
       });
     }
 
@@ -259,13 +289,19 @@ class FlogWebSocket {
   Future<void> close([int? closeCode, String? closeReason]) async {
     if (flogEnabled) {
       final duration = DateTime.now().difference(_start).inMilliseconds;
+      final nowUs = _clock.nowUs();
 
       final data = <String, dynamic>{
         'id': _id,
         't': 'close',
         'p': 'ws',
         'duration': duration,
-        'timing': _trace(_clock.nowUs()).toJson(),
+        'timing': _trace(
+          nowUs,
+          includeActive: true,
+          activeStatus: 'complete',
+          activeEndUs: nowUs,
+        ).toJson(),
       };
 
       if (closeCode != null) {
@@ -298,14 +334,41 @@ class FlogWebSocket {
     return event;
   }
 
-  FlogTimingTrace _trace(int endUs) => FlogTimingTrace(
-        source: 'ws_wrapper',
+  FlogTimingTrace _trace(
+    int endUs, {
+    bool includeActive = false,
+    String? activeStatus,
+    int? activeEndUs,
+  }) {
+    final phases = <FlogTimingPhase>[
+      FlogTimingPhase(
+        name: 'handshake',
         startUs: _startUs,
-        endUs: endUs,
-        phases: const [],
-        events: List<FlogTimingEvent>.unmodifiable(_events),
-        notes: const [],
+        endUs: _connectUs,
+        detail: 'websocket connect + ready',
+      ),
+    ];
+
+    if (includeActive) {
+      phases.add(
+        FlogTimingPhase(
+          name: 'active',
+          startUs: _openUs,
+          endUs: activeEndUs,
+          status: activeStatus ?? 'active',
+          detail: 'socket open period',
+        ),
       );
+    }
+
+    return FlogTimingTrace(
+      source: 'ws_wrapper',
+      startUs: _startUs,
+      endUs: endUs,
+      phases: phases,
+      events: List<FlogTimingEvent>.unmodifiable(_events),
+    );
+  }
 
   /// Prefix for the binary-message placeholder string emitted by
   /// [_formatMessage]. The TUI's WS Chat View detects binary frames by

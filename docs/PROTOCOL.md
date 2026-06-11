@@ -251,11 +251,11 @@ than being dropped. Audit trail: DOM-003.
 ```json
 {"type":"net","t":"err","id":1,"error":"SocketException","duration":30000}
 {"type":"net","t":"chunk","id":2,"data":"{\"delta\":\"Hel\"}","size":15,"seq":1,"eventTiming":{"name":"chunk","atUs":100000,"size":15},"ts":1700000001000}
-{"type":"net","t":"done","id":2,"duration":5000,"timing":{"v":1,"source":"sse_reporter","clock":"monotonic_us","startUs":0,"endUs":5000000,"phases":[],"events":[],"notes":[]},"ts":1700000006000}
-{"type":"net","t":"open","id":3,"url":"wss://example.com/ws","timing":{"v":1,"source":"ws_wrapper","clock":"monotonic_us","startUs":0,"endUs":12000,"phases":[],"events":[],"notes":[]},"ts":1700000000000}
+{"type":"net","t":"done","id":2,"duration":5000,"timing":{"v":1,"source":"sse_reporter","clock":"monotonic_us","startUs":0,"endUs":5000000,"phases":[],"events":[]},"ts":1700000006000}
+{"type":"net","t":"open","id":3,"url":"wss://example.com/ws","timing":{"v":1,"source":"ws_wrapper","clock":"monotonic_us","startUs":0,"endUs":12000,"phases":[],"events":[]},"ts":1700000000000}
 {"type":"net","t":"send","id":3,"data":"{\"type\":\"ping\"}","size":14,"eventTiming":{"name":"send","atUs":1000000,"size":14},"ts":1700000001000}
 {"type":"net","t":"recv","id":3,"data":"{\"type\":\"pong\"}","size":14,"eventTiming":{"name":"recv","atUs":1050000,"gapUs":50000,"size":14},"ts":1700000001050}
-{"type":"net","t":"close","id":3,"code":1000,"reason":"normal closure","duration":60000,"timing":{"v":1,"source":"ws_wrapper","clock":"monotonic_us","startUs":0,"endUs":60000000,"phases":[],"events":[],"notes":[]}}
+{"type":"net","t":"close","id":3,"code":1000,"reason":"normal closure","duration":60000,"timing":{"v":1,"source":"ws_wrapper","clock":"monotonic_us","startUs":0,"endUs":60000000,"phases":[],"events":[]}}
 ```
 
 Notes:
@@ -294,8 +294,7 @@ Full trace shape:
   ],
   "events": [
     {"name": "first_byte", "atUs": 104000, "gapUs": 42000, "size": 1}
-  ],
-  "notes": ["TLS boundary approximated by adapter"]
+  ]
 }
 ```
 

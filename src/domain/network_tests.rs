@@ -26,8 +26,7 @@ fn network_timing_deserializes_full_trace() {
         "events": [
             {"name": "headers", "atUs": 62000},
             {"name": "first_byte", "atUs": 104000, "gapUs": 42000, "size": 1}
-        ],
-        "notes": ["TLS boundary approximated by adapter"]
+        ]
     }"#;
 
     let timing: crate::domain::network_timing::NetworkTiming =
@@ -54,7 +53,6 @@ fn network_timing_deserializes_full_trace() {
     );
     assert_eq!(timing.events[0].at_us, Some(62_000));
     assert_eq!(timing.events[1].gap_us, Some(42_000));
-    assert_eq!(timing.notes, vec!["TLS boundary approximated by adapter"]);
 }
 
 #[test]
@@ -143,8 +141,7 @@ fn flog_net_kind_res_accepts_optional_timing() {
             "startUs": 0,
             "endUs": 126000,
             "phases": [],
-            "events": [],
-            "notes": []
+            "events": []
         }
     }"#;
 

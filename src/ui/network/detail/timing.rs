@@ -1,8 +1,10 @@
 //! Network detail Timing section renderers.
 //!
-//! File-size note: this module intentionally keeps the Timing section in one
-//! place while the feature lands because the protocol-specific renderers share
-//! the same section-map/json-map append contract. Split once it grows again.
+//! Timing is rendered as a terminal-native timeline: a compact summary first,
+//! then a shared time axis and protocol-specific tracks.
+//! This file intentionally stays in the yellow size band because it is the
+//! protocol orchestration layer; formatting and timeline primitives are split
+//! into sibling modules.
 
 use std::collections::HashSet;
 
@@ -12,15 +14,26 @@ use ratatui::{
 };
 
 use crate::domain::network::{NetworkEntry, Protocol, WsDirection};
-use crate::domain::network_timing::{NetworkTiming, TimingEvent, TimingPhase, TimingPhaseStatus};
+use crate::domain::network_timing::{NetworkTiming, TimingEvent, TimingPhaseStatus};
 use crate::ui::json_viewer::JsonHotRegion;
-use crate::ui::{
-    sanitize_for_cell, GREEN, MAUVE, OVERLAY0, PEACH, SAPPHIRE, SUBTEXT0, SURFACE0, TEAL, TEXT,
-    YELLOW,
-};
+use crate::ui::{MAUVE, OVERLAY0, PEACH, SAPPHIRE, SUBTEXT0, SURFACE0, TEAL, YELLOW};
 
 use super::shared::push_section_header;
 use super::KEY_COLOR;
+
+mod format;
+mod timeline;
+
+use self::format::{
+    bottleneck_phase, event_offset_us, first_event_offset, format_event_offset, format_size,
+    format_us, max_event_gap, phase_display_name, total_for_events, total_for_timing,
+};
+use self::timeline::{
+    marker_positions, render_axis, render_bar_track, render_event_table, render_marker_track,
+    TimelineEventRow, TimelineSpec, TimingLines,
+};
+
+const LABEL_WIDTH: usize = 10;
 
 pub(super) fn render_timing(
     lines: &mut Vec<Line<'static>>,
@@ -97,7 +110,7 @@ fn has_timing(entry: &NetworkEntry) -> bool {
             .any(|message| message.event_timing.is_some())
 }
 
-fn push_plain(
+pub(super) fn push_plain(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
     json_click_map: &mut Vec<Vec<JsonHotRegion>>,
@@ -122,7 +135,7 @@ fn render_http(
         return;
     };
 
-    render_summary(
+    render_http_summary(
         lines,
         section_map,
         json_click_map,
@@ -130,29 +143,17 @@ fn render_http(
         entry,
         timing,
     );
-    render_phase_table(
+
+    let total_us = total_for_timing(timing, entry.duration);
+    let spec = TimelineSpec::new(LABEL_WIDTH, inner_w, total_us);
+    render_axis(lines, section_map, json_click_map, json_section_keys, &spec);
+    render_phase_tracks(
         lines,
         section_map,
         json_click_map,
         json_section_keys,
         timing,
-        inner_w,
-    );
-    render_events(
-        lines,
-        section_map,
-        json_click_map,
-        json_section_keys,
-        "Milestones",
-        &timing.events,
-        6,
-    );
-    render_notes(
-        lines,
-        section_map,
-        json_click_map,
-        json_section_keys,
-        timing,
+        &spec,
     );
 }
 
@@ -164,25 +165,6 @@ fn render_sse(
     entry: &NetworkEntry,
     inner_w: usize,
 ) {
-    if let Some(timing) = entry.timing.as_ref() {
-        render_summary(
-            lines,
-            section_map,
-            json_click_map,
-            json_section_keys,
-            entry,
-            timing,
-        );
-        render_phase_table(
-            lines,
-            section_map,
-            json_click_map,
-            json_section_keys,
-            timing,
-            inner_w,
-        );
-    }
-
     let events: Vec<TimingEvent> = entry
         .sse_chunks
         .iter()
@@ -191,7 +173,7 @@ fn render_sse(
             chunk.event_timing.as_ref().map(|event| {
                 let mut event = event.clone();
                 if event.name == "event" {
-                    event.name = format!("event #{}", idx + 1);
+                    event.name = format!("#{}", idx + 1);
                 }
                 if event.size.is_none() {
                     event.size = Some(chunk.data.len() as u64);
@@ -201,32 +183,50 @@ fn render_sse(
         })
         .collect();
 
-    render_event_summary(
+    render_sse_summary(
         lines,
         section_map,
         json_click_map,
         json_section_keys,
-        "Events",
-        entry.sse_chunks.len(),
+        entry.timing.as_ref(),
         &events,
-    );
-    render_events(
-        lines,
-        section_map,
-        json_click_map,
-        json_section_keys,
-        "Event gaps",
-        &events,
-        8,
     );
 
+    let total_us = total_for_events(entry.timing.as_ref(), &events);
+    let spec = TimelineSpec::new(LABEL_WIDTH, inner_w, total_us);
+    render_axis(lines, section_map, json_click_map, json_section_keys, &spec);
     if let Some(timing) = entry.timing.as_ref() {
-        render_notes(
+        render_phase_tracks(
             lines,
             section_map,
             json_click_map,
             json_section_keys,
             timing,
+            &spec,
+        );
+    }
+    render_sse_track(
+        lines,
+        section_map,
+        json_click_map,
+        json_section_keys,
+        entry,
+        &events,
+        &spec,
+    );
+    {
+        let mut target = TimingLines {
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+        };
+        render_event_table(
+            &mut target,
+            &events,
+            entry.timing.as_ref().and_then(|timing| timing.start_us),
+            TimelineEventRow::Sse,
+            8,
         );
     }
 }
@@ -239,25 +239,6 @@ fn render_ws(
     entry: &NetworkEntry,
     inner_w: usize,
 ) {
-    if let Some(timing) = entry.timing.as_ref() {
-        render_summary(
-            lines,
-            section_map,
-            json_click_map,
-            json_section_keys,
-            entry,
-            timing,
-        );
-        render_phase_table(
-            lines,
-            section_map,
-            json_click_map,
-            json_section_keys,
-            timing,
-            inner_w,
-        );
-    }
-
     let events: Vec<TimingEvent> = entry
         .ws_messages
         .iter()
@@ -265,12 +246,10 @@ fn render_ws(
         .filter_map(|(idx, message)| {
             message.event_timing.as_ref().map(|event| {
                 let mut event = event.clone();
-                if event.name == "event" {
-                    event.name = match message.direction {
-                        WsDirection::Send => format!("send #{}", idx + 1),
-                        WsDirection::Recv => format!("recv #{}", idx + 1),
-                    };
-                }
+                event.name = match message.direction {
+                    WsDirection::Send => format!("send #{}", idx + 1),
+                    WsDirection::Recv => format!("recv #{}", idx + 1),
+                };
                 if event.size.is_none() {
                     event.size = Some(message.size);
                 }
@@ -279,37 +258,56 @@ fn render_ws(
         })
         .collect();
 
-    render_event_summary(
+    render_ws_summary(
         lines,
         section_map,
         json_click_map,
         json_section_keys,
-        "Messages",
-        entry.ws_messages.len(),
+        entry,
+        entry.timing.as_ref(),
         &events,
-    );
-    render_events(
-        lines,
-        section_map,
-        json_click_map,
-        json_section_keys,
-        "Message timeline",
-        &events,
-        8,
     );
 
+    let total_us = total_for_events(entry.timing.as_ref(), &events);
+    let spec = TimelineSpec::new(LABEL_WIDTH, inner_w, total_us);
+    render_axis(lines, section_map, json_click_map, json_section_keys, &spec);
     if let Some(timing) = entry.timing.as_ref() {
-        render_notes(
+        render_phase_tracks(
             lines,
             section_map,
             json_click_map,
             json_section_keys,
             timing,
+            &spec,
+        );
+    }
+    render_ws_tracks(
+        lines,
+        section_map,
+        json_click_map,
+        json_section_keys,
+        entry,
+        &events,
+        &spec,
+    );
+    {
+        let mut target = TimingLines {
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+        };
+        render_event_table(
+            &mut target,
+            &events,
+            entry.timing.as_ref().and_then(|timing| timing.start_us),
+            TimelineEventRow::Ws,
+            8,
         );
     }
 }
 
-fn render_summary(
+fn render_http_summary(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
     json_click_map: &mut Vec<Vec<JsonHotRegion>>,
@@ -317,16 +315,30 @@ fn render_summary(
     entry: &NetworkEntry,
     timing: &NetworkTiming,
 ) {
-    let total_us = timing.total_duration_us().or_else(|| {
-        entry
-            .duration
-            .map(|duration_ms| duration_ms.saturating_mul(1_000))
-    });
+    let total_us = total_for_timing(timing, entry.duration);
     let bottleneck = bottleneck_phase(&timing.phases)
         .and_then(|phase| phase.duration_us().map(|duration| (phase, duration)));
     let bottleneck_text = bottleneck
-        .map(|(phase, duration)| format!("{} {}", cell_text(&phase.name), format_us(duration)))
+        .map(|(phase, duration)| {
+            format!(
+                "{} {}",
+                phase_display_name(&phase.name),
+                format_us(duration)
+            )
+        })
         .unwrap_or_else(|| "-".to_string());
+    let first = timing
+        .events
+        .iter()
+        .find(|event| event.name == "first_byte")
+        .or_else(|| timing.events.first());
+    let last = timing.events.last();
+    let bytes = timing
+        .events
+        .iter()
+        .filter_map(|event| event.size)
+        .sum::<u64>()
+        .max(entry.response_size.unwrap_or(0));
 
     push_plain(
         lines,
@@ -336,7 +348,7 @@ fn render_summary(
         Line::from(vec![
             Span::styled("   Total ", Style::default().fg(KEY_COLOR)),
             Span::styled(
-                total_us.map(format_us).unwrap_or_else(|| "-".to_string()),
+                format_us(total_us),
                 Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
             ),
             Span::raw("   "),
@@ -345,131 +357,55 @@ fn render_summary(
                 bottleneck_text,
                 Style::default().fg(PEACH).add_modifier(Modifier::BOLD),
             ),
-        ]),
-    );
-
-    let source = format!("{:?}", timing.source).to_lowercase();
-    let clock = format!("{:?}", timing.clock).to_lowercase();
-    push_plain(
-        lines,
-        section_map,
-        json_click_map,
-        json_section_keys,
-        Line::from(vec![
-            Span::styled("   Source ", Style::default().fg(KEY_COLOR)),
-            Span::styled(source, Style::default().fg(SUBTEXT0)),
             Span::raw("   "),
-            Span::styled("Clock ", Style::default().fg(KEY_COLOR)),
-            Span::styled(clock, Style::default().fg(SUBTEXT0)),
+            Span::styled("First byte ", Style::default().fg(KEY_COLOR)),
+            Span::styled(
+                first
+                    .map(|event| format_event_offset(event, timing.start_us))
+                    .unwrap_or_else(|| "-".to_string()),
+                Style::default().fg(TEAL),
+            ),
+            Span::raw("   "),
+            Span::styled("Last byte ", Style::default().fg(KEY_COLOR)),
+            Span::styled(
+                last.map(|event| format_event_offset(event, timing.start_us))
+                    .unwrap_or_else(|| "-".to_string()),
+                Style::default().fg(TEAL),
+            ),
+            Span::raw("   "),
+            Span::styled("Bytes ", Style::default().fg(KEY_COLOR)),
+            Span::styled(format_size(bytes), Style::default().fg(SUBTEXT0)),
         ]),
     );
-
-    if let Some(connection) = &timing.connection {
-        let reused = if connection.reused { "reused" } else { "new" };
-        let protocol = connection.protocol.as_deref().unwrap_or("-");
-        let id = connection.id.as_deref().unwrap_or("-");
-        push_plain(
-            lines,
-            section_map,
-            json_click_map,
-            json_section_keys,
-            Line::from(vec![
-                Span::styled("   Connection ", Style::default().fg(KEY_COLOR)),
-                Span::styled(reused, Style::default().fg(TEAL)),
-                Span::raw("   "),
-                Span::styled(cell_text(protocol), Style::default().fg(SUBTEXT0)),
-                Span::raw("   "),
-                Span::styled(cell_text(id), Style::default().fg(OVERLAY0)),
-            ]),
-        );
-    }
 }
 
-fn render_phase_table(
+fn render_sse_summary(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
     json_click_map: &mut Vec<Vec<JsonHotRegion>>,
     json_section_keys: &mut Vec<Option<String>>,
-    timing: &NetworkTiming,
-    inner_w: usize,
-) {
-    if timing.phases.is_empty() {
-        return;
-    }
-
-    push_plain(
-        lines,
-        section_map,
-        json_click_map,
-        json_section_keys,
-        Line::from(Span::styled(
-            "   Phase              Time    Trust       Waterfall",
-            Style::default().fg(OVERLAY0),
-        )),
-    );
-
-    let max_bar_w = inner_w.saturating_sub(43).min(30);
-    let total = timing
-        .total_duration_us()
-        .or_else(|| {
-            timing
-                .phases
-                .iter()
-                .filter_map(TimingPhase::duration_us)
-                .max()
-        })
-        .unwrap_or(1)
-        .max(1);
-
-    for phase in &timing.phases {
-        let duration = phase.duration_us().unwrap_or(0);
-        let bar = "█".repeat(bar_cells(duration, total, max_bar_w));
-        let trust = format!("{:?}", phase.confidence).to_lowercase();
-        let color = match phase.status {
-            TimingPhaseStatus::Complete => PEACH,
-            TimingPhaseStatus::Active => SAPPHIRE,
-            TimingPhaseStatus::Reused | TimingPhaseStatus::Skipped => OVERLAY0,
-            TimingPhaseStatus::Errored | TimingPhaseStatus::Cancelled => YELLOW,
-            TimingPhaseStatus::Unavailable | TimingPhaseStatus::Unknown => SURFACE0,
-        };
-        push_plain(
-            lines,
-            section_map,
-            json_click_map,
-            json_section_keys,
-            Line::from(vec![
-                Span::raw(format!("   {:<17}", truncate_cell(&phase.name, 17))),
-                Span::styled(
-                    format!("{:>7}", format_us(duration)),
-                    Style::default().fg(TEAL),
-                ),
-                Span::raw("   "),
-                Span::styled(format!("{:<10}", trust), Style::default().fg(GREEN)),
-                Span::styled(bar, Style::default().fg(color)),
-            ]),
-        );
-    }
-}
-
-fn render_event_summary(
-    lines: &mut Vec<Line<'static>>,
-    section_map: &mut Vec<Option<String>>,
-    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
-    json_section_keys: &mut Vec<Option<String>>,
-    label: &str,
-    total_count: usize,
+    timing: Option<&NetworkTiming>,
     events: &[TimingEvent],
 ) {
-    let worst_gap = events.iter().filter_map(|event| event.gap_us).max();
+    let total_us = total_for_events(timing, events);
+    let first_event = first_event_offset(timing, events).unwrap_or_else(|| "-".to_string());
+    let worst_gap = max_event_gap(events);
     let bytes = events.iter().filter_map(|event| event.size).sum::<u64>();
+
     push_plain(
         lines,
         section_map,
         json_click_map,
         json_section_keys,
         Line::from(vec![
-            Span::styled(format!("   {} ", label), Style::default().fg(KEY_COLOR)),
-            Span::styled(total_count.to_string(), Style::default().fg(TEAL)),
+            Span::styled("   Stream ", Style::default().fg(KEY_COLOR)),
+            Span::styled(
+                format_us(total_us),
+                Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("   "),
+            Span::styled("First chunk ", Style::default().fg(KEY_COLOR)),
+            Span::styled(first_event, Style::default().fg(TEAL)),
             Span::raw("   "),
             Span::styled("Worst gap ", Style::default().fg(KEY_COLOR)),
             Span::styled(
@@ -477,20 +413,130 @@ fn render_event_summary(
                 Style::default().fg(PEACH).add_modifier(Modifier::BOLD),
             ),
             Span::raw("   "),
+            Span::styled("Chunks ", Style::default().fg(KEY_COLOR)),
+            Span::styled(events.len().to_string(), Style::default().fg(TEAL)),
+            Span::raw("   "),
             Span::styled("Bytes ", Style::default().fg(KEY_COLOR)),
-            Span::styled(bytes.to_string(), Style::default().fg(SUBTEXT0)),
+            Span::styled(format_size(bytes), Style::default().fg(SUBTEXT0)),
         ]),
     );
 }
 
-fn render_events(
+fn render_ws_summary(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
     json_click_map: &mut Vec<Vec<JsonHotRegion>>,
     json_section_keys: &mut Vec<Option<String>>,
-    title: &str,
+    entry: &NetworkEntry,
+    timing: Option<&NetworkTiming>,
     events: &[TimingEvent],
-    limit: usize,
+) {
+    let lifetime = total_for_events(timing, events);
+    let worst_idle = max_event_gap(events);
+    let bytes = entry
+        .ws_messages
+        .iter()
+        .map(|message| message.size)
+        .sum::<u64>();
+    let send_count = entry
+        .ws_messages
+        .iter()
+        .filter(|message| message.direction == WsDirection::Send)
+        .count();
+    let recv_count = entry.ws_messages.len().saturating_sub(send_count);
+
+    push_plain(
+        lines,
+        section_map,
+        json_click_map,
+        json_section_keys,
+        Line::from(vec![
+            Span::styled("   Lifetime ", Style::default().fg(KEY_COLOR)),
+            Span::styled(
+                format_us(lifetime),
+                Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("   "),
+            Span::styled("Messages ", Style::default().fg(KEY_COLOR)),
+            Span::styled(
+                format!("{send_count} sent / {recv_count} recv"),
+                Style::default().fg(TEAL),
+            ),
+            Span::raw("   "),
+            Span::styled("Worst idle ", Style::default().fg(KEY_COLOR)),
+            Span::styled(
+                worst_idle.map(format_us).unwrap_or_else(|| "-".to_string()),
+                Style::default().fg(PEACH).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("   "),
+            Span::styled("Bytes ", Style::default().fg(KEY_COLOR)),
+            Span::styled(format_size(bytes), Style::default().fg(SUBTEXT0)),
+        ]),
+    );
+}
+
+fn render_phase_tracks(
+    lines: &mut Vec<Line<'static>>,
+    section_map: &mut Vec<Option<String>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
+    timing: &NetworkTiming,
+    spec: &TimelineSpec,
+) {
+    let base_us = timing.start_us.or_else(|| {
+        timing
+            .phases
+            .iter()
+            .filter_map(|phase| phase.start_us)
+            .min()
+    });
+
+    for phase in &timing.phases {
+        let duration = phase.duration_us().unwrap_or(0);
+        let offset = phase
+            .start_us
+            .zip(base_us)
+            .map(|(start, base)| start.saturating_sub(base))
+            .unwrap_or(0);
+        let color = match phase.status {
+            TimingPhaseStatus::Complete => PEACH,
+            TimingPhaseStatus::Active => SAPPHIRE,
+            TimingPhaseStatus::Reused | TimingPhaseStatus::Skipped => OVERLAY0,
+            TimingPhaseStatus::Errored | TimingPhaseStatus::Cancelled => YELLOW,
+            TimingPhaseStatus::Unavailable | TimingPhaseStatus::Unknown => SURFACE0,
+        };
+        {
+            let mut target = TimingLines {
+                lines,
+                section_map,
+                json_click_map,
+                json_section_keys,
+            };
+            render_bar_track(
+                &mut target,
+                spec,
+                &phase_display_name(&phase.name),
+                offset,
+                duration,
+                color,
+                &format!(
+                    "{} {}",
+                    format_us(duration),
+                    format!("{:?}", phase.confidence).to_lowercase()
+                ),
+            );
+        }
+    }
+}
+
+fn render_sse_track(
+    lines: &mut Vec<Line<'static>>,
+    section_map: &mut Vec<Option<String>>,
+    json_click_map: &mut Vec<Vec<JsonHotRegion>>,
+    json_section_keys: &mut Vec<Option<String>>,
+    entry: &NetworkEntry,
+    events: &[TimingEvent],
+    spec: &TimelineSpec,
 ) {
     if events.is_empty() {
         return;
@@ -502,152 +548,174 @@ fn render_events(
         json_click_map,
         json_section_keys,
         Line::from(Span::styled(
-            format!("   {}", title),
+            "   Chunk timeline",
             Style::default().fg(OVERLAY0),
         )),
     );
 
-    for event in events.iter().take(limit) {
-        let at = event
-            .at_us
-            .map(format_us)
-            .unwrap_or_else(|| "-".to_string());
-        let gap = event
-            .gap_us
-            .map(format_us)
-            .unwrap_or_else(|| "-".to_string());
-        let size = event
-            .size
-            .map(|size| format!("{}B", size))
-            .unwrap_or_else(|| "-".to_string());
-        push_plain(
+    let start_us = entry.timing.as_ref().and_then(|timing| timing.start_us);
+    let positions = marker_positions(events, start_us, spec, '●');
+    {
+        let mut target = TimingLines {
             lines,
             section_map,
             json_click_map,
             json_section_keys,
-            Line::from(vec![
-                Span::styled("   • ", Style::default().fg(MAUVE)),
-                Span::styled(
-                    format!("{:<16}", truncate_cell(&event.name, 16)),
-                    Style::default().fg(TEXT),
-                ),
-                Span::styled(format!("{:>8}", at), Style::default().fg(SUBTEXT0)),
-                Span::raw("  gap "),
-                Span::styled(format!("{:>8}", gap), Style::default().fg(TEAL)),
-                Span::raw("  "),
-                Span::styled(format!("{:>7}", size), Style::default().fg(OVERLAY0)),
-            ]),
-        );
+        };
+        render_marker_track(&mut target, spec, "Chunks", &positions, MAUVE, "");
+    }
+    {
+        let mut target = TimingLines {
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+        };
+        render_first_and_worst_annotations(&mut target, spec, events, start_us, "gap");
     }
 }
 
-fn render_notes(
+fn render_ws_tracks(
     lines: &mut Vec<Line<'static>>,
     section_map: &mut Vec<Option<String>>,
     json_click_map: &mut Vec<Vec<JsonHotRegion>>,
     json_section_keys: &mut Vec<Option<String>>,
-    timing: &NetworkTiming,
+    entry: &NetworkEntry,
+    events: &[TimingEvent],
+    spec: &TimelineSpec,
 ) {
-    for note in &timing.notes {
-        push_plain(
+    if events.is_empty() {
+        return;
+    }
+
+    push_plain(
+        lines,
+        section_map,
+        json_click_map,
+        json_section_keys,
+        Line::from(Span::styled(
+            "   Message timeline",
+            Style::default().fg(OVERLAY0),
+        )),
+    );
+
+    let start_us = entry.timing.as_ref().and_then(|timing| timing.start_us);
+    let send_events: Vec<TimingEvent> = events
+        .iter()
+        .filter(|event| event.name.starts_with("send"))
+        .cloned()
+        .collect();
+    let recv_events: Vec<TimingEvent> = events
+        .iter()
+        .filter(|event| event.name.starts_with("recv"))
+        .cloned()
+        .collect();
+
+    {
+        let mut target = TimingLines {
             lines,
             section_map,
             json_click_map,
             json_section_keys,
-            Line::from(vec![
-                Span::styled("   note ", Style::default().fg(OVERLAY0)),
-                Span::styled(cell_text(note), Style::default().fg(SUBTEXT0)),
-            ]),
+        };
+        render_marker_track(
+            &mut target,
+            spec,
+            "→ Send",
+            &marker_positions(&send_events, start_us, spec, '→'),
+            SAPPHIRE,
+            "",
         );
     }
-}
-
-fn format_us(us: u64) -> String {
-    if us >= 1_000_000 {
-        let seconds = us as f64 / 1_000_000.0;
-        if us.is_multiple_of(1_000_000) {
-            format!("{}s", us / 1_000_000)
-        } else {
-            format!("{:.1}s", seconds)
-        }
-    } else if us >= 1_000 {
-        format!("{}ms", us / 1_000)
-    } else {
-        format!("{}us", us)
+    {
+        let mut target = TimingLines {
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+        };
+        render_marker_track(
+            &mut target,
+            spec,
+            "← Recv",
+            &marker_positions(&recv_events, start_us, spec, '←'),
+            TEAL,
+            "",
+        );
+    }
+    {
+        let mut target = TimingLines {
+            lines,
+            section_map,
+            json_click_map,
+            json_section_keys,
+        };
+        render_worst_annotation(&mut target, spec, events, start_us, "idle");
     }
 }
 
-fn bottleneck_phase(phases: &[TimingPhase]) -> Option<&TimingPhase> {
-    phases
+fn render_first_and_worst_annotations(
+    target: &mut TimingLines<'_>,
+    spec: &TimelineSpec,
+    events: &[TimingEvent],
+    start_us: Option<u64>,
+    gap_label: &str,
+) {
+    if let Some(first) = events.iter().find(|event| event.at_us.is_some()) {
+        render_annotation(
+            target,
+            spec,
+            event_offset_us(first, start_us).unwrap_or(0),
+            &format!("first {}", format_event_offset(first, start_us)),
+        );
+    }
+    render_worst_annotation(target, spec, events, start_us, gap_label);
+}
+
+fn render_worst_annotation(
+    target: &mut TimingLines<'_>,
+    spec: &TimelineSpec,
+    events: &[TimingEvent],
+    start_us: Option<u64>,
+    gap_label: &str,
+) {
+    let Some(event) = events
         .iter()
-        .filter(|phase| phase.status == TimingPhaseStatus::Complete)
-        .max_by_key(|phase| phase.duration_us().unwrap_or(0))
+        .filter(|event| event.gap_us.is_some())
+        .max_by_key(|event| event.gap_us.unwrap_or(0))
+    else {
+        return;
+    };
+    let gap = event.gap_us.unwrap_or(0);
+    render_annotation(
+        target,
+        spec,
+        event_offset_us(event, start_us).unwrap_or(0),
+        &format!("worst {gap_label} {}", format_us(gap)),
+    );
 }
 
-fn bar_cells(value: u64, total: u64, max_w: usize) -> usize {
-    if max_w == 0 {
-        return 0;
+fn render_annotation(
+    target: &mut TimingLines<'_>,
+    spec: &TimelineSpec,
+    offset_us: u64,
+    text: &str,
+) {
+    let mut marker = vec![' '; spec.width];
+    let cell = spec.cell_for(offset_us);
+    if cell < marker.len() {
+        marker[cell] = '^';
     }
-    if total == 0 || value == 0 {
-        return 1;
-    }
-    (((value as f64 / total as f64) * max_w as f64).ceil() as usize).clamp(1, max_w)
-}
-
-fn cell_text(value: &str) -> String {
-    sanitize_for_cell(value).into_owned()
-}
-
-fn truncate_cell(value: &str, max_chars: usize) -> String {
-    let value = cell_text(value);
-    let count = value.chars().count();
-    if count <= max_chars {
-        value
-    } else {
-        let keep = max_chars.saturating_sub(1);
-        format!("{}…", value.chars().take(keep).collect::<String>())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain::network_timing::{TimingConfidence, TimingPhase, TimingPhaseStatus};
-
-    fn phase(name: &str, start_us: u64, end_us: u64) -> TimingPhase {
-        TimingPhase {
-            name: name.to_string(),
-            start_us: Some(start_us),
-            end_us: Some(end_us),
-            status: TimingPhaseStatus::Complete,
-            confidence: TimingConfidence::Exact,
-            detail: None,
-        }
-    }
-
-    #[test]
-    fn format_us_uses_ms_and_seconds() {
-        assert_eq!(format_us(999), "999us");
-        assert_eq!(format_us(1_000), "1ms");
-        assert_eq!(format_us(126_000), "126ms");
-        assert_eq!(format_us(1_500_000), "1.5s");
-    }
-
-    #[test]
-    fn bottleneck_picks_longest_complete_phase() {
-        let phases = vec![
-            phase("dns", 0, 7_000),
-            phase("ttfb", 62_000, 104_000),
-            phase("decode", 104_000, 112_000),
-        ];
-        let found = bottleneck_phase(&phases).expect("bottleneck");
-        assert_eq!(found.name, "ttfb");
-    }
-
-    #[test]
-    fn bar_width_is_bounded() {
-        assert_eq!(bar_cells(0, 100, 20), 1);
-        assert_eq!(bar_cells(50, 100, 20), 10);
-        assert_eq!(bar_cells(100, 100, 20), 20);
-    }
+    push_plain(
+        target.lines,
+        target.section_map,
+        target.json_click_map,
+        target.json_section_keys,
+        Line::from(vec![
+            Span::raw(format!("   {:<width$} ", "", width = spec.label_width)),
+            Span::styled(marker.iter().collect::<String>(), Style::default().fg(TEAL)),
+            Span::raw(" "),
+            Span::styled(text.to_string(), Style::default().fg(TEAL)),
+        ]),
+    );
 }

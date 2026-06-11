@@ -37,6 +37,10 @@ use ratatui::Terminal;
 use flog::app::{App, ConnectedApp, InputField, SseMergeRule, SsePathSegment};
 use flog::domain::network::{EntrySource, NetworkEntry, NetworkStatus};
 use flog::domain::network_filter::{MethodFilter, ProtocolFilter, StatusFilter};
+use flog::domain::network_timing::{
+    NetworkTiming, TimingClock, TimingConfidence, TimingEvent, TimingPhase, TimingPhaseStatus,
+    TimingSource,
+};
 use flog::input::ConnectorHandle;
 
 use support::fixtures;
@@ -167,6 +171,46 @@ fn select_first(app: &mut App) {
     app.network.auto_scroll = false;
     app.network.selected = 0;
     app.network.scroll_offset = 0;
+}
+
+fn timing_phase(name: &str, start_us: u64, end_us: u64) -> TimingPhase {
+    TimingPhase {
+        name: name.to_string(),
+        start_us: Some(start_us),
+        end_us: Some(end_us),
+        status: TimingPhaseStatus::Complete,
+        confidence: TimingConfidence::Exact,
+        detail: None,
+    }
+}
+
+fn timing_event(name: &str, at_us: u64, gap_us: Option<u64>, size: u64) -> TimingEvent {
+    TimingEvent {
+        name: name.to_string(),
+        at_us: Some(at_us),
+        gap_us,
+        size: Some(size),
+        detail: None,
+    }
+}
+
+fn timing_trace(
+    start_us: u64,
+    end_us: u64,
+    source: TimingSource,
+    phases: Vec<TimingPhase>,
+    events: Vec<TimingEvent>,
+) -> NetworkTiming {
+    NetworkTiming {
+        version: 1,
+        source,
+        clock: TimingClock::MonotonicUs,
+        start_us: Some(start_us),
+        end_us: Some(end_us),
+        connection: None,
+        phases,
+        events,
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -753,6 +797,72 @@ fn detail_http_error_section_shows_red_text() {
     assert!(count_cells_with_fg(&buf, RED) > 0);
 }
 
+#[test]
+fn detail_http_timing_renders_request_relative_waterfall() {
+    let mut app = app_connected();
+    let mut e = fixtures::http_get_200(1, "/timed-http");
+    e.duration = Some(2700);
+    e.response_size = Some(116_842);
+    e.timing = Some(timing_trace(
+        71_000_000,
+        73_700_000,
+        TimingSource::FlogAdapter,
+        vec![
+            timing_phase("headers", 71_000_000, 72_400_000),
+            timing_phase("body", 72_400_000, 73_700_000),
+        ],
+        vec![
+            timing_event("first_byte", 72_400_000, None, 7_769),
+            timing_event("chunk", 72_404_000, Some(4_000), 8_191),
+            timing_event("chunk", 73_700_000, Some(2_000), 2),
+        ],
+    ));
+    seed_network(&mut app, vec![e]);
+
+    let buf = render_detail(&mut app, 120, 44);
+    let text = full_text(&buf);
+
+    assert!(text.contains("Total 2.7s"));
+    assert!(text.contains("Bottleneck TTFB 1.4s"));
+    assert!(text.contains("First byte +1.4s"));
+    assert!(text.contains("Last byte +2.7s"));
+    assert!(text.contains("Timeline"));
+    assert!(text.contains("0s"));
+    assert!(text.contains("+2.7s"));
+    assert!(text.contains("TTFB"));
+    assert!(text.contains("Download"));
+    assert!(!text.contains("Chunks"));
+    assert!(!text.contains("3 chunks"));
+    assert!(!text.contains("Source "));
+}
+
+#[test]
+fn detail_http_timing_hides_chunk_track() {
+    let mut app = app_connected();
+    let mut e = fixtures::http_get_200(1, "/timed-http-no-gap");
+    e.timing = Some(timing_trace(
+        0,
+        105_000,
+        TimingSource::FlogAdapter,
+        vec![
+            timing_phase("headers", 0, 105_000),
+            timing_phase("body", 105_000, 105_259),
+        ],
+        vec![
+            timing_event("first_byte", 105_000, None, 512),
+            timing_event("chunk", 105_259, None, 128),
+        ],
+    ));
+    seed_network(&mut app, vec![e]);
+
+    let buf = render_detail(&mut app, 120, 44);
+    let text = full_text(&buf);
+
+    assert!(!text.contains("Chunks"));
+    assert!(!text.contains("2 chunks"));
+    assert!(!text.contains("max gap -"));
+}
+
 // ══════════════════════════════════════════════════════════════════════
 //  SSE detail
 // ══════════════════════════════════════════════════════════════════════
@@ -838,6 +948,113 @@ fn detail_sse_non_json_chunks_hide_pills() {
     assert!(text.contains("SSE Events"));
 }
 
+#[test]
+fn detail_sse_timing_renders_chunk_timeline() {
+    let mut app = app_connected();
+    let mut e = fixtures::sse_entry(1, "/timed-sse");
+    e.duration = Some(6200);
+    e.timing = Some(timing_trace(
+        4_000_000,
+        10_200_000,
+        TimingSource::SseReporter,
+        vec![
+            timing_phase("wait_first_event", 4_000_000, 8_700_000),
+            timing_phase("receive_stream", 8_700_000, 10_200_000),
+        ],
+        Vec::new(),
+    ));
+    e.sse_chunks = vec![
+        flog::domain::network::SseChunk {
+            data: "alpha".to_string(),
+            event_timing: Some(timing_event("event", 8_700_000, None, 356)),
+        },
+        flog::domain::network::SseChunk {
+            data: "beta".to_string(),
+            event_timing: Some(timing_event("event", 8_857_000, Some(157_000), 389)),
+        },
+        flog::domain::network::SseChunk {
+            data: "gamma".to_string(),
+            event_timing: Some(timing_event("event", 9_186_000, Some(329_000), 387)),
+        },
+    ];
+    seed_network(&mut app, vec![e]);
+
+    let buf = render_detail(&mut app, 120, 44);
+    let text = full_text(&buf);
+
+    assert!(text.contains("Stream 6.2s"));
+    assert!(text.contains("First chunk +4.7s"));
+    assert!(text.contains("Worst gap 329ms"));
+    assert!(text.contains("Wait"));
+    assert!(text.contains("Receive"));
+    assert!(text.contains("Chunk timeline"));
+    assert!(text.contains("Chunks"));
+    assert!(text.contains("first +4.7s"));
+    assert!(text.contains("worst gap 329ms"));
+    assert!(text.contains("#1"));
+    assert!(text.contains("#3"));
+    assert!(!text.contains("Event rhythm"));
+    assert!(!text.contains("Event gaps"));
+}
+
+#[test]
+fn detail_sse_timing_uses_dots_for_dense_chunks() {
+    let mut app = app_connected();
+    let mut e = fixtures::sse_entry(1, "/dense-sse");
+    e.timing = Some(timing_trace(
+        0,
+        10_000_000,
+        TimingSource::SseReporter,
+        Vec::new(),
+        Vec::new(),
+    ));
+    e.sse_chunks = (0..40)
+        .map(|idx| flog::domain::network::SseChunk {
+            data: format!("chunk-{idx}"),
+            event_timing: Some(timing_event("event", 1_500_000 + idx as u64, Some(1), 8)),
+        })
+        .collect();
+    seed_network(&mut app, vec![e]);
+
+    let buf = render_detail(&mut app, 120, 44);
+    let text = full_text(&buf);
+
+    assert!(text.contains("Chunks 40"));
+    assert!(text.contains("●"));
+    assert!(!text.contains("◆"));
+    assert!(!text.contains("█"));
+}
+
+#[test]
+fn detail_sse_timing_table_keeps_subsecond_order_visible() {
+    let mut app = app_connected();
+    let mut e = fixtures::sse_entry(1, "/precise-sse");
+    e.timing = Some(timing_trace(
+        0,
+        2_000_000,
+        TimingSource::SseReporter,
+        Vec::new(),
+        Vec::new(),
+    ));
+    e.sse_chunks = vec![
+        flog::domain::network::SseChunk {
+            data: "a".to_string(),
+            event_timing: Some(timing_event("event", 1_500_000, None, 1)),
+        },
+        flog::domain::network::SseChunk {
+            data: "b".to_string(),
+            event_timing: Some(timing_event("event", 1_509_000, Some(9_000), 1)),
+        },
+    ];
+    seed_network(&mut app, vec![e]);
+
+    let buf = render_detail(&mut app, 120, 44);
+    let text = full_text(&buf);
+
+    assert!(text.contains("+1.500s"));
+    assert!(text.contains("+1.509s"));
+}
+
 // ══════════════════════════════════════════════════════════════════════
 //  WebSocket detail
 // ══════════════════════════════════════════════════════════════════════
@@ -906,6 +1123,96 @@ fn detail_ws_empty_messages_hides_section() {
     seed_network(&mut app, vec![fixtures::ws_entry(1, "wss://a/b")]);
     let buf = render_detail(&mut app, 100, 40);
     assert!(!full_text(&buf).contains("Messages ("));
+}
+
+#[test]
+fn detail_ws_timing_renders_directional_activity_tracks() {
+    let mut app = app_connected();
+    let mut e = fixtures::ws_entry(1, "wss://timed/ws");
+    e.timing = Some(timing_trace(
+        2_000_000,
+        72_000_000,
+        TimingSource::WsWrapper,
+        vec![
+            timing_phase("handshake", 2_000_000, 2_120_000),
+            timing_phase("active", 2_120_000, 72_000_000),
+        ],
+        Vec::new(),
+    ));
+    e.ws_messages = vec![
+        flog::domain::network::WsMessage {
+            direction: flog::domain::network::WsDirection::Send,
+            data: "hello".to_string(),
+            size: 423,
+            event_timing: Some(timing_event("event", 4_000_000, None, 423)),
+        },
+        flog::domain::network::WsMessage {
+            direction: flog::domain::network::WsDirection::Recv,
+            data: "ack".to_string(),
+            size: 186,
+            event_timing: Some(timing_event("event", 8_600_000, Some(4_600_000), 186)),
+        },
+        flog::domain::network::WsMessage {
+            direction: flog::domain::network::WsDirection::Recv,
+            data: "delta".to_string(),
+            size: 242,
+            event_timing: Some(timing_event("event", 8_787_000, Some(187_000), 242)),
+        },
+    ];
+    seed_network(&mut app, vec![e]);
+
+    let buf = render_detail(&mut app, 120, 44);
+    let text = full_text(&buf);
+
+    assert!(text.contains("Lifetime 70s"));
+    assert!(text.contains("1 sent / 2 recv"));
+    assert!(text.contains("Worst idle 4.6s"));
+    assert!(text.contains("Handshake"));
+    assert!(text.contains("Active"));
+    assert!(text.contains("Message timeline"));
+    assert!(text.contains("→ Send"));
+    assert!(text.contains("← Recv"));
+    assert!(text.contains("worst idle 4.6s"));
+    assert!(text.contains("→ send"));
+    assert!(text.contains("← recv"));
+    assert!(!text.contains("Activity"));
+    assert!(!text.contains("◆"));
+}
+
+#[test]
+fn detail_ws_timing_extends_axis_to_last_message_when_close_time_is_stale() {
+    let mut app = app_connected();
+    let mut e = fixtures::ws_entry(1, "wss://timed/stale-close");
+    e.timing = Some(timing_trace(
+        0,
+        1_500_000,
+        TimingSource::WsWrapper,
+        Vec::new(),
+        Vec::new(),
+    ));
+    e.ws_messages = vec![
+        flog::domain::network::WsMessage {
+            direction: flog::domain::network::WsDirection::Send,
+            data: "late send".to_string(),
+            size: 64,
+            event_timing: Some(timing_event("event", 1_900_000, None, 64)),
+        },
+        flog::domain::network::WsMessage {
+            direction: flog::domain::network::WsDirection::Recv,
+            data: "late recv".to_string(),
+            size: 64,
+            event_timing: Some(timing_event("event", 2_300_000, Some(400_000), 64)),
+        },
+    ];
+    seed_network(&mut app, vec![e]);
+
+    let buf = render_detail(&mut app, 120, 44);
+    let text = full_text(&buf);
+
+    assert!(text.contains("Lifetime 2.3s"));
+    assert!(text.contains("+2.3s"));
+    assert!(text.contains("+1.900s"));
+    assert!(text.contains("+2.300s"));
 }
 
 // ══════════════════════════════════════════════════════════════════════

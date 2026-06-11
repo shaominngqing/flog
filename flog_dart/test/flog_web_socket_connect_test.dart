@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'package:flog_dart/flog_dart.dart';
+import 'package:flog_dart/src/timing/timing_clock.dart';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -97,7 +98,8 @@ class _NullSink implements WebSocketSink {
   Future<dynamic> addStream(Stream<dynamic> stream) => Future.value(null);
 
   @override
-  Future<dynamic> close([int? closeCode, String? closeReason]) => Future.value(null);
+  Future<dynamic> close([int? closeCode, String? closeReason]) =>
+      Future.value(null);
 }
 
 // ---------------------------------------------------------------------------
@@ -142,9 +144,8 @@ void main() {
         // expected rethrow — swallow for assertion below
       }
 
-      final errs = _nets()
-          .where((m) => m['t'] == 'err' && m['p'] == 'ws')
-          .toList();
+      final errs =
+          _nets().where((m) => m['t'] == 'err' && m['p'] == 'ws').toList();
       expect(errs, hasLength(1),
           reason: 'exactly one err frame must be emitted on factory failure');
 
@@ -186,9 +187,8 @@ void main() {
         );
       } catch (_) {}
 
-      final errs = _nets()
-          .where((m) => m['t'] == 'err' && m['p'] == 'ws')
-          .toList();
+      final errs =
+          _nets().where((m) => m['t'] == 'err' && m['p'] == 'ws').toList();
       expect(errs, hasLength(1));
       expect(errs.first['url'], testUrl);
       expect(errs.first['error'], contains('TLS handshake failed'));
@@ -214,8 +214,7 @@ void main() {
 
       expect(connectingIdx, greaterThanOrEqualTo(0),
           reason: 'connecting frame must exist');
-      expect(openIdx, greaterThanOrEqualTo(0),
-          reason: 'open frame must exist');
+      expect(openIdx, greaterThanOrEqualTo(0), reason: 'open frame must exist');
       expect(connectingIdx, lessThan(openIdx),
           reason: 'connecting must come before open');
 
@@ -230,7 +229,8 @@ void main() {
       final err = Exception('refused');
 
       await expectLater(
-        FlogWebSocket.wrap(() async => throw err, url: 'wss://fail.example.com/ws'),
+        FlogWebSocket.wrap(() async => throw err,
+            url: 'wss://fail.example.com/ws'),
         throwsA(same(err)),
       );
 
@@ -241,10 +241,60 @@ void main() {
 
       expect(connectingIdx, greaterThanOrEqualTo(0),
           reason: 'connecting frame must exist');
-      expect(errIdx, greaterThanOrEqualTo(0),
-          reason: 'err frame must exist');
+      expect(errIdx, greaterThanOrEqualTo(0), reason: 'err frame must exist');
       expect(connectingIdx, lessThan(errIdx),
           reason: 'connecting must come before err');
+    });
+
+    test('connecting and open timing include handshake phase', () async {
+      final clock = ManualTimingClock();
+      final url = 'wss://timing.example.com/ws';
+
+      await FlogWebSocket.wrap(
+        () async => _SucceedingChannel(),
+        url: url,
+        clock: clock,
+      );
+
+      final frames = _nets().where((f) => f['p'] == 'ws').toList();
+      final connecting = frames.firstWhere((f) => f['t'] == 'connecting');
+      final open = frames.firstWhere((f) => f['t'] == 'open');
+      final connectingTiming = connecting['timing'] as Map<String, dynamic>;
+      final openTiming = open['timing'] as Map<String, dynamic>;
+
+      expect(connectingTiming['phases'], hasLength(1));
+      expect(connectingTiming['phases'][0]['name'], 'handshake');
+      expect(connectingTiming['phases'][0]['status'], isNot('errored'));
+
+      expect(openTiming['phases'], hasLength(2));
+      expect(openTiming['phases'][0]['name'], 'handshake');
+      expect(openTiming['phases'][1]['name'], 'active');
+      expect(openTiming['phases'][1]['status'], 'active');
+      expect(openTiming['phases'][1]['endUs'], isNull);
+    });
+  });
+
+  group('FlogWebSocket.wrap — close timing', () {
+    test('close timing includes handshake + active phases', () async {
+      final clock = ManualTimingClock();
+      final ws = await FlogWebSocket.wrap(
+        () async => _SucceedingChannel(),
+        url: 'wss://timing-close.example.com/ws',
+        clock: clock,
+      );
+      final sub = ws.stream.listen((_) {});
+
+      clock.advanceUs(10);
+      await ws.close();
+      await sub.cancel();
+
+      final close = _nets().firstWhere((f) => f['t'] == 'close');
+      final timing = close['timing'] as Map<String, dynamic>;
+      expect(timing['phases'], hasLength(2));
+      expect(timing['phases'][0]['name'], 'handshake');
+      expect(timing['phases'][1]['name'], 'active');
+      expect(timing['phases'][1]['status'], 'complete');
+      expect(timing['phases'][1]['endUs'], 10);
     });
   });
 
@@ -268,8 +318,7 @@ void main() {
       expect(fn, isA<Function>());
     });
 
-    test('FlogWebSocket.fromChannel still exists — back-compat smoke test',
-        () {
+    test('FlogWebSocket.fromChannel still exists — back-compat smoke test', () {
       // Use the existing _FailingReadyChannel as a cheap stand-in channel;
       // we only need the constructor to succeed, not the stream to work.
       final channel = _FailingReadyChannel(StateError('never'));

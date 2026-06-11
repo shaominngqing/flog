@@ -152,5 +152,96 @@ void main() {
       expect(dones.single['timing']['source'], 'sse_reporter');
       expect(dones.single['timing']['endUs'], 175);
     });
+
+    test('7. done timing includes wait_first_event and receive_stream phases',
+        () async {
+      final clock = ManualTimingClock();
+      final controller = StreamController<SseEvent>(sync: true);
+      final out = controller.stream.transform(
+        FlogSseReporter(
+          url: 'test://timing-phases',
+          clock: clock,
+        ),
+      );
+
+      final done = out.listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+
+      clock.advanceUs(40);
+      controller.add(const SseEvent(data: 'hello'));
+      clock.advanceUs(20);
+      controller.add(const SseEvent(data: 'world'));
+      await Future<void>.delayed(Duration.zero);
+      clock.advanceUs(10);
+      await controller.close();
+      await done.asFuture<void>();
+
+      final doneFrame = nets().where((record) => record['t'] == 'done').single;
+      final timing = doneFrame['timing'] as Map<String, dynamic>;
+      final phases = timing['phases'] as List<dynamic>;
+
+      expect(phases, hasLength(2));
+      expect(phases[0]['name'], 'wait_first_event');
+      expect(phases[0]['startUs'], 0);
+      expect(phases[0]['endUs'], 40);
+      expect(phases[1]['name'], 'receive_stream');
+      expect(phases[1]['startUs'], 40);
+      expect(phases[1]['endUs'], 70);
+    });
+
+    test('8. done timing marks receive_stream unavailable when no chunks',
+        () async {
+      final out = const Stream<SseEvent>.empty().transform(
+        FlogSseReporter(url: 'test://sse-empty'),
+      );
+      final events = await out.toList();
+      expect(events, isEmpty);
+
+      final doneFrame = nets().where((record) => record['t'] == 'done').single;
+      final timing = doneFrame['timing'] as Map<String, dynamic>;
+      final phases = timing['phases'] as List<dynamic>;
+
+      expect(phases, hasLength(2));
+      expect(phases[0]['name'], 'wait_first_event');
+      expect(phases[0]['detail'], contains('no SSE chunks'));
+      expect(phases[1]['name'], 'receive_stream');
+      expect(phases[1]['status'], 'unavailable');
+      expect(phases[1]['confidence'], 'unavailable');
+    });
+
+    test('9. err timing includes wait_first_event and receive_stream phases',
+        () async {
+      final clock = ManualTimingClock();
+      final controller = StreamController<SseEvent>(sync: true);
+      final seen = <Object>[];
+      final done = Completer<void>();
+      final out = controller.stream.transform(
+        FlogSseReporter(url: 'test://err-phases', clock: clock),
+      );
+
+      out.listen((_) {}, onError: seen.add, onDone: done.complete);
+
+      await Future<void>.delayed(Duration.zero);
+      clock.advanceUs(15);
+      controller.add(const SseEvent(data: 'first'));
+      await Future<void>.delayed(Duration.zero);
+      clock.advanceUs(25);
+      controller.addError(StateError('stream failed'));
+      await controller.close();
+      await done.future;
+
+      expect(seen, hasLength(1));
+      expect(seen.first, isA<StateError>());
+
+      final errFrame = nets().where((record) => record['t'] == 'err').single;
+      final timing = errFrame['timing'] as Map<String, dynamic>;
+      final phases = timing['phases'] as List<dynamic>;
+
+      expect(phases, hasLength(2));
+      expect(phases[0]['name'], 'wait_first_event');
+      expect(phases[0]['endUs'], 15);
+      expect(phases[1]['name'], 'receive_stream');
+      expect(phases[1]['startUs'], 15);
+    });
   });
 }

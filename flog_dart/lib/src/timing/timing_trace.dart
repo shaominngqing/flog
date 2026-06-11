@@ -82,7 +82,6 @@ class FlogTimingTrace {
   final FlogTimingConnection? connection;
   final List<FlogTimingPhase> phases;
   final List<FlogTimingEvent> events;
-  final List<String> notes;
 
   const FlogTimingTrace({
     this.version = 1,
@@ -93,7 +92,6 @@ class FlogTimingTrace {
     this.connection,
     required this.phases,
     required this.events,
-    required this.notes,
   });
 
   int? get durationUs => endUs == null ? null : endUs! - startUs;
@@ -107,7 +105,6 @@ class FlogTimingTrace {
         connection: connection,
         phases: phases,
         events: events,
-        notes: notes,
       );
 
   FlogTimingTrace copyWith({
@@ -115,7 +112,6 @@ class FlogTimingTrace {
     FlogTimingConnection? connection,
     List<FlogTimingPhase>? phases,
     List<FlogTimingEvent>? events,
-    List<String>? notes,
   }) =>
       FlogTimingTrace(
         version: version,
@@ -126,7 +122,6 @@ class FlogTimingTrace {
         connection: connection ?? this.connection,
         phases: phases ?? this.phases,
         events: events ?? this.events,
-        notes: notes ?? this.notes,
       );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -138,6 +133,5 @@ class FlogTimingTrace {
         if (connection != null) 'connection': connection!.toJson(),
         'phases': phases.map((phase) => phase.toJson()).toList(growable: false),
         'events': events.map((event) => event.toJson()).toList(growable: false),
-        'notes': notes,
       };
 }

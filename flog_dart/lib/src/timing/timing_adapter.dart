@@ -34,7 +34,6 @@ class FlogTimingHttpClientAdapter implements HttpClientAdapter {
       startUs: startUs,
       phases: const [],
       events: const [],
-      notes: const [],
     );
     options.extra[kFlogTimingTraceExtraKey] = trace;
 
@@ -46,23 +45,29 @@ class FlogTimingHttpClientAdapter implements HttpClientAdapter {
         StreamTransformer<Uint8List, Uint8List>.fromHandlers(
           handleDone: (sink) {
             final endUs = _clock.nowUs();
+            final firstByteUs = recorder.firstByteUs;
+            final bodyPhase = FlogTimingPhase(
+              name: 'body',
+              startUs: firstByteUs,
+              endUs: endUs,
+              detail: firstByteUs == null
+                  ? 'no body bytes were observed'
+                  : 'response body stream from first byte to complete',
+              status: firstByteUs == null ? 'skipped' : 'complete',
+              confidence: firstByteUs == null ? 'unavailable' : 'exact',
+            );
+            final phases = <FlogTimingPhase>[
+              FlogTimingPhase(
+                name: 'request_to_headers',
+                startUs: startUs,
+                endUs: headersUs,
+                detail: 'adapter request to response headers',
+              ),
+              bodyPhase,
+            ];
             trace = trace.copyWith(
               endUs: endUs,
-              phases: <FlogTimingPhase>[
-                FlogTimingPhase(
-                  name: 'headers',
-                  startUs: startUs,
-                  endUs: headersUs,
-                  detail: 'request start to response headers',
-                ),
-                if (recorder.events.isNotEmpty)
-                  FlogTimingPhase(
-                    name: 'body',
-                    startUs: recorder.events.first.atUs,
-                    endUs: endUs,
-                    detail: 'response body stream',
-                  ),
-              ],
+              phases: phases,
               events: recorder.events,
             );
             options.extra[kFlogTimingTraceExtraKey] = trace;
@@ -85,7 +90,7 @@ class FlogTimingHttpClientAdapter implements HttpClientAdapter {
         endUs: endUs,
         phases: <FlogTimingPhase>[
           FlogTimingPhase(
-            name: 'request',
+            name: 'request_to_headers',
             startUs: startUs,
             endUs: endUs,
             status: 'errored',

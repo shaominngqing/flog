@@ -94,15 +94,22 @@ class FlogSseReporter extends StreamTransformerBase<SseEvent, SseEvent> {
       },
       onError: (Object e, StackTrace st) {
         final endUs = timingClock.nowUs();
+        final firstEventUs = events
+            .where((entry) => entry.name == 'chunk')
+            .map((entry) => entry.atUs)
+            .firstWhere((value) => value != null, orElse: () => null);
         emit('err', {
           'error': e.toString(),
           'timing': FlogTimingTrace(
             source: 'sse_reporter',
             startUs: startUs,
             endUs: endUs,
-            phases: const [],
+            phases: _donePhases(
+              startUs: startUs,
+              endUs: endUs,
+              firstEventUs: firstEventUs,
+            ),
             events: events,
-            notes: const [],
           ).toJson(),
         });
         controller.addError(e, st);
@@ -110,6 +117,10 @@ class FlogSseReporter extends StreamTransformerBase<SseEvent, SseEvent> {
       onDone: () {
         final duration = DateTime.now().difference(start).inMilliseconds;
         final endUs = timingClock.nowUs();
+        final firstEventUs = events
+            .where((entry) => entry.name == 'chunk')
+            .map((entry) => entry.atUs)
+            .firstWhere((value) => value != null, orElse: () => null);
         emit('done', {
           'duration': duration,
           'chunks': seq,
@@ -117,9 +128,12 @@ class FlogSseReporter extends StreamTransformerBase<SseEvent, SseEvent> {
             source: 'sse_reporter',
             startUs: startUs,
             endUs: endUs,
-            phases: const [],
+            phases: _donePhases(
+              startUs: startUs,
+              endUs: endUs,
+              firstEventUs: firstEventUs,
+            ),
             events: events,
-            notes: const [],
           ).toJson(),
         });
         controller.close();
@@ -129,5 +143,46 @@ class FlogSseReporter extends StreamTransformerBase<SseEvent, SseEvent> {
 
     controller.onCancel = () => sub.cancel();
     return controller.stream;
+  }
+
+  List<FlogTimingPhase> _donePhases({
+    required int startUs,
+    required int endUs,
+    required int? firstEventUs,
+  }) {
+    if (firstEventUs == null) {
+      return <FlogTimingPhase>[
+        FlogTimingPhase(
+          name: 'wait_first_event',
+          startUs: startUs,
+          endUs: endUs,
+          status: 'complete',
+          detail: 'no SSE chunks were emitted',
+        ),
+        FlogTimingPhase(
+          name: 'receive_stream',
+          startUs: endUs,
+          endUs: endUs,
+          status: 'unavailable',
+          confidence: 'unavailable',
+          detail: 'no event stream content',
+        ),
+      ];
+    }
+
+    return <FlogTimingPhase>[
+      FlogTimingPhase(
+        name: 'wait_first_event',
+        startUs: startUs,
+        endUs: firstEventUs,
+        detail: 'waiting for first SSE chunk',
+      ),
+      FlogTimingPhase(
+        name: 'receive_stream',
+        startUs: firstEventUs,
+        endUs: endUs,
+        detail: 'SSE chunks received',
+      ),
+    ];
   }
 }
